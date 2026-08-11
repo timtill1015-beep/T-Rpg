@@ -3,141 +3,264 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Archipelago RPG</title>
+  <meta name="theme-color" content="#071116" />
+  <title>Archipelago — Echoes of the Shattered Sea</title>
   <link rel="stylesheet" href="style.css" />
   <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script defer src="game.js"></script>
 </head>
 <body>
   <div id="app">
-    <header class="topbar">
-      <div>
-        <h1>ARCHIPELAGO RPG</h1>
-        <p>10 × 10 km · Pixel Browser RPG</p>
-      </div>
-      <div class="status">
-        <span id="netDot" class="dot offline"></span>
-        <span id="netStatus">Offline / Solo</span>
-      </div>
-    </header>
+    <section id="titleScreen" class="title-screen" aria-labelledby="gameTitle">
+      <canvas id="titleMap" width="960" height="540" aria-hidden="true"></canvas>
+      <div class="title-mist mist-one"></div>
+      <div class="title-mist mist-two"></div>
+      <div class="title-vignette"></div>
 
-    <main>
-      <section id="setupPanel" class="panel setup-grid">
-        <div class="card">
-          <h2>1. Charakter</h2>
-          <label>Name
-            <input id="playerName" maxlength="18" value="Abenteurer" />
-          </label>
+      <div class="title-content">
+        <p class="eyebrow">Eine Welt hinter dem Nebel</p>
+        <h1 id="gameTitle"><span>ARCHI</span>PELAGO</h1>
+        <p class="subtitle">Echoes of the Shattered Sea</p>
+        <div class="title-divider" aria-hidden="true"><i></i><b>✦</b><i></i></div>
+        <p class="title-copy">Erkunde wilde Inseln, uralte Ruinen und die Wege zwischen den Gezeiten.</p>
 
-          <div class="creator-row">
-            <div>
-              <label>Haut
-                <select id="skinSelect">
-                  <option value="#f1c27d">Hell</option>
-                  <option value="#d79a62">Mittel</option>
-                  <option value="#a86f45">Dunkel</option>
-                  <option value="#75462e">Sehr dunkel</option>
-                </select>
-              </label>
-              <label>Haare
-                <select id="hairSelect">
-                  <option value="#3a2418">Braun</option>
-                  <option value="#161616">Schwarz</option>
-                  <option value="#d9b24c">Blond</option>
-                  <option value="#8d3d2e">Rot</option>
-                  <option value="#d7d7d7">Grau</option>
-                </select>
-              </label>
-              <label>Oberteil
-                <select id="shirtSelect">
-                  <option value="#315d9b">Blau</option>
-                  <option value="#7b3f8c">Violett</option>
-                  <option value="#3f7b46">Grün</option>
-                  <option value="#9a3c3c">Rot</option>
-                  <option value="#b1812c">Ocker</option>
-                </select>
-              </label>
+        <nav class="title-actions" aria-label="Hauptmenü">
+          <button id="beginBtn" class="menu-button primary">Neues Abenteuer <span>›</span></button>
+          <button id="multiplayerTitleBtn" class="menu-button">Mehrspieler <span>›</span></button>
+          <button id="continueBtn" class="menu-button" disabled title="Speicherstände folgen in einem späteren Update">Fortsetzen <small>Noch kein Spielstand</small></button>
+        </nav>
+      </div>
+
+      <div class="title-footer">
+        <span>10 × 10 km prozedurale Welt</span>
+        <span class="title-version">PROTOTYP · 0.2</span>
+      </div>
+    </section>
+
+    <section id="menuScreen" class="menu-screen hidden">
+      <header class="topbar">
+        <button id="backTitleBtn" class="icon-button" aria-label="Zurück zum Titelscreen">←</button>
+        <div class="topbar-brand">
+          <span class="brand-mark">A</span>
+          <div><strong>ARCHIPELAGO</strong><small>ABENTEUER VORBEREITEN</small></div>
+        </div>
+        <div class="status">
+          <span id="netDot" class="dot offline"></span>
+          <span id="netStatus">Offline / Solo</span>
+        </div>
+      </header>
+
+      <main class="setup-shell">
+        <div class="setup-heading">
+          <p class="eyebrow">Vor der Überfahrt</p>
+          <h2>Wer betritt die Inseln?</h2>
+          <p>Gestalte deinen Reisenden und wähle, wie deine Geschichte beginnt.</p>
+        </div>
+
+        <section id="setupPanel" class="setup-grid">
+          <div class="card character-card">
+            <div class="card-number">01</div>
+            <div class="card-heading">
+              <span>DEIN REISENDER</span>
+              <h3>Charakter</h3>
             </div>
-            <canvas id="creatorPreview" width="96" height="128" aria-label="Charaktervorschau"></canvas>
-          </div>
-        </div>
 
-        <div class="card">
-          <h2>2. Multiplayer</h2>
-          <button id="soloBtn" class="primary">Solo starten</button>
-          <button id="hostBtn">Lobby hosten</button>
-          <div id="hostBox" class="hidden lobby-code-box">
-            <span>Lobby-Code</span>
-            <strong id="lobbyCode">------</strong>
-            <button id="copyCodeBtn" class="small">Code kopieren</button>
-          </div>
-
-          <div class="join-row">
-            <input id="joinCode" maxlength="6" placeholder="ABC123" />
-            <button id="joinBtn">Beitreten</button>
-          </div>
-
-          <p class="hint">
-            Die Website kann auf Netlify liegen. Multiplayer läuft als Browser-zu-Browser-Verbindung,
-            wobei der Host die Lobby verwaltet.
-          </p>
-        </div>
-
-        <div class="card wide">
-          <h2>Welt</h2>
-          <div class="world-stats">
-            <div><strong>100 km²</strong><span>Gesamtfläche</span></div>
-            <div><strong>Prozedural</strong><span>Chunks statt riesiger Tilemap</span></div>
-            <div><strong>8+</strong><span>Biome</span></div>
-            <div><strong>Mehrere</strong><span>Inseln</span></div>
-          </div>
-        </div>
-      </section>
-
-      <section id="gamePanel" class="game-wrap hidden">
-        <canvas id="gameCanvas" width="960" height="540"></canvas>
-
-        <aside class="hud left">
-          <div class="hud-title">ARCHIPELAGO</div>
-          <div><span>Biome</span><strong id="biomeText">-</strong></div>
-          <div><span>Position</span><strong id="coordText">-</strong></div>
-          <div><span>Spieler</span><strong id="playerCount">1</strong></div>
-        </aside>
-
-        <aside class="hud right">
-          <div class="controls-title">STEUERUNG</div>
-          <div>WASD · Laufen</div>
-          <div>SHIFT · Sprint</div>
-          <div>M · Karte</div>
-          <div>ESC · Menü</div>
-        </aside>
-
-        <canvas id="minimap" class="minimap" width="180" height="180"></canvas>
-
-        <div id="toast" class="toast hidden"></div>
-
-        <div id="pauseMenu" class="pause hidden">
-          <div class="pause-card">
-            <h2>Pause</h2>
-            <button id="resumeBtn" class="primary">Weiter</button>
-            <button id="leaveBtn">Zurück zum Hauptmenü</button>
-          </div>
-        </div>
-
-        <div id="mapOverlay" class="map-overlay hidden">
-          <div class="map-card">
-            <div class="map-head">
-              <div>
-                <h2>Weltkarte</h2>
-                <p>10 × 10 km</p>
+            <div class="creator-layout">
+              <div class="creator-preview-wrap">
+                <canvas id="creatorPreview" width="144" height="176" aria-label="Charaktervorschau"></canvas>
+                <div class="preview-controls" aria-label="Vorschau drehen">
+                  <button id="previewLeftBtn" class="icon-button small" aria-label="Nach links drehen">←</button>
+                  <span id="previewDirection">Vorne</span>
+                  <button id="previewRightBtn" class="icon-button small" aria-label="Nach rechts drehen">→</button>
+                </div>
               </div>
-              <button id="closeMapBtn">Schließen</button>
+
+              <div class="creator-form">
+                <label>Name
+                  <input id="playerName" maxlength="18" value="Abenteurer" autocomplete="off" />
+                </label>
+                <div class="field-pair">
+                  <label>Haut
+                    <select id="skinSelect">
+                      <option value="#f1c27d">Hell</option>
+                      <option value="#d79a62">Mittel</option>
+                      <option value="#a86f45">Dunkel</option>
+                      <option value="#75462e">Sehr dunkel</option>
+                    </select>
+                  </label>
+                  <label>Augen
+                    <select id="eyeSelect">
+                      <option value="#243b53">Blau</option>
+                      <option value="#4b3621">Braun</option>
+                      <option value="#355f42">Grün</option>
+                      <option value="#7a7265">Grau</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-pair">
+                  <label>Frisur
+                    <select id="hairStyleSelect">
+                      <option value="tousled">Zerzaust</option>
+                      <option value="bob">Kurzer Bob</option>
+                      <option value="braid">Zopf</option>
+                      <option value="mohawk">Irokese</option>
+                      <option value="hood">Reisekapuze</option>
+                    </select>
+                  </label>
+                  <label>Haarfarbe
+                    <select id="hairSelect">
+                      <option value="#3a2418">Braun</option>
+                      <option value="#161616">Schwarz</option>
+                      <option value="#d9b24c">Blond</option>
+                      <option value="#8d3d2e">Rot</option>
+                      <option value="#d7d7d7">Grau</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-pair">
+                  <label>Oberteil
+                    <select id="shirtSelect">
+                      <option value="#315d9b">Küstenblau</option>
+                      <option value="#7b3f8c">Dämmerlila</option>
+                      <option value="#3f7b46">Waldgrün</option>
+                      <option value="#9a3c3c">Glutrot</option>
+                      <option value="#b1812c">Dünenocker</option>
+                    </select>
+                  </label>
+                  <label>Mantel
+                    <select id="cloakSelect">
+                      <option value="#684431">Lederbraun</option>
+                      <option value="#243e46">Tiefsee</option>
+                      <option value="#4d5941">Moosgrün</option>
+                      <option value="#6b3441">Weinrot</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
-            <canvas id="worldMap" width="640" height="640"></canvas>
+          </div>
+
+          <div id="journeyCard" class="card journey-card">
+            <div class="card-number">02</div>
+            <div class="card-heading">
+              <span>DEINE REISE</span>
+              <h3>Spielmodus</h3>
+            </div>
+
+            <button id="soloBtn" class="choice-button primary">
+              <span class="choice-icon">♜</span>
+              <span><strong>Solo starten</strong><small>Die Inseln auf eigene Faust erkunden</small></span>
+              <b>›</b>
+            </button>
+            <button id="hostBtn" class="choice-button">
+              <span class="choice-icon">⌂</span>
+              <span><strong>Lobby hosten</strong><small>Eine Welt für Freunde öffnen</small></span>
+              <b>›</b>
+            </button>
+
+            <div id="hostBox" class="hidden lobby-code-box">
+              <span>DEIN LOBBY-CODE</span>
+              <strong id="lobbyCode">------</strong>
+              <button id="copyCodeBtn" class="small">Kopieren</button>
+            </div>
+
+            <div class="join-divider"><span>ODER BEITRETEN</span></div>
+            <div class="join-row">
+              <input id="joinCode" maxlength="6" placeholder="ABC123" aria-label="Lobby-Code" />
+              <button id="joinBtn">Beitreten</button>
+            </div>
+
+            <div class="world-promise">
+              <span>✦</span>
+              <p><strong>Eine gemeinsame Welt</strong>Terrain, Orte und Flüsse entstehen aus demselben Seed und sind für alle identisch.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+
+    <section id="gamePanel" class="game-wrap hidden">
+      <canvas id="gameCanvas" width="1280" height="720"></canvas>
+      <div class="game-vignette" aria-hidden="true"></div>
+
+      <aside class="player-hud glass-panel">
+        <canvas id="playerPortrait" width="52" height="64" aria-hidden="true"></canvas>
+        <div class="player-readout">
+          <div class="player-name-row"><strong id="hudPlayerName">Abenteurer</strong><span>LV. 1</span></div>
+          <div class="meter health"><i id="healthFill"></i><span>100 / 100</span></div>
+          <div class="meter stamina"><i id="staminaFill"></i><span>AUSDAUER</span></div>
+        </div>
+      </aside>
+
+      <div class="compass glass-panel" aria-label="Kompass">
+        <span>W</span><span>NW</span><strong id="compassDirection">N</strong><span>NO</span><span>O</span>
+        <i></i>
+      </div>
+
+      <aside class="world-hud glass-panel">
+        <span id="timeText">08:00</span>
+        <div><small>REGION</small><strong id="biomeText">-</strong></div>
+        <div><small>POSITION</small><strong id="coordText">-</strong></div>
+        <div><small>REISENDE</small><strong id="playerCount">1</strong></div>
+      </aside>
+
+      <aside class="quest-hud glass-panel">
+        <span class="quest-label">ERKUNDUNG</span>
+        <strong>Die zersplitterte See</strong>
+        <p>Finde einen bewohnten Ort und folge den alten Wegen.</p>
+      </aside>
+
+      <aside class="minimap-frame glass-panel">
+        <div class="minimap-head"><span>GEBIETSKARTE</span><b id="locationText">Unbekannte Küste</b></div>
+        <canvas id="minimap" class="minimap" width="200" height="200"></canvas>
+        <div class="minimap-footer"><span>M</span> Weltkarte öffnen</div>
+      </aside>
+
+      <div class="control-strip glass-panel">
+        <span><kbd>WASD</kbd> Bewegen</span>
+        <span><kbd>SHIFT</kbd> Sprinten</span>
+        <span><kbd>M</kbd> Karte</span>
+        <span><kbd>ESC</kbd> Menü</span>
+      </div>
+
+      <div id="toast" class="toast hidden"></div>
+
+      <div id="pauseMenu" class="screen-overlay pause hidden">
+        <div class="pause-card modal-card">
+          <p class="eyebrow">Die Welt wartet</p>
+          <h2>Pause</h2>
+          <button id="resumeBtn" class="primary">Weiterreisen</button>
+          <button id="openMapBtn">Weltkarte</button>
+          <button id="leaveBtn">Zurück zum Hauptmenü</button>
+        </div>
+      </div>
+
+      <div id="mapOverlay" class="screen-overlay map-overlay hidden">
+        <div class="map-card modal-card">
+          <div class="map-head">
+            <div>
+              <p class="eyebrow">Kartographisches Archiv</p>
+              <h2>Die zersplitterte See</h2>
+              <p>10 × 10 km · Flüsse, Wege und bekannte Orte</p>
+            </div>
+            <button id="closeMapBtn" class="icon-button" aria-label="Karte schließen">×</button>
+          </div>
+          <div class="map-layout">
+            <canvas id="worldMap" width="720" height="720"></canvas>
+            <aside class="map-legend">
+              <h3>Legende</h3>
+              <span><i class="legend-player"></i>Deine Position</span>
+              <span><i class="legend-town"></i>Siedlung</span>
+              <span><i class="legend-ruin"></i>Ruine</span>
+              <span><i class="legend-river"></i>Fluss</span>
+              <span><i class="legend-road"></i>Alter Weg</span>
+              <div class="map-scale"><i></i><b>2 km</b></div>
+              <p>Die Karte zeigt nur bekannte Hauptorte. Kleinere Geheimnisse findest du beim Erkunden.</p>
+            </aside>
           </div>
         </div>
-      </section>
-    </main>
+      </div>
+    </section>
   </div>
 </body>
 </html>

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Archipelago RPG</title>
+  <link rel="stylesheet" href="style.css" />
+  <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script defer src="game.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <h1>ARCHIPELAGO RPG</h1>
+        <p>10 × 10 km · Pixel Browser RPG</p>
+      </div>
+      <div class="status">
+        <span id="netDot" class="dot offline"></span>
+        <span id="netStatus">Offline / Solo</span>
+      </div>
+    </header>
+
+    <main>
+      <section id="setupPanel" class="panel setup-grid">
+        <div class="card">
+          <h2>1. Charakter</h2>
+          <label>Name
+            <input id="playerName" maxlength="18" value="Abenteurer" />
+          </label>
+
+          <div class="creator-row">
+            <div>
+              <label>Haut
+                <select id="skinSelect">
+                  <option value="#f1c27d">Hell</option>
+                  <option value="#d79a62">Mittel</option>
+                  <option value="#a86f45">Dunkel</option>
+                  <option value="#75462e">Sehr dunkel</option>
+                </select>
+              </label>
+              <label>Haare
+                <select id="hairSelect">
+                  <option value="#3a2418">Braun</option>
+                  <option value="#161616">Schwarz</option>
+                  <option value="#d9b24c">Blond</option>
+                  <option value="#8d3d2e">Rot</option>
+                  <option value="#d7d7d7">Grau</option>
+                </select>
+              </label>
+              <label>Oberteil
+                <select id="shirtSelect">
+                  <option value="#315d9b">Blau</option>
+                  <option value="#7b3f8c">Violett</option>
+                  <option value="#3f7b46">Grün</option>
+                  <option value="#9a3c3c">Rot</option>
+                  <option value="#b1812c">Ocker</option>
+                </select>
+              </label>
+            </div>
+            <canvas id="creatorPreview" width="96" height="128" aria-label="Charaktervorschau"></canvas>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>2. Multiplayer</h2>
+          <button id="soloBtn" class="primary">Solo starten</button>
+          <button id="hostBtn">Lobby hosten</button>
+          <div id="hostBox" class="hidden lobby-code-box">
+            <span>Lobby-Code</span>
+            <strong id="lobbyCode">------</strong>
+            <button id="copyCodeBtn" class="small">Code kopieren</button>
+          </div>
+
+          <div class="join-row">
+            <input id="joinCode" maxlength="6" placeholder="ABC123" />
+            <button id="joinBtn">Beitreten</button>
+          </div>
+
+          <p class="hint">
+            Die Website kann auf Netlify liegen. Multiplayer läuft als Browser-zu-Browser-Verbindung,
+            wobei der Host die Lobby verwaltet.
+          </p>
+        </div>
+
+        <div class="card wide">
+          <h2>Welt</h2>
+          <div class="world-stats">
+            <div><strong>100 km²</strong><span>Gesamtfläche</span></div>
+            <div><strong>Prozedural</strong><span>Chunks statt riesiger Tilemap</span></div>
+            <div><strong>8+</strong><span>Biome</span></div>
+            <div><strong>Mehrere</strong><span>Inseln</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="gamePanel" class="game-wrap hidden">
+        <canvas id="gameCanvas" width="960" height="540"></canvas>
+
+        <aside class="hud left">
+          <div class="hud-title">ARCHIPELAGO</div>
+          <div><span>Biome</span><strong id="biomeText">-</strong></div>
+          <div><span>Position</span><strong id="coordText">-</strong></div>
+          <div><span>Spieler</span><strong id="playerCount">1</strong></div>
+        </aside>
+
+        <aside class="hud right">
+          <div class="controls-title">STEUERUNG</div>
+          <div>WASD · Laufen</div>
+          <div>SHIFT · Sprint</div>
+          <div>M · Karte</div>
+          <div>ESC · Menü</div>
+        </aside>
+
+        <canvas id="minimap" class="minimap" width="180" height="180"></canvas>
+
+        <div id="toast" class="toast hidden"></div>
+
+        <div id="pauseMenu" class="pause hidden">
+          <div class="pause-card">
+            <h2>Pause</h2>
+            <button id="resumeBtn" class="primary">Weiter</button>
+            <button id="leaveBtn">Zurück zum Hauptmenü</button>
+          </div>
+        </div>
+
+        <div id="mapOverlay" class="map-overlay hidden">
+          <div class="map-card">
+            <div class="map-head">
+              <div>
+                <h2>Weltkarte</h2>
+                <p>10 × 10 km</p>
+              </div>
+              <button id="closeMapBtn">Schließen</button>
+            </div>
+            <canvas id="worldMap" width="640" height="640"></canvas>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

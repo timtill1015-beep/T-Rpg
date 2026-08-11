@@ -2,12 +2,17 @@
 "use strict";
 
 const WORLD_SIZE = 10000;
-const TILE_METERS = 20;
+// One visible world block is eight metres. Terrain, roads, rivers, trees and
+// structures all use this same grid; only tiny ground clutter may use sub-blocks.
+const TILE_METERS = 8;
 const VIEW_SCALE = 2.35;
 const PLAYER_SPEED = 92;
 const SPRINT_MULTIPLIER = 1.62;
 const NET_SEND_HZ = 12;
 const MAP_SAMPLE = 4;
+const TREE_PLOT_TILES = 5;
+
+const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("gameCanvas");
@@ -143,14 +148,18 @@ const routes = [
 ];
 
 const landmarks = [
-  {x:4820,y:5820,name:"Hafen Dornwacht",short:"Dornwacht",type:"town"},
-  {x:3890,y:5050,name:"Moorhain",short:"Moorhain",type:"town"},
-  {x:5700,y:4500,name:"Sonnenkliff",short:"Sonnenkliff",type:"town"},
-  {x:5360,y:5460,name:"Tempel der Gezeiten",short:"Gezeitentempel",type:"ruin"},
-  {x:2420,y:2710,name:"Nordwacht",short:"Nordwacht",type:"town"},
-  {x:7560,y:2860,name:"Ruinen von Königsfall",short:"Königsfall",type:"ruin"},
-  {x:7650,y:7270,name:"Südmark",short:"Südmark",type:"town"}
+  {x:snapToGrid(4820),y:snapToGrid(5820),name:"Hafen Dornwacht",short:"Dornwacht",type:"town"},
+  {x:snapToGrid(3890),y:snapToGrid(5050),name:"Moorhain",short:"Moorhain",type:"town"},
+  {x:snapToGrid(5700),y:snapToGrid(4500),name:"Sonnenkliff",short:"Sonnenkliff",type:"town"},
+  {x:snapToGrid(5360),y:snapToGrid(5460),name:"Tempel der Gezeiten",short:"Gezeitentempel",type:"ruin"},
+  {x:snapToGrid(2420),y:snapToGrid(2710),name:"Nordwacht",short:"Nordwacht",type:"town"},
+  {x:snapToGrid(7560),y:snapToGrid(2860),name:"Ruinen von Königsfall",short:"Königsfall",type:"ruin"},
+  {x:snapToGrid(7650),y:snapToGrid(7270),name:"Südmark",short:"Südmark",type:"town"}
 ];
+
+const terrainCache = new Map();
+const visualTileCache = new Map();
+const treePlotCache = new Map();
 
 function hash2(x, y, seed = state.seed) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1442695041);
@@ -257,21 +266,31 @@ function riverAt(x,y,height){
 }
 
 function roadAt(x,y){
-  const nx=x/WORLD_SIZE;
-  const ny=y/WORLD_SIZE;
+  // Roads occupy complete world blocks. Sampling the block centre turns every
+  // diagonal into an intentional pixel staircase instead of a smooth vector line.
+  const gx=Math.floor(Math.max(0,Math.min(WORLD_SIZE-.001,x))/TILE_METERS);
+  const gy=Math.floor(Math.max(0,Math.min(WORLD_SIZE-.001,y))/TILE_METERS);
+  const nx=(gx*TILE_METERS+TILE_METERS/2)/WORLD_SIZE;
+  const ny=(gy*TILE_METERS+TILE_METERS/2)/WORLD_SIZE;
+  const halfWidth=TILE_METERS*.78/WORLD_SIZE;
   for(const route of routes){
     for(let i=0;i<route.length-1;i++){
       const a=route[i];
       const b=route[i+1];
-      if(segmentDistance(nx,ny,a[0],a[1],b[0],b[1]).distance<0.0015) return true;
+      if(segmentDistance(nx,ny,a[0],a[1],b[0],b[1]).distance<halfWidth) return true;
     }
   }
   return false;
 }
 
 function terrainAt(x,y){
-  x=Math.max(0,Math.min(WORLD_SIZE,x));
-  y=Math.max(0,Math.min(WORLD_SIZE,y));
+  const gx=Math.floor(Math.max(0,Math.min(WORLD_SIZE-.001,x))/TILE_METERS);
+  const gy=Math.floor(Math.max(0,Math.min(WORLD_SIZE-.001,y))/TILE_METERS);
+  const key=gx+","+gy;
+  const cached=terrainCache.get(key);
+  if(cached) return cached;
+  x=gx*TILE_METERS+TILE_METERS/2;
+  y=gy*TILE_METERS+TILE_METERS/2;
   const h=islandField(x,y);
   const moisture=fbm(x+1337,y-904,400);
   const temp=1-Math.abs(y/WORLD_SIZE-0.5)*1.22+(valueNoise(x,y,900,225)-0.5)*0.18;
@@ -291,7 +310,9 @@ function terrainAt(x,y){
 
   const river=riverAt(x,y,h);
   if(river && !["deepWater","water","shallow","beach","snow"].includes(biome)) biome="river";
-  return {height:h,moisture,temp,biome,river};
+  const result={height:h,moisture,temp,biome,river,gx,gy};
+  terrainCache.set(key,result);
+  return result;
 }
 
 function isWalkable(x,y){
@@ -322,11 +343,10 @@ function tileDecoration(x,y,biome){
   const gx=Math.floor(x/TILE_METERS);
   const gy=Math.floor(y/TILE_METERS);
   const r=hash2(gx,gy,913);
-  if(biome==="forest" && r>0.39) return r>0.84?"pine":"tree";
-  if(biome==="jungle" && r>0.34) return r>0.74?"palm":"broadleaf";
-  if(biome==="swamp" && r>0.55) return r>0.82?"deadTree":"reeds";
-  if(biome==="plains" && r>0.965) return "tree";
-  if(biome==="plains" && r>0.87) return r>0.94?"flowers":"grass";
+  // These are deliberately small overlays. Large vegetation is generated as
+  // multi-block grid objects by drawVisibleTrees().
+  if((biome==="plains"||biome==="forest"||biome==="jungle") && r>0.87) return r>0.95?"flowers":"grass";
+  if(biome==="swamp" && r>0.82) return "reeds";
   if((biome==="rock"||biome==="mountain") && r>0.70) return "rock";
   if(biome==="beach" && r>0.91) return r>0.97?"driftwood":"shell";
   if(biome==="river" && r>0.82) return "reeds";
@@ -334,38 +354,7 @@ function tileDecoration(x,y,biome){
 }
 
 function drawDecoration(kind,px,py,size){
-  if(kind==="tree"||kind==="broadleaf"){
-    ctx.fillStyle="rgba(4,14,10,.22)";
-    ctx.fillRect(px-size*.24,py+size*.10,size*.52,size*.17);
-    ctx.fillStyle="#4a3323";
-    ctx.fillRect(px-size*.045,py-size*.01,size*.09,size*.31);
-    ctx.fillStyle=kind==="broadleaf"?"#234c31":"#284d32";
-    ctx.fillRect(px-size*.25,py-size*.30,size*.50,size*.28);
-    ctx.fillStyle=kind==="broadleaf"?"#376c3c":"#3a6b3f";
-    ctx.fillRect(px-size*.17,py-size*.40,size*.34,size*.20);
-    ctx.fillStyle="#5e874b";
-    ctx.fillRect(px-size*.12,py-size*.34,size*.12,size*.08);
-  }else if(kind==="pine"){
-    ctx.fillStyle="#493323";
-    ctx.fillRect(px-size*.035,py,size*.07,size*.34);
-    ctx.fillStyle="#1f4934";
-    ctx.fillRect(px-size*.26,py-size*.18,size*.52,size*.12);
-    ctx.fillRect(px-size*.20,py-size*.30,size*.40,size*.15);
-    ctx.fillRect(px-size*.12,py-size*.40,size*.24,size*.15);
-  }else if(kind==="palm"){
-    ctx.fillStyle="#604226";
-    ctx.fillRect(px-size*.04,py-size*.08,size*.08,size*.40);
-    ctx.fillStyle="#24502e";
-    ctx.fillRect(px-size*.28,py-size*.20,size*.56,size*.10);
-    ctx.fillRect(px-size*.07,py-size*.34,size*.14,size*.34);
-    ctx.fillStyle="#3d7138";
-    ctx.fillRect(px-size*.22,py-size*.29,size*.44,size*.08);
-  }else if(kind==="deadTree"){
-    ctx.fillStyle="#473c2d";
-    ctx.fillRect(px-size*.035,py-size*.24,size*.07,size*.50);
-    ctx.fillRect(px-size*.18,py-size*.18,size*.20,size*.06);
-    ctx.fillRect(px,py-size*.08,size*.17,size*.05);
-  }else if(kind==="reeds"){
+  if(kind==="reeds"){
     ctx.fillStyle="#74834c";
     ctx.fillRect(px-size*.14,py-size*.10,size*.035,size*.28);
     ctx.fillRect(px,py-size*.17,size*.035,size*.35);
@@ -399,15 +388,144 @@ function drawDecoration(kind,px,py,size){
   }
 }
 
+function drawGridBlock(gx,gy,camX,camY,color,accent=null){
+  const size=TILE_METERS*VIEW_SCALE;
+  const x=(gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2;
+  const y=(gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2;
+  const px=Math.floor(x);
+  const py=Math.floor(y);
+  const block=Math.ceil(size)+1;
+  ctx.fillStyle=color;
+  ctx.fillRect(px,py,block,block);
+  ctx.fillStyle="rgba(7,14,12,.20)";
+  ctx.fillRect(px,py+block-2,block,2);
+  ctx.fillRect(px+block-2,py,2,block);
+  ctx.fillStyle="rgba(255,255,230,.10)";
+  ctx.fillRect(px+1,py+1,block-3,2);
+  if(accent){
+    ctx.fillStyle=accent;
+    const chip=Math.max(2,Math.floor(block*.22));
+    ctx.fillRect(px+3,py+3,chip,chip);
+  }
+}
+
+function nearLandmarkGrid(gx,gy,padding=0){
+  for(const landmark of landmarks){
+    const lx=Math.round(landmark.x/TILE_METERS);
+    const ly=Math.round(landmark.y/TILE_METERS);
+    const rx=landmark.type==="town"?8:6;
+    const ry=landmark.type==="town"?7:6;
+    if(Math.abs(gx-lx)<=rx+padding && Math.abs(gy-ly)<=ry+padding) return true;
+  }
+  return false;
+}
+
+function treeForPlot(plotX,plotY){
+  const cacheKey=plotX+","+plotY;
+  if(treePlotCache.has(cacheKey)) return treePlotCache.get(cacheKey);
+  const plotSeed=hash2(plotX,plotY,1701);
+  const gx=plotX*TREE_PLOT_TILES+1+Math.floor(hash2(plotX,plotY,1702)*3);
+  const gy=plotY*TREE_PLOT_TILES+2+Math.floor(hash2(plotX,plotY,1703)*2);
+  if(nearLandmarkGrid(gx,gy,3)){
+    treePlotCache.set(cacheKey,null);
+    return null;
+  }
+  const terrain=terrainAt((gx+.5)*TILE_METERS,(gy+.5)*TILE_METERS);
+  let chance=0;
+  let kind="broadleaf";
+  if(terrain.biome==="forest"){chance=.91;kind=plotSeed>.68?"pine":"broadleaf";}
+  else if(terrain.biome==="jungle"){chance=.95;kind=plotSeed>.72?"palm":"jungle";}
+  else if(terrain.biome==="swamp"){chance=.48;kind="dead";}
+  else if(terrain.biome==="plains"){chance=.08;kind="broadleaf";}
+  if(plotSeed>chance){
+    treePlotCache.set(cacheKey,null);
+    return null;
+  }
+  const tree={gx,gy,kind};
+  treePlotCache.set(cacheKey,tree);
+  return tree;
+}
+
+function drawGridTree(tree,camX,camY){
+  const {gx,gy,kind}=tree;
+  // Even shadows are whole grid blocks so the silhouette never slips off-grid.
+  drawGridBlock(gx-1,gy,camX,camY,"rgba(8,18,12,.18)");
+  drawGridBlock(gx,gy,camX,camY,kind==="palm"?"#76512e":"#5b3d29","#93673a");
+
+  if(kind==="dead"){
+    drawGridBlock(gx,gy-1,camX,camY,"#514536","#75634b");
+    drawGridBlock(gx,gy-2,camX,camY,"#463c31");
+    drawGridBlock(gx-1,gy-2,camX,camY,"#463c31");
+    drawGridBlock(gx+1,gy-1,camX,camY,"#514536");
+    return;
+  }
+
+  if(kind==="palm"){
+    drawGridBlock(gx,gy-1,camX,camY,"#76512e","#93673a");
+    drawGridBlock(gx,gy-2,camX,camY,"#31653a","#4c8245");
+    drawGridBlock(gx-1,gy-2,camX,camY,"#285733","#42763f");
+    drawGridBlock(gx+1,gy-2,camX,camY,"#285733","#42763f");
+    drawGridBlock(gx-2,gy-2,camX,camY,"#234e2e");
+    drawGridBlock(gx+2,gy-2,camX,camY,"#234e2e");
+    drawGridBlock(gx,gy-3,camX,camY,"#39713c","#5b914a");
+    return;
+  }
+
+  const dark=kind==="jungle"?"#1f482d":kind==="pine"?"#214431":"#2d5736";
+  const mid=kind==="jungle"?"#2d6136":kind==="pine"?"#2b5638":"#3b6b3e";
+  const light=kind==="jungle"?"#477a3e":kind==="pine"?"#3d6941":"#568047";
+  const leafBlocks=kind==="pine"
+    ? [[0,-4,light],[-1,-3,dark],[0,-3,mid],[1,-3,dark],[-1,-2,dark],[0,-2,mid],[1,-2,dark],[0,-1,light]]
+    : [[0,-3,light],[-1,-2,dark],[0,-2,mid],[1,-2,dark],[-1,-1,mid],[0,-1,light],[1,-1,mid]];
+  for(const [dx,dy,color] of leafBlocks) drawGridBlock(gx+dx,gy+dy,camX,camY,color,light);
+}
+
+function drawVisibleTrees(camX,camY,startGX,endGX,startGY,endGY){
+  const minPlotX=Math.floor(startGX/TREE_PLOT_TILES)-1;
+  const maxPlotX=Math.floor(endGX/TREE_PLOT_TILES)+1;
+  const minPlotY=Math.floor(startGY/TREE_PLOT_TILES)-1;
+  const maxPlotY=Math.floor(endGY/TREE_PLOT_TILES)+1;
+  for(let py=minPlotY;py<=maxPlotY;py++){
+    for(let px=minPlotX;px<=maxPlotX;px++){
+      const tree=treeForPlot(px,py);
+      if(tree) drawGridTree(tree,camX,camY);
+    }
+  }
+}
+
 function drawTile(wx,wy,sx,sy,size,terrain){
   const gx=Math.floor(wx/TILE_METERS);
   const gy=Math.floor(wy/TILE_METERS);
-  const n=hash2(gx,gy,77);
-  const variation=Math.round((n-0.5)*10);
-  ctx.fillStyle=shade(palette[terrain.biome],variation);
+  const cacheKey=gx+","+gy;
+  let visual=visualTileCache.get(cacheKey);
+  if(!visual){
+    const n=hash2(gx,gy,77);
+    const road=roadAt(wx+TILE_METERS/2,wy+TILE_METERS/2)
+      && !["deepWater","water","shallow","river"].includes(terrain.biome);
+    const deco=!road&&!nearLandmarkGrid(gx,gy,2)?tileDecoration(wx,wy,terrain.biome):null;
+    const variation=Math.round((n-.5)*10);
+    visual={
+      n,road,deco,
+      baseColor:shade(palette[terrain.biome],variation),
+      roadColor:road?shade("#9b8255",Math.round((n-.5)*14)):null,
+      waterLike:["water","deepWater","shallow","river"].includes(terrain.biome)
+    };
+    visualTileCache.set(cacheKey,visual);
+  }
+  const {n,road,deco}=visual;
+  ctx.fillStyle=visual.baseColor;
   ctx.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size)+1,Math.ceil(size)+1);
+  if(road){
+    ctx.fillStyle=visual.roadColor;
+    ctx.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size)+1,Math.ceil(size)+1);
+    ctx.fillStyle="rgba(239,211,145,.20)";
+    const pebble=Math.max(2,Math.floor(size*.18));
+    ctx.fillRect(Math.floor(sx+size*.16),Math.floor(sy+size*.19),pebble,pebble);
+    ctx.fillStyle="rgba(66,49,31,.18)";
+    ctx.fillRect(Math.floor(sx+size*.66),Math.floor(sy+size*.62),pebble,pebble);
+  }
 
-  if(terrain.biome==="water"||terrain.biome==="deepWater"||terrain.biome==="shallow"||terrain.biome==="river"){
+  if(!road&&visual.waterLike){
     if(n>0.48){
       ctx.fillStyle=terrain.biome==="river"?"rgba(224,243,239,.20)":"rgba(210,240,245,.15)";
       ctx.fillRect(Math.floor(sx+size*.12),Math.floor(sy+size*.45),Math.max(2,size*.45),Math.max(1,size*.055));
@@ -420,80 +538,75 @@ function drawTile(wx,wy,sx,sy,size,terrain){
     ctx.fillRect(Math.floor(sx+size*.15),Math.floor(sy+size*.18),Math.max(1,size*.12),Math.max(1,size*.12));
   }
 
-  const deco=tileDecoration(wx,wy,terrain.biome);
   if(deco) drawDecoration(deco,Math.floor(sx+size*.5),Math.floor(sy+size*.5),size);
 }
 
-function drawVisibleRoads(camX,camY){
-  ctx.save();
-  ctx.lineCap="round";
-  ctx.lineJoin="round";
-  for(const route of routes){
-    ctx.beginPath();
-    route.forEach((point,index)=>{
-      const x=(point[0]*WORLD_SIZE-camX)*VIEW_SCALE+canvas.width/2;
-      const y=(point[1]*WORLD_SIZE-camY)*VIEW_SCALE+canvas.height/2;
-      if(index===0) ctx.moveTo(x,y);
-      else ctx.lineTo(x,y);
-    });
-    ctx.strokeStyle="rgba(74,58,35,.72)";
-    ctx.lineWidth=10;
-    ctx.stroke();
-    ctx.strokeStyle="#ad915d";
-    ctx.lineWidth=6;
-    ctx.stroke();
-    ctx.setLineDash([16,8]);
-    ctx.strokeStyle="rgba(226,199,128,.34)";
-    ctx.lineWidth=1.5;
-    ctx.stroke();
-    ctx.setLineDash([]);
+const townBlocks = [
+  "..RRR..pp.HHH.",
+  "..RCR..pp.HDH.",
+  "..RRR..pp.HHH.",
+  ".......pp.....",
+  "pppppppppppppp",
+  "pppppppppppppp",
+  "...WWW.pp.BBB.",
+  "...WDW.pp.BDB.",
+  "...WWW.pp.BBB.",
+  ".......pp....."
+];
+
+const ruinBlocks = [
+  "..S...S..",
+  ".SS...SS.",
+  ".S..p..S.",
+  "...ppp...",
+  "S..ppp..S",
+  "...ppp...",
+  ".S..p..S.",
+  ".SS...SS.",
+  "..S...S.."
+];
+
+function drawStructureBlock(code,gx,gy,camX,camY){
+  const colors={
+    p:["#9b8255","#c0a36b"],R:["#793e31","#a65a42"],C:["#4b3b34","#78706a"],
+    H:["#b18a4b","#d0ae64"],W:["#735037","#aa7a4e"],B:["#4f6570","#748793"],
+    D:["#34261d","#b58a52"],S:["#696b65","#929389"]
+  };
+  const pair=colors[code];
+  if(!pair) return;
+  drawGridBlock(gx,gy,camX,camY,pair[0],pair[1]);
+  if(code==="D"){
+    const size=TILE_METERS*VIEW_SCALE;
+    const x=Math.floor((gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
+    const y=Math.floor((gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2);
+    ctx.fillStyle="#e3bd62";
+    ctx.fillRect(Math.floor(x+size*.72),Math.floor(y+size*.48),Math.max(2,size*.12),Math.max(2,size*.12));
   }
-  ctx.restore();
 }
 
 function drawLandmark(landmark,camX,camY){
   const x=(landmark.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(landmark.y-camY)*VIEW_SCALE+canvas.height/2;
-  if(x<-100||x>canvas.width+100||y<-100||y>canvas.height+100) return;
-  const u=2.4;
-  ctx.save();
-  ctx.translate(Math.round(x),Math.round(y));
-  ctx.fillStyle="rgba(0,0,0,.28)";
-  ctx.fillRect(-10*u,5*u,20*u,5*u);
-  if(landmark.type==="town"){
-    ctx.fillStyle="#6d4b2f";
-    ctx.fillRect(-8*u,-7*u,16*u,14*u);
-    ctx.fillStyle="#c0a66c";
-    ctx.fillRect(-6*u,-5*u,12*u,12*u);
-    ctx.fillStyle="#70442e";
-    ctx.beginPath();
-    ctx.moveTo(-10*u,-6*u);
-    ctx.lineTo(0,-14*u);
-    ctx.lineTo(10*u,-6*u);
-    ctx.fill();
-    ctx.fillStyle="#2a2017";
-    ctx.fillRect(-2*u,1*u,4*u,6*u);
-    ctx.fillStyle="#efca67";
-    ctx.fillRect(3*u,-2*u,2*u,2*u);
-  }else{
-    ctx.fillStyle="#756f62";
-    ctx.fillRect(-8*u,-9*u,5*u,16*u);
-    ctx.fillRect(3*u,-5*u,5*u,12*u);
-    ctx.fillStyle="#999181";
-    ctx.fillRect(-7*u,-8*u,3*u,4*u);
-    ctx.fillRect(4*u,-4*u,3*u,3*u);
-    ctx.fillStyle="#496248";
-    ctx.fillRect(-8*u,2*u,16*u,3*u);
+  if(x<-220||x>canvas.width+220||y<-220||y>canvas.height+220) return;
+  const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+  const originGX=Math.round(landmark.x/TILE_METERS)-Math.floor(pattern[0].length/2);
+  const originGY=Math.round(landmark.y/TILE_METERS)-Math.floor(pattern.length/2);
+  for(let row=0;row<pattern.length;row++){
+    for(let column=0;column<pattern[row].length;column++){
+      const code=pattern[row][column];
+      if(code!==".") drawStructureBlock(code,originGX+column,originGY+row,camX,camY);
+    }
   }
   if(Math.hypot(landmark.x-camX,landmark.y-camY)>70){
+    ctx.save();
     ctx.font="bold 11px Georgia";
     ctx.textAlign="center";
     ctx.fillStyle="#071014";
-    ctx.fillText(landmark.short,1,-40);
+    ctx.fillText(landmark.short,x+1,y-pattern.length*TILE_METERS*VIEW_SCALE/2-12);
     ctx.fillStyle="#f0e5c9";
-    ctx.fillText(landmark.short,0,-41);
+    ctx.fillText(landmark.short,x,y-pattern.length*TILE_METERS*VIEW_SCALE/2-13);
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function drawWorld(){
@@ -523,7 +636,11 @@ function drawWorld(){
     }
   }
 
-  drawVisibleRoads(camX,camY);
+  drawVisibleTrees(
+    camX,camY,
+    Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
+    Math.floor(startY/TILE_METERS),Math.ceil(endY/TILE_METERS)
+  );
   for(const landmark of landmarks) drawLandmark(landmark,camX,camY);
 
   for(const peer of state.peers.values()){
@@ -546,7 +663,9 @@ function drawHair(c,u,style,hair,dir){
   if(dir==="side"){
     if(style==="hood"){
       c.fillStyle="#3f4c45";
-      c.fillRect(5*u,1*u,7*u,7*u);
+      c.fillRect(5*u,1*u,7*u,3*u);
+      c.fillRect(5*u,3*u,2*u,7*u);
+      c.fillRect(11*u,3*u,1*u,4*u);
       c.fillStyle="#59665d";
       c.fillRect(6*u,1*u,4*u,1*u);
     }else if(style==="bob"){
@@ -572,23 +691,35 @@ function drawHair(c,u,style,hair,dir){
 
   if(style==="hood"){
     c.fillStyle="#3f4c45";
-    c.fillRect(3*u,1*u,10*u,7*u);
+    c.fillRect(3*u,1*u,10*u,3*u);
+    c.fillRect(3*u,3*u,2*u,7*u);
+    c.fillRect(11*u,3*u,2*u,7*u);
     c.fillStyle="#59665d";
     c.fillRect(4*u,1*u,8*u,1*u);
-    if(dir==="down"){
-      c.fillStyle="#17211f";
-      c.fillRect(4*u,3*u,1*u,4*u);
-      c.fillRect(11*u,3*u,1*u,4*u);
+    if(dir==="up"){
+      c.fillStyle="#3f4c45";
+      c.fillRect(5*u,3*u,6*u,6*u);
+      c.fillStyle="#59665d";
+      c.fillRect(5*u,3*u,2*u,5*u);
+    }else{
+      c.fillStyle="#3f4c45";
+      c.fillRect(5*u,8*u,6*u,2*u);
     }
   }else if(style==="bob"){
     c.fillRect(3*u,1*u,10*u,3*u);
     c.fillRect(3*u,3*u,2*u,7*u);
     c.fillRect(11*u,3*u,2*u,7*u);
+    if(dir==="up"){
+      c.fillRect(5*u,3*u,6*u,6*u);
+      c.fillStyle=shade(hair,14);
+      c.fillRect(5*u,3*u,2*u,4*u);
+    }
   }else if(style==="braid"){
     c.fillRect(3*u,1*u,10*u,3*u);
     c.fillRect(3*u,3*u,2*u,4*u);
     c.fillRect(11*u,3*u,2*u,4*u);
     if(dir==="up"){
+      c.fillRect(5*u,3*u,6*u,3*u);
       c.fillRect(7*u,4*u,2*u,8*u);
       c.fillRect(6*u,11*u,3*u,2*u);
     }else{
@@ -606,6 +737,13 @@ function drawHair(c,u,style,hair,dir){
     c.fillRect(10*u,0,2*u,2*u);
     c.fillRect(3*u,3*u,1*u,4*u);
     c.fillRect(12*u,3*u,1*u,3*u);
+    if(dir==="up"){
+      c.fillRect(4*u,3*u,8*u,3*u);
+      c.fillRect(5*u,6*u,2*u,2*u);
+      c.fillRect(9*u,6*u,3*u,1*u);
+      c.fillStyle=shade(hair,12);
+      c.fillRect(7*u,3*u,2*u,3*u);
+    }
   }
 }
 
@@ -637,16 +775,27 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
       c.translate(16*u,0);
       c.scale(-1,1);
     }
-    c.fillStyle="#222b31";
-    c.fillRect((5-step)*u,16*u,3*u,5*u);
-    c.fillRect((9+step)*u,16*u,3*u,5*u);
-    c.fillStyle="#171c20";
-    c.fillRect((4-step)*u,20*u,4*u,2*u);
-    c.fillRect((9+step)*u,20*u,4*u,2*u);
+
+    // Side view faces right here; mirroring above produces the complete left
+    // sprite. The cloak always trails behind the torso.
     c.fillStyle=cloak;
-    c.fillRect(3*u,9*u,5*u,9*u);
+    c.fillRect(2*u,8*u,5*u,10*u);
     c.fillStyle=shade(cloak,-18);
-    c.fillRect(3*u,15*u,5*u,3*u);
+    c.fillRect(2*u,15*u,4*u,3*u);
+
+    const farLegX=5-step;
+    const nearLegX=8+step;
+    c.fillStyle="#222b31";
+    c.fillRect(farLegX*u,16*u,3*u,5*u);
+    c.fillRect(nearLegX*u,16*u,3*u,5*u);
+    c.fillStyle="#171c20";
+    // Both toe blocks point towards the face instead of away from each other.
+    c.fillRect(farLegX*u,20*u,4*u,2*u);
+    c.fillRect(nearLegX*u,20*u,4*u,2*u);
+    c.fillStyle="#39434a";
+    c.fillRect((farLegX+3)*u,20*u,1*u,1*u);
+    c.fillRect((nearLegX+3)*u,20*u,1*u,1*u);
+
     c.fillStyle=shirt;
     c.fillRect(6*u,9*u,6*u,8*u);
     c.fillStyle=shade(shirt,24);
@@ -656,30 +805,29 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle=skin;
     c.fillRect((10+step*.45)*u,10*u,2*u,5*u);
     c.fillRect(6*u,3*u,6*u,7*u);
-    c.fillRect(12*u,6*u,1*u,2*u);
-    c.fillStyle=shade(skin,20);
-    c.fillRect(11*u,4*u,1*u,2*u);
     drawHair(c,u,hairStyle,hair,"side");
     c.fillStyle=eyes;
     c.fillRect(10*u,6*u,1*u,1*u);
-    c.fillStyle="#6d3f35";
-    c.fillRect(12*u,8*u,1*u,1*u);
-  }else{
-    c.fillStyle="#222b31";
-    c.fillRect((4-step)*u,16*u,3*u,5*u);
-    c.fillRect((9+step)*u,16*u,3*u,5*u);
-    c.fillStyle="#151b20";
-    c.fillRect((3-step)*u,20*u,4*u,2*u);
-    c.fillRect((9+step)*u,20*u,4*u,2*u);
+  }else if(dir==="down"){
+    // Front view: the cloak sits behind the body and only shows at the sides.
     c.fillStyle=cloak;
-    if(dir==="up"){
-      c.fillRect(3*u,8*u,10*u,10*u);
-      c.fillStyle=shade(cloak,16);
-      c.fillRect(4*u,9*u,1*u,7*u);
-    }else{
-      c.fillRect(2*u,9*u,3*u,8*u);
-      c.fillRect(11*u,9*u,3*u,8*u);
-    }
+    c.fillRect(2*u,8*u,12*u,10*u);
+    c.fillStyle=shade(cloak,-18);
+    c.fillRect(2*u,15*u,3*u,3*u);
+    c.fillRect(11*u,15*u,3*u,3*u);
+
+    const leftLift=step===1?1:0;
+    const rightLift=step===-1?1:0;
+    c.fillStyle="#222b31";
+    c.fillRect(4*u,(16-leftLift)*u,3*u,5*u);
+    c.fillRect(9*u,(16-rightLift)*u,3*u,5*u);
+    c.fillStyle="#151b20";
+    c.fillRect(3*u,(20-leftLift)*u,4*u,2*u);
+    c.fillRect(9*u,(20-rightLift)*u,4*u,2*u);
+    c.fillStyle="#39434a";
+    c.fillRect(3*u,(21-leftLift)*u,4*u,1*u);
+    c.fillRect(9*u,(21-rightLift)*u,4*u,1*u);
+
     c.fillStyle=shirt;
     c.fillRect(4*u,9*u,8*u,8*u);
     c.fillStyle=shade(shirt,24);
@@ -690,18 +838,40 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(2*u,(10+step*.45)*u,2*u,5*u);
     c.fillRect(12*u,(10-step*.45)*u,2*u,5*u);
     c.fillRect(4*u,3*u,8*u,7*u);
-    if(dir==="down"){
-      c.fillStyle=shade(skin,20);
-      c.fillRect(5*u,4*u,6*u,1*u);
-    }
-    drawHair(c,u,hairStyle,hair,dir);
-    if(dir==="down"){
-      c.fillStyle=eyes;
-      c.fillRect(6*u,6*u,1*u,1*u);
-      c.fillRect(10*u,6*u,1*u,1*u);
-      c.fillStyle="#8a4d43";
-      c.fillRect(8*u,8*u,1*u,1*u);
-    }
+    drawHair(c,u,hairStyle,hair,"down");
+    c.fillStyle=eyes;
+    c.fillRect(6*u,6*u,1*u,1*u);
+    c.fillRect(10*u,6*u,1*u,1*u);
+  }else{
+    // Back view: shoes point north, while the cloak correctly covers the back
+    // between the shoulders and its hem. Arms and head remain in front of it.
+    const leftLift=step===1?1:0;
+    const rightLift=step===-1?1:0;
+    c.fillStyle="#222b31";
+    c.fillRect(4*u,(16-leftLift)*u,3*u,5*u);
+    c.fillRect(9*u,(16-rightLift)*u,3*u,5*u);
+    c.fillStyle="#151b20";
+    c.fillRect(3*u,(18-leftLift)*u,4*u,2*u);
+    c.fillRect(9*u,(18-rightLift)*u,4*u,2*u);
+    c.fillStyle="#39434a";
+    c.fillRect(3*u,(18-leftLift)*u,4*u,1*u);
+    c.fillRect(9*u,(18-rightLift)*u,4*u,1*u);
+
+    c.fillStyle=shirt;
+    c.fillRect(4*u,9*u,8*u,8*u);
+    c.fillStyle=shade(shirt,-16);
+    c.fillRect(4*u,9*u,8*u,1*u);
+    c.fillStyle=cloak;
+    c.fillRect(3*u,8*u,10*u,10*u);
+    c.fillStyle=shade(cloak,16);
+    c.fillRect(4*u,9*u,1*u,7*u);
+    c.fillStyle=shade(cloak,-18);
+    c.fillRect(4*u,17*u,8*u,1*u);
+    c.fillStyle=skin;
+    c.fillRect(2*u,(10+step*.45)*u,2*u,5*u);
+    c.fillRect(12*u,(10-step*.45)*u,2*u,5*u);
+    c.fillRect(4*u,3*u,8*u,7*u);
+    drawHair(c,u,hairStyle,hair,"up");
   }
 
   if(local&&!portraitMode){
@@ -1372,6 +1542,10 @@ requestAnimationFrame(paintPreview);
 window.__ARCHIPELAGO_DEBUG__ = {
   terrainAt,
   islandField,
+  roadAt,
+  treeForPlot,
+  drawCharacter,
+  drawWorld,
   landmarks,
   rivers,
   routes,

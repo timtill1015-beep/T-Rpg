@@ -37,6 +37,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - datengetriebene Tierarten, Verhaltenszustände, Trefferwerte, Loottabellen, Itemkatalog, Equipment-Regeln und Aktions-Handler als Basis für weitere Tiere, Waffen, Rüstung, Ressourcen, Behälter und Beute
 - getrennte Terrain-Ebene mit blockweise verschobenem Bildcache, begrenzte Welt-/Partikel-Caches und gedrosselte HUD-/Kartenupdates für deutlich stabilere Bildraten
 - Minimap und große beschriftete Weltkarte mit Legende
+- mobile Touch-Steuerung mit Mehrfinger-D-Pad, gedrückt gehaltenem Sprint, großen Aktions-/Interaktionstasten sowie direkten Buttons für Inventar, Karte und Pause; HUD und Overlays berücksichtigen Hochformat, Querformat und Display-Safe-Areas
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
 
 ## Steuerung
@@ -53,6 +54,8 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 | M | Weltkarte |
 | # | Debugmodus öffnen (Passwort `1234`) |
 | Esc | Pause / Overlay schließen |
+
+Auf Smartphones und Tablets erscheint automatisch eine eigene Touch-Oberfläche. Links liegt das D-Pad, rechts befinden sich Sprint, Interaktion und der große Werkzeug-/Angriffsknopf. Inventar, Karte und Pause sind oben rechts erreichbar. Die Steuerung unterstützt mehrere gleichzeitig gehaltene Finger, beispielsweise Laufen plus Sprint und Angriff.
 
 Im Debugmodus teleportiert ein Klick auf die Weltkarte an jede gewünschte Position. Ein Klick direkt in die Spielwelt versetzt die Figur innerhalb des sichtbaren Ausschnitts.
 

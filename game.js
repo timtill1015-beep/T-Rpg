@@ -199,6 +199,64 @@ const state = {
   mapBase: null
 };
 
+// Keyboard and touch input share state.keys, but keep their ownership apart so
+// lifting a thumb never cancels a physical key that is still being held (and
+// vice versa). Pointer IDs make diagonal movement plus sprint/attack possible.
+const keyboardHeldKeys = new Set();
+const mobileHeldPointers = new Map();
+
+function touchControlsActive(){
+  return window.matchMedia?.("(hover:none) and (pointer:coarse)").matches
+    || window.matchMedia?.("(max-width:700px)").matches;
+}
+
+function setMobileHeldKey(pointerId,key,button){
+  const previous=mobileHeldPointers.get(pointerId);
+  if(previous) releaseMobilePointer(pointerId);
+  mobileHeldPointers.set(pointerId,{key,button});
+  state.keys.add(key);
+  button.classList.add("is-pressed");
+  button.setAttribute("aria-pressed","true");
+}
+
+function releaseMobilePointer(pointerId){
+  const held=mobileHeldPointers.get(pointerId);
+  if(!held) return;
+  mobileHeldPointers.delete(pointerId);
+  held.button.classList.remove("is-pressed");
+  held.button.setAttribute("aria-pressed","false");
+  const stillHeld=[...mobileHeldPointers.values()].some((entry)=>entry.key===held.key);
+  if(!stillHeld&&!keyboardHeldKeys.has(held.key)) state.keys.delete(held.key);
+}
+
+function releaseAllMobileControls(){
+  const keys=new Set([...mobileHeldPointers.values()].map((entry)=>entry.key));
+  mobileHeldPointers.clear();
+  for(const button of document.querySelectorAll("[data-mobile-key]")){
+    button.classList.remove("is-pressed");
+    button.setAttribute("aria-pressed","false");
+  }
+  for(const key of keys) if(!keyboardHeldKeys.has(key)) state.keys.delete(key);
+}
+
+function mobileHaptic(pattern=8){
+  if(touchControlsActive()&&navigator.vibrate) navigator.vibrate(pattern);
+}
+
+function updateMobileControlState(){
+  const states={inventory:state.inventoryOpen,map:state.mapOpen,pause:state.paused};
+  for(const [action,active] of Object.entries(states)){
+    const button=document.querySelector('[data-mobile-action="'+action+'"]');
+    if(!button) continue;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-pressed",String(active));
+  }
+  const equipped=inventoryItemById(state.inventory.equipment.mainHand);
+  const definition=equipped&&itemCatalog[equipped.itemId];
+  const attackLabel=$("mobileAttackLabel");
+  if(attackLabel) attackLabel.textContent=definition?.short||"Benutzen";
+}
+
 const palette = {
   deepWater: "#12374f",
   water: "#1e526b",
@@ -2350,9 +2408,21 @@ function nearbyInteraction(){
 function updateInteractionHint(){
   state.interactionTarget=nearbyInteraction();
   const hint=$("interactionHint");
+  const mobileButton=document.querySelector('[data-mobile-action="interact"]');
+  const mobileLabel=$("mobileInteractLabel");
+  if(mobileButton){
+    mobileButton.classList.toggle("available",!!state.interactionTarget);
+    mobileButton.setAttribute("aria-label",state.interactionTarget?.label||"Interagieren");
+  }
+  if(mobileLabel){
+    const target=state.interactionTarget;
+    mobileLabel.textContent=!target?"Aktion":target.type==="animalCorpse"
+      ?(state.draggingAnimalId===target.animal.id?"Loslassen":"Ziehen")
+      :"Ansehen";
+  }
   if(!hint) return;
   hint.classList.toggle("hidden",!state.interactionTarget);
-  if(state.interactionTarget) hint.innerHTML='<kbd>E</kbd> '+state.interactionTarget.label;
+  if(state.interactionTarget) hint.innerHTML='<kbd>'+(touchControlsActive()?"AKTION":"E")+'</kbd> '+state.interactionTarget.label;
 }
 
 function interactWithWorld(){
@@ -3254,9 +3324,11 @@ function updateQuickbar(){
     button.classList.toggle("active",!!item&&item.id===equippedId);
     button.classList.toggle("stored",!!item&&item.id!==equippedId);
   }
+  updateMobileControlState();
 }
 
 function toggleInventory(force){
+  releaseAllMobileControls();
   state.inventoryOpen=force??!state.inventoryOpen;
   if(state.inventoryOpen){
     state.mapOpen=false;
@@ -3265,6 +3337,7 @@ function toggleInventory(force){
     renderInventory();
   }
   $("inventoryOverlay").classList.toggle("hidden",!state.inventoryOpen);
+  updateMobileControlState();
 }
 
 function directionVector(direction){
@@ -3950,6 +4023,7 @@ function startGame(){
   state.player.drowning=false;
   state.dead=false;
   state.draggingAnimalId=null;
+  releaseAllMobileControls();
   state.player.walkTime=0;
   syncHeldItem();
   $("menuScreen").classList.add("hidden");
@@ -3965,6 +4039,7 @@ function startGame(){
   state.lastTime=performance.now();
   state.lastUiUpdate=0;
   updatePortrait();
+  updateMobileControlState();
   requestAnimationFrame(loop);
   broadcast({type:"hello",player:publicPlayer()});
   showToast("Willkommen in der zersplitterten See");
@@ -4198,12 +4273,15 @@ function maybeSendNetwork(ts){
 }
 
 function togglePause(force){
+  releaseAllMobileControls();
   state.paused=force??!state.paused;
   if(state.paused&&state.inventoryOpen) toggleInventory(false);
   $("pauseMenu").classList.toggle("hidden",!state.paused);
+  updateMobileControlState();
 }
 
 function toggleMap(force){
+  releaseAllMobileControls();
   state.mapOpen=force??!state.mapOpen;
   if(state.mapOpen&&state.inventoryOpen){
     state.inventoryOpen=false;
@@ -4211,11 +4289,13 @@ function toggleMap(force){
   }
   $("mapOverlay").classList.toggle("hidden",!state.mapOpen);
   if(state.mapOpen) drawWorldMap();
+  updateMobileControlState();
 }
 
 window.addEventListener("keydown",(event)=>{
   const key=event.key.toLowerCase();
   if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright","shift"].includes(key)){
+    keyboardHeldKeys.add(key);
     state.keys.add(key);
     event.preventDefault();
   }
@@ -4253,8 +4333,17 @@ window.addEventListener("keydown",(event)=>{
     event.preventDefault();
   }
 });
-window.addEventListener("keyup",(event)=>state.keys.delete(event.key.toLowerCase()));
-window.addEventListener("blur",()=>state.keys.clear());
+window.addEventListener("keyup",(event)=>{
+  const key=event.key.toLowerCase();
+  keyboardHeldKeys.delete(key);
+  const heldByTouch=[...mobileHeldPointers.values()].some((entry)=>entry.key===key);
+  if(!heldByTouch) state.keys.delete(key);
+});
+window.addEventListener("blur",()=>{
+  keyboardHeldKeys.clear();
+  releaseAllMobileControls();
+  state.keys.clear();
+});
 
 $("beginBtn").addEventListener("click",()=>showMenu(false));
 $("multiplayerTitleBtn").addEventListener("click",()=>showMenu(true));
@@ -4325,6 +4414,71 @@ for(const button of document.querySelectorAll("[data-quick-item]")){
   });
 }
 
+function bindMobileHoldButton(button){
+  const key=button.dataset.mobileKey;
+  const release=(event)=>releaseMobilePointer(event.pointerId);
+  button.addEventListener("pointerdown",(event)=>{
+    if(!state.running||state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try{button.setPointerCapture(event.pointerId);}catch{}
+    setMobileHeldKey(event.pointerId,key,button);
+    mobileHaptic(5);
+  });
+  button.addEventListener("pointerup",release);
+  button.addEventListener("pointercancel",release);
+  button.addEventListener("lostpointercapture",release);
+  button.addEventListener("contextmenu",(event)=>event.preventDefault());
+}
+
+function bindMobileTapButton(button,handler,haptic=8){
+  const clear=(event)=>{
+    button.classList.remove("is-pressed");
+    if(event?.pointerId!==undefined){
+      try{button.releasePointerCapture(event.pointerId);}catch{}
+    }
+  };
+  button.addEventListener("pointerdown",(event)=>{
+    event.preventDefault();
+    event.stopPropagation();
+    try{button.setPointerCapture(event.pointerId);}catch{}
+    button.classList.add("is-pressed");
+    mobileHaptic(haptic);
+    handler();
+  });
+  button.addEventListener("pointerup",clear);
+  button.addEventListener("pointercancel",clear);
+  button.addEventListener("lostpointercapture",clear);
+  button.addEventListener("click",(event)=>{
+    event.preventDefault();
+    event.stopPropagation();
+    // Keyboard activation creates a click without pointer coordinates.
+    if(event.detail===0) handler();
+  });
+  button.addEventListener("contextmenu",(event)=>event.preventDefault());
+}
+
+for(const button of document.querySelectorAll("[data-mobile-key]")) bindMobileHoldButton(button);
+for(const button of document.querySelectorAll("[data-mobile-action]")){
+  const action=button.dataset.mobileAction;
+  const handler=action==="attack"?()=>useEquippedItem()
+    :action==="interact"?()=>interactWithWorld()
+    :action==="inventory"?()=>{
+      if(state.paused) togglePause(false);
+      toggleInventory();
+    }
+    :action==="map"?()=>{
+      if(state.paused) togglePause(false);
+      toggleMap();
+    }
+    :()=>{
+      if(state.inventoryOpen) toggleInventory(false);
+      else if(state.mapOpen) toggleMap(false);
+      else togglePause();
+    };
+  bindMobileTapButton(button,handler,action==="attack"?[8,18,8]:7);
+}
+
 worldMap.addEventListener("click",(event)=>{
   if(!state.debug.enabled) return;
   const rect=worldMap.getBoundingClientRect();
@@ -4340,7 +4494,7 @@ canvas.addEventListener("click",(event)=>{
     const px=(event.clientX-rect.left)/rect.width*canvas.width;
     const py=(event.clientY-rect.top)/rect.height*canvas.height;
     teleportPlayer(state.camera.x+(px-canvas.width/2)/VIEW_SCALE,state.camera.y+(py-canvas.height/2)/VIEW_SCALE);
-  }else{
+  }else if(!touchControlsActive()){
     useEquippedItem();
   }
 });
@@ -4353,6 +4507,7 @@ updatePreviewDirection();
 updatePortrait();
 renderInventory();
 updateQuickbar();
+updateMobileControlState();
 requestAnimationFrame(paintPreview);
 
 window.__ARCHIPELAGO_DEBUG__ = {

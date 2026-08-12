@@ -14,6 +14,8 @@ const PLAYER_RADIUS = 2.15;
 const NET_SEND_HZ = 12;
 const MAP_SAMPLE = 4;
 const TREE_PLOT_TILES = 4;
+const ROAD_DECOR_PLOT_TILES = 12;
+const BLOCK_TEXTURE_PIXELS = 8;
 const RIVER_TRACE_STEP = TILE_METERS * 8;
 const RIVER_INDEX_METERS = TILE_METERS * 8;
 const SWIM_STAMINA_DRAIN = 8;
@@ -28,6 +30,8 @@ const VISUAL_CACHE_LIMIT = 36000;
 // Large enough to keep deterministic tree object identity during broad scans,
 // still bounded so exploring the entire 20 km world cannot grow forever.
 const TREE_CACHE_LIMIT = 120000;
+const ROAD_DECOR_CACHE_LIMIT = 24000;
+const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
 const EFFECT_LIMIT = 56;
 const UI_UPDATE_MS = 100;
 
@@ -223,6 +227,8 @@ const landmarks = [
 const terrainCache = new Map();
 const visualTileCache = new Map();
 const treePlotCache = new Map();
+const roadDecorPlotCache = new Map();
+const roadDecorCellCache = new Map();
 const terrainFrameCache = {canvas:null,scratch:null,anchorX:NaN,anchorY:NaN,width:0,height:0,columns:0,rows:0,displayRevision:-1};
 const renderStats = {terrainFrameBuilds:0,terrainFrameShifts:0,tileBuilds:0};
 
@@ -441,7 +447,7 @@ function riverAt(x,y,height){
   return null;
 }
 
-function roadAt(x,y){
+function roadSegmentAt(x,y){
   // Roads occupy complete world blocks. Sampling the block centre turns every
   // diagonal into an intentional pixel staircase instead of a smooth vector line.
   const gx=Math.floor(Math.max(0,Math.min(WORLD_SIZE-.001,x))/TILE_METERS);
@@ -450,14 +456,38 @@ function roadAt(x,y){
   const ny=(gy*TILE_METERS+TILE_METERS/2)/WORLD_SIZE;
   // Five blocks across at the widest points: about three times the old trail.
   const halfWidth=TILE_METERS*2.34/WORLD_SIZE;
-  for(const route of routes){
+  let nearest=null;
+  for(let routeIndex=0;routeIndex<routes.length;routeIndex++){
+    const route=routes[routeIndex];
     for(let i=0;i<route.length-1;i++){
       const a=route[i];
       const b=route[i+1];
-      if(segmentDistance(nx,ny,a[0],a[1],b[0],b[1]).distance<halfWidth) return true;
+      const hit=segmentDistance(nx,ny,a[0],a[1],b[0],b[1]);
+      if(hit.distance>=halfWidth||nearest&&hit.distance>=nearest.distance) continue;
+      const dx=(b[0]-a[0])*WORLD_SIZE;
+      const dy=(b[1]-a[1])*WORLD_SIZE;
+      const length=Math.hypot(dx,dy)||1;
+      nearest={distance:hit.distance,dirX:dx/length,dirY:dy/length,route,routeIndex,index:i};
     }
   }
-  return false;
+  return nearest;
+}
+
+function roadAt(x,y){
+  return !!roadSegmentAt(x,y);
+}
+
+function bridgeAt(x,y,terrain=null){
+  const ground=terrain||terrainAt(x,y);
+  if(ground.biome!=="river") return null;
+  const road=roadSegmentAt(x,y);
+  if(!road) return null;
+  return {
+    axis:Math.abs(road.dirX)>=Math.abs(road.dirY)?"horizontal":"vertical",
+    material:hash2(road.routeIndex,ground.river?.river?.name.length||0,5101)>.78?"stone":"wood",
+    dirX:road.dirX,
+    dirY:road.dirY
+  };
 }
 
 function terrainAt(x,y){
@@ -641,6 +671,95 @@ function drawDecoration(target,kind,px,py,size){
   }
 }
 
+const roadTileTextures = [
+  [
+    "dddddddd","ddddlddd","ddmddddd","ddddddpd",
+    "dldddddd","ddddmddd","ddpddddd","ddddddld"
+  ],
+  [
+    "dddddddd","ddlddddd","dddddpdd","mddddddd",
+    "ddddddld","dddmdddd","dddddddd","dldddpdd"
+  ],
+  [
+    "ddmddmdd","ddmddmdd","ddlddlpd","ddmddmdd",
+    "ddmddmdd","ddlddlld","ddmddmdd","ddmddmdd"
+  ],
+  [
+    "dddddddd","ddlddddd","ddwwwwdd","dwwwwwwd",
+    "dwwwwwwd","ddwwwwdd","ddddlddd","mddddddd"
+  ]
+];
+
+function drawPixelTexture(target,pattern,colors,sx,sy,size){
+  const pixel=size/BLOCK_TEXTURE_PIXELS;
+  for(let row=0;row<BLOCK_TEXTURE_PIXELS;row++){
+    const line=pattern[row];
+    let start=0;
+    while(start<BLOCK_TEXTURE_PIXELS){
+      const code=line[start];
+      let end=start+1;
+      while(end<BLOCK_TEXTURE_PIXELS&&line[end]===code) end++;
+      if(code!=="."&&colors[code]){
+        const left=Math.floor(sx+start*pixel);
+        const right=Math.ceil(sx+end*pixel);
+        const top=Math.floor(sy+row*pixel);
+        const bottom=Math.ceil(sy+(row+1)*pixel);
+        target.fillStyle=colors[code];
+        target.fillRect(left,top,right-left,bottom-top);
+      }
+      start=end;
+    }
+  }
+}
+
+function drawRoadTexture(target,sx,sy,size,roadColor,n){
+  const texture=n>.97?roadTileTextures[3]:n>.90?roadTileTextures[2]:roadTileTextures[Math.floor(n*2)%2];
+  drawPixelTexture(target,texture,{
+    d:roadColor,
+    l:shade(roadColor,20),
+    m:shade(roadColor,-22),
+    p:"#746247",
+    w:"#6d7c78"
+  },sx,sy,size);
+}
+
+function bridgeNeighbor(gx,gy,axis){
+  if(gx<0||gy<0||gx*TILE_METERS>=WORLD_SIZE||gy*TILE_METERS>=WORLD_SIZE) return false;
+  const x=(gx+.5)*TILE_METERS;
+  const y=(gy+.5)*TILE_METERS;
+  return bridgeAt(x,y,terrainAt(x,y))?.axis===axis;
+}
+
+function drawBridgeTexture(target,sx,sy,size,gx,gy,bridge){
+  const wood=bridge.material==="wood";
+  const base=wood?"#76502f":"#77786d";
+  const light=wood?"#a87943":"#9b9c8d";
+  const dark=wood?"#4a301f":"#4d514d";
+  const plank=wood?"#896039":"#85867a";
+  const horizontal=bridge.axis==="horizontal";
+  const pattern=horizontal?[
+    "dddddddd","plppplpp","plppplpp","plppplpp",
+    "plppplpp","plppplpp","plppplpp","dddddddd"
+  ]:[
+    "dppppppd","dlplplpd","dppppppd","dppppppd",
+    "dppppppd","dlplplpd","dppppppd","dppppppd"
+  ];
+  drawPixelTexture(target,pattern,{d:dark,p:plank,l:light},sx,sy,size);
+  const pixel=size/BLOCK_TEXTURE_PIXELS;
+  target.fillStyle=light;
+  if(horizontal){
+    if(!bridgeNeighbor(gx,gy-1,bridge.axis)) target.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size),Math.max(2,Math.ceil(pixel)));
+    if(!bridgeNeighbor(gx,gy+1,bridge.axis)) target.fillRect(Math.floor(sx),Math.floor(sy+size-pixel),Math.ceil(size),Math.max(2,Math.ceil(pixel)));
+  }else{
+    if(!bridgeNeighbor(gx-1,gy,bridge.axis)) target.fillRect(Math.floor(sx),Math.floor(sy),Math.max(2,Math.ceil(pixel)),Math.ceil(size));
+    if(!bridgeNeighbor(gx+1,gy,bridge.axis)) target.fillRect(Math.floor(sx+size-pixel),Math.floor(sy),Math.max(2,Math.ceil(pixel)),Math.ceil(size));
+  }
+  target.fillStyle=base;
+  const bolt=Math.max(1,Math.ceil(pixel*.55));
+  target.fillRect(Math.floor(sx+pixel),Math.floor(sy+pixel),bolt,bolt);
+  target.fillRect(Math.floor(sx+size-pixel*1.5),Math.floor(sy+size-pixel*1.5),bolt,bolt);
+}
+
 function drawGridBlock(gx,gy,camX,camY,color,accent=null){
   const size=TILE_METERS*VIEW_SCALE;
   const x=(gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2;
@@ -716,9 +835,16 @@ function treeForPlot(plotX,plotY){
     cacheValue(treePlotCache,cacheKey,null,TREE_CACHE_LIMIT);
     return null;
   }
+  const variant=Math.floor(hash2(plotX,plotY,1711)*3);
+  // Check the complete crown/trunk footprint, not only the trunk tile. This
+  // keeps broad canopies from hanging across a five-block-wide road.
+  if(treeOverlapsRoad(gx,gy,kind,variant)){
+    cacheValue(treePlotCache,cacheKey,null,TREE_CACHE_LIMIT);
+    return null;
+  }
   const tree={
     gx,gy,kind,
-    variant:Math.floor(hash2(plotX,plotY,1711)*3),
+    variant,
     phase:hash2(plotX,plotY,1712)*Math.PI*2,
     reactUntil:0
   };
@@ -778,6 +904,26 @@ const treePalettes = {
   frostPine:["#315c58","#4f7b72","#8da79a"],
   acacia:["#4e572d","#6f7134","#9a8d46"]
 };
+
+function treeFootprint(kind,variant){
+  const trunk=[[0,0]];
+  if(kind==="iceSpire") return trunk.concat([[0,-1],[-1,0]],variant===2?[[1,0]]:[]);
+  if(kind==="cactus"){
+    const side=variant===1?-1:1;
+    return trunk.concat([[0,-1],[0,-2],[side,-1],[side,-2]],variant===2?[[-1,0]]:[]);
+  }
+  if(kind==="dead") return trunk.concat([[0,-1],[0,-2],[-1,-2],[1,-2]]);
+  if(kind==="palm") return trunk.concat([[0,-1],[0,-3],[-1,-3],[1,-3],[-2,-3],[2,-3],[0,-4],[-1,-4],[1,-4]]);
+  const shapes=treeShapes[kind]||treeShapes.oak;
+  return trunk.concat(shapes[variant%shapes.length]);
+}
+
+function treeOverlapsRoad(gx,gy,kind,variant){
+  for(const [dx,dy] of treeFootprint(kind,variant)){
+    if(roadAt((gx+dx+.5)*TILE_METERS,(gy+dy+.5)*TILE_METERS)) return true;
+  }
+  return false;
+}
 
 function drawTreeBlock(gx,gy,camX,camY,colors,seed){
   const size=TILE_METERS*VIEW_SCALE;
@@ -877,6 +1023,195 @@ function visibleTrees(startGX,endGX,startGY,endGY){
   return trees;
 }
 
+const roadAssetCatalog = {
+  boulder:{w:2,h:2,solid:[[0,0],[1,0],[0,1],[1,1]],label:"Großen Fels untersuchen",message:"Moos wächst in den tiefen Rissen des Findlings."},
+  standingStone:{w:1,h:2,solid:[[0,1]],label:"Steinmal untersuchen",message:"Das verwitterte Steinmal weist auf einen vergessenen Pfad."},
+  sign:{w:1,h:2,solid:[[0,1]],label:"Wegweiser lesen",message:"Die eingeritzten Pfeile zeigen zu den nächsten Siedlungen."},
+  milestone:{w:1,h:2,solid:[[0,1]],label:"Meilenstein ansehen",message:"Die alte Entfernungsangabe ist kaum noch zu erkennen."},
+  wagon:{w:3,h:2,solid:[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]],label:"Kaputten Wagen durchsuchen",message:"Zwischen den gebrochenen Speichen liegt nur feuchtes Stroh."},
+  handcart:{w:2,h:2,solid:[[0,0],[1,0],[0,1],[1,1]],label:"Handkarren untersuchen",message:"Der Karren wurde hastig am Weg zurückgelassen."},
+  supplies:{w:2,h:2,solid:[[0,0],[1,0],[0,1],[1,1]],label:"Vorräte untersuchen",message:"Kisten, ein Fass und ein leerer Sack – alles längst geplündert."},
+  lantern:{w:1,h:2,solid:[[0,1]],label:"Weglaterne untersuchen",message:"In der Laterne glimmt noch ein unerwartet warmer Funke."},
+  shrine:{w:2,h:2,solid:[[0,1],[1,1]],label:"Wegschrein untersuchen",message:"Eine kleine Kerze flackert im windgeschützten Schrein."},
+  camp:{w:2,h:1,solid:[[0,0]],label:"Verlassenes Lager ansehen",message:"Die kalte Feuerstelle und der zusammengerollte Schlafsack sind noch trocken."},
+  log:{w:3,h:1,solid:[[0,0],[1,0],[2,0]],label:"Gefallenen Stamm untersuchen",message:"Unter der morschen Rinde krabbeln winzige Käfer."},
+  rubble:{w:2,h:1,solid:[[0,0],[1,0]],label:"Trümmer untersuchen",message:"Rad, Achse und Steine stammen wohl von einem alten Unfall."},
+  notice:{w:2,h:2,solid:[[0,1],[1,1]],label:"Anschlagtafel lesen",message:"Regen hat die meisten Aushänge unlesbar gemacht."}
+};
+
+const roadAssetKinds = [
+  "boulder","standingStone","sign","milestone","wagon","handcart","supplies",
+  "lantern","shrine","camp","log","rubble","notice"
+];
+
+function chooseRoadAssetKind(seed,biome){
+  let pool=roadAssetKinds;
+  if(biome==="desert") pool=["standingStone","sign","milestone","wagon","supplies","camp","rubble","notice"];
+  else if(["tundra","glacier","snow"].includes(biome)) pool=["boulder","standingStone","sign","milestone","wagon","lantern","shrine","rubble"];
+  else if(["forest","jungle","swamp"].includes(biome)) pool=["boulder","sign","handcart","supplies","lantern","shrine","camp","log","notice"];
+  return pool[Math.floor(seed*pool.length)%pool.length];
+}
+
+function roadDecorationForPlot(plotX,plotY){
+  const cacheKey=plotX+","+plotY;
+  if(roadDecorPlotCache.has(cacheKey)) return roadDecorPlotCache.get(cacheKey);
+  const density=hash2(plotX,plotY,5201);
+  if(density<.36) return cacheValue(roadDecorPlotCache,cacheKey,null,ROAD_DECOR_CACHE_LIMIT);
+
+  const roadTiles=[];
+  const startGX=plotX*ROAD_DECOR_PLOT_TILES;
+  const startGY=plotY*ROAD_DECOR_PLOT_TILES;
+  for(let localY=0;localY<ROAD_DECOR_PLOT_TILES;localY++){
+    for(let localX=0;localX<ROAD_DECOR_PLOT_TILES;localX++){
+      const gx=startGX+localX;
+      const gy=startGY+localY;
+      const x=(gx+.5)*TILE_METERS;
+      const y=(gy+.5)*TILE_METERS;
+      const road=roadSegmentAt(x,y);
+      if(road&&!bridgeAt(x,y,terrainAt(x,y))) roadTiles.push({gx,gy,road});
+    }
+  }
+  if(!roadTiles.length) return cacheValue(roadDecorPlotCache,cacheKey,null,ROAD_DECOR_CACHE_LIMIT);
+
+  const pick=roadTiles[Math.floor(hash2(plotX,plotY,5202)*roadTiles.length)%roadTiles.length];
+  const roadHorizontal=Math.abs(pick.road.dirX)>=Math.abs(pick.road.dirY);
+  const side=hash2(plotX,plotY,5203)>.5?1:-1;
+  const sampleX=(pick.gx+.5)*TILE_METERS;
+  const sampleY=(pick.gy+.5)*TILE_METERS;
+  const sampleTerrain=terrainAt(sampleX,sampleY);
+  const kind=chooseRoadAssetKind(hash2(plotX,plotY,5204),sampleTerrain.biome);
+  const meta=roadAssetCatalog[kind];
+  const clearance=4+Math.ceil((roadHorizontal?meta.h:meta.w)/2);
+  const centreGX=pick.gx+(roadHorizontal?0:side*clearance);
+  const centreGY=pick.gy+(roadHorizontal?side*clearance:0);
+  const gx=centreGX-Math.floor(meta.w/2);
+  const gy=centreGY-Math.floor(meta.h/2);
+
+  for(let ay=0;ay<meta.h;ay++){
+    for(let ax=0;ax<meta.w;ax++){
+      const cellGX=gx+ax;
+      const cellGY=gy+ay;
+      if(cellGX<0||cellGY<0||cellGX*TILE_METERS>=WORLD_SIZE||cellGY*TILE_METERS>=WORLD_SIZE) return cacheValue(roadDecorPlotCache,cacheKey,null,ROAD_DECOR_CACHE_LIMIT);
+      const x=(cellGX+.5)*TILE_METERS;
+      const y=(cellGY+.5)*TILE_METERS;
+      const terrain=terrainAt(x,y);
+      if(roadAt(x,y)||["deepWater","water","shallow","river","packIce"].includes(terrain.biome)||nearLandmarkGrid(cellGX,cellGY,2)||structureAtGrid(cellGX,cellGY)||treeAtGrid(cellGX,cellGY)){
+        return cacheValue(roadDecorPlotCache,cacheKey,null,ROAD_DECOR_CACHE_LIMIT);
+      }
+    }
+  }
+
+  return cacheValue(roadDecorPlotCache,cacheKey,{
+    gx,gy,kind,
+    variant:Math.floor(hash2(plotX,plotY,5205)*3),
+    flip:hash2(plotX,plotY,5206)>.5
+  },ROAD_DECOR_CACHE_LIMIT);
+}
+
+function visibleRoadDecorations(startGX,endGX,startGY,endGY){
+  const assets=[];
+  const minPlotX=Math.floor(startGX/ROAD_DECOR_PLOT_TILES)-1;
+  const maxPlotX=Math.floor(endGX/ROAD_DECOR_PLOT_TILES)+1;
+  const minPlotY=Math.floor(startGY/ROAD_DECOR_PLOT_TILES)-1;
+  const maxPlotY=Math.floor(endGY/ROAD_DECOR_PLOT_TILES)+1;
+  for(let py=minPlotY;py<=maxPlotY;py++){
+    for(let px=minPlotX;px<=maxPlotX;px++){
+      const asset=roadDecorationForPlot(px,py);
+      if(asset) assets.push(asset);
+    }
+  }
+  return assets;
+}
+
+function roadDecorationAtGrid(gx,gy){
+  const cacheKey=gx+","+gy;
+  if(roadDecorCellCache.has(cacheKey)) return roadDecorCellCache.get(cacheKey);
+  const plotX=Math.floor(gx/ROAD_DECOR_PLOT_TILES);
+  const plotY=Math.floor(gy/ROAD_DECOR_PLOT_TILES);
+  for(let py=plotY-1;py<=plotY+1;py++){
+    for(let px=plotX-1;px<=plotX+1;px++){
+      const asset=roadDecorationForPlot(px,py);
+      if(!asset) continue;
+      const meta=roadAssetCatalog[asset.kind];
+      const localX=gx-asset.gx;
+      const localY=gy-asset.gy;
+      if(meta.solid.some(([sx,sy])=>sx===localX&&sy===localY)) return cacheValue(roadDecorCellCache,cacheKey,asset,ROAD_DECOR_CELL_CACHE_LIMIT);
+    }
+  }
+  return cacheValue(roadDecorCellCache,cacheKey,null,ROAD_DECOR_CELL_CACHE_LIMIT);
+}
+
+function drawRoadDecoration(asset,camX,camY){
+  const meta=roadAssetCatalog[asset.kind];
+  const block=TILE_METERS*VIEW_SCALE;
+  const unit=block/BLOCK_TEXTURE_PIXELS;
+  const screenX=(asset.gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2;
+  const screenY=(asset.gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2;
+  const width=meta.w*BLOCK_TEXTURE_PIXELS;
+  const height=meta.h*BLOCK_TEXTURE_PIXELS;
+  const stoneDark="#454a45",stone="#74766d",stoneLight="#a3a08f",moss="#596b38";
+  const woodDark="#3d2a1d",wood="#6e4728",woodLight="#9a6a3b",metal="#777d78";
+  const pixelRect=(x,y,w,h,color)=>{
+    ctx.fillStyle=color;
+    ctx.fillRect(Math.floor(x*unit),Math.floor(y*unit),Math.ceil(w*unit),Math.ceil(h*unit));
+  };
+
+  ctx.save();
+  ctx.translate(Math.round(screenX),Math.round(screenY));
+  if(asset.flip){ctx.translate(Math.round(meta.w*block),0);ctx.scale(-1,1);}
+  pixelRect(1,height-2,width-2,2,"rgba(7,13,11,.28)");
+
+  if(asset.kind==="boulder"){
+    pixelRect(1,7,14,7,stoneDark);pixelRect(3,3,11,10,stone);pixelRect(5,2,6,4,stoneLight);
+    pixelRect(2,6,4,3,moss);pixelRect(9,3,4,2,moss);pixelRect(11,10,3,3,shade(stone,-12));
+  }else if(asset.kind==="standingStone"){
+    pixelRect(1,4,6,11,stoneDark);pixelRect(2,1,5,13,stone);pixelRect(3,2,3,3,stoneLight);
+    pixelRect(4,5,1,4,stoneDark);pixelRect(3,8,2,1,stoneDark);pixelRect(1,12,3,2,moss);
+  }else if(asset.kind==="sign"){
+    pixelRect(3,5,2,11,woodDark);pixelRect(4,6,1,9,woodLight);pixelRect(0,3,8,3,wood);
+    pixelRect(2,7,6,3,wood);pixelRect(1,4,5,1,woodLight);pixelRect(4,4,1,1,metal);pixelRect(3,8,1,1,metal);
+  }else if(asset.kind==="milestone"){
+    pixelRect(1,7,6,8,stoneDark);pixelRect(2,4,5,10,stone);pixelRect(3,3,3,3,stoneLight);
+    pixelRect(3,7,2,1,stoneDark);pixelRect(2,12,3,2,moss);
+  }else if(asset.kind==="wagon"){
+    pixelRect(3,5,15,8,woodDark);pixelRect(5,4,13,7,wood);pixelRect(6,5,11,1,woodLight);
+    for(let x=7;x<18;x+=3) pixelRect(x,5,1,6,woodDark);
+    pixelRect(1,10,6,6,woodDark);pixelRect(2,11,4,4,woodLight);pixelRect(3,12,2,2,woodDark);
+    pixelRect(15,10,6,6,woodDark);pixelRect(16,11,4,4,woodLight);pixelRect(17,12,2,2,woodDark);
+    pixelRect(18,9,6,2,wood);pixelRect(21,8,3,1,woodLight);
+  }else if(asset.kind==="handcart"){
+    pixelRect(2,5,10,8,woodDark);pixelRect(3,4,9,7,wood);pixelRect(4,5,7,1,woodLight);
+    pixelRect(9,10,6,6,woodDark);pixelRect(10,11,4,4,woodLight);pixelRect(11,12,2,2,woodDark);
+    pixelRect(0,12,5,2,wood);pixelRect(0,9,2,1,woodLight);
+  }else if(asset.kind==="supplies"){
+    pixelRect(1,6,7,8,woodDark);pixelRect(2,5,6,7,wood);pixelRect(3,6,4,1,woodLight);
+    pixelRect(7,3,8,11,woodDark);pixelRect(8,4,6,9,wood);pixelRect(8,6,6,1,metal);pixelRect(8,10,6,1,metal);
+    pixelRect(2,12,5,2,"#9b8355");
+  }else if(asset.kind==="lantern"){
+    ctx.fillStyle="rgba(244,190,72,.16)";ctx.fillRect(Math.floor(3*unit),Math.floor(3*unit),Math.ceil(5*unit),Math.ceil(7*unit));
+    pixelRect(2,2,2,14,woodDark);pixelRect(3,2,1,13,woodLight);pixelRect(3,3,5,1,wood);
+    pixelRect(6,4,2,4,metal);pixelRect(6,5,2,2,"#e7b64f");pixelRect(7,5,1,1,"#ffe59a");
+  }else if(asset.kind==="shrine"){
+    pixelRect(1,6,14,9,stoneDark);pixelRect(3,3,10,11,stone);pixelRect(5,2,6,3,"#8a5a31");
+    pixelRect(5,6,6,7,"#252a27");pixelRect(6,11,4,2,stoneLight);pixelRect(7,8,2,3,"#d89b3f");pixelRect(7,7,2,2,"#f1d479");
+    pixelRect(2,12,3,2,moss);pixelRect(11,5,3,2,moss);
+  }else if(asset.kind==="camp"){
+    pixelRect(1,3,8,4,"#58634f");pixelRect(2,2,7,3,"#7b825f");pixelRect(8,5,7,2,stoneDark);
+    pixelRect(10,4,3,3,"#a9562f");pixelRect(11,3,1,2,"#edbb4e");pixelRect(9,6,5,1,woodDark);
+  }else if(asset.kind==="log"){
+    pixelRect(2,2,19,5,woodDark);pixelRect(3,1,18,5,wood);pixelRect(4,2,16,1,woodLight);
+    pixelRect(20,1,4,6,"#9a7448");pixelRect(21,2,2,4,woodDark);pixelRect(0,5,5,2,moss);pixelRect(8,1,4,2,moss);
+  }else if(asset.kind==="rubble"){
+    pixelRect(1,4,5,3,stoneDark);pixelRect(2,3,3,3,stone);pixelRect(7,2,5,5,woodDark);
+    pixelRect(8,3,3,3,woodLight);pixelRect(9,4,1,1,woodDark);pixelRect(11,5,5,2,stone);pixelRect(13,3,2,3,stoneLight);
+  }else if(asset.kind==="notice"){
+    pixelRect(1,5,2,11,woodDark);pixelRect(13,5,2,11,woodDark);pixelRect(1,3,14,9,wood);
+    pixelRect(2,4,12,1,woodLight);pixelRect(4,6,3,4,"#d4c9a6");pixelRect(9,6,3,3,"#bfae86");
+    pixelRect(5,7,1,1,"#7d6848");pixelRect(10,7,1,1,"#7d6848");
+  }
+  ctx.restore();
+}
+
 function drawTile(target,wx,wy,sx,sy,size,terrain){
   const ctx=target;
   const gx=Math.floor(wx/TILE_METERS);
@@ -885,32 +1220,28 @@ function drawTile(target,wx,wy,sx,sy,size,terrain){
   let visual=visualTileCache.get(cacheKey);
   if(!visual){
     const n=hash2(gx,gy,77);
-    const road=roadAt(wx+TILE_METERS/2,wy+TILE_METERS/2)
+    const centreX=wx+TILE_METERS/2;
+    const centreY=wy+TILE_METERS/2;
+    const bridge=bridgeAt(centreX,centreY,terrain);
+    const road=!bridge&&roadAt(centreX,centreY)
       && !["deepWater","water","shallow","river"].includes(terrain.biome);
-    const deco=!road&&!nearLandmarkGrid(gx,gy,2)?tileDecoration(wx,wy,terrain.biome):null;
+    const deco=!road&&!bridge&&!nearLandmarkGrid(gx,gy,2)?tileDecoration(wx,wy,terrain.biome):null;
     const variation=Math.round((n-.5)*10);
     visual={
-      n,road,deco,
+      n,road,bridge,deco,
       baseColor:shade(palette[terrain.biome],variation),
       roadColor:road?shade("#9b8255",Math.round((n-.5)*14)):null,
       waterLike:["water","deepWater","shallow","river"].includes(terrain.biome)
     };
     cacheValue(visualTileCache,cacheKey,visual,VISUAL_CACHE_LIMIT);
   }
-  const {n,road,deco}=visual;
+  const {n,road,bridge,deco}=visual;
   ctx.fillStyle=visual.baseColor;
   ctx.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size)+1,Math.ceil(size)+1);
-  if(road){
-    ctx.fillStyle=visual.roadColor;
-    ctx.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size)+1,Math.ceil(size)+1);
-    ctx.fillStyle="rgba(239,211,145,.20)";
-    const pebble=Math.max(2,Math.floor(size*.18));
-    ctx.fillRect(Math.floor(sx+size*.16),Math.floor(sy+size*.19),pebble,pebble);
-    ctx.fillStyle="rgba(66,49,31,.18)";
-    ctx.fillRect(Math.floor(sx+size*.66),Math.floor(sy+size*.62),pebble,pebble);
-  }
+  if(bridge) drawBridgeTexture(ctx,sx,sy,size,gx,gy,bridge);
+  else if(road) drawRoadTexture(ctx,sx,sy,size,visual.roadColor,n);
 
-  if(!road&&visual.waterLike){
+  if(!road&&!bridge&&visual.waterLike){
     if(n>0.48){
       ctx.fillStyle=terrain.biome==="river"?"rgba(224,243,239,.20)":"rgba(210,240,245,.15)";
       ctx.fillRect(Math.floor(sx+size*.12),Math.floor(sy+size*.45),Math.max(2,size*.45),Math.max(1,size*.055));
@@ -1073,6 +1404,8 @@ function collisionAt(x,y){
   if(tree) return {type:"tree",tree,gx,gy};
   const structure=structureAtGrid(gx,gy);
   if(structure&&structure.code!=="p") return structure;
+  const roadDecoration=roadDecorationAtGrid(gx,gy);
+  if(roadDecoration) return {type:"roadDecoration",asset:roadDecoration,gx,gy};
   return null;
 }
 
@@ -1103,7 +1436,7 @@ function drawStructureBlock(code,gx,gy,camX,camY){
   }
 }
 
-function drawLandmark(landmark,camX,camY){
+function drawLandmarkGround(landmark,camX,camY){
   const x=(landmark.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(landmark.y-camY)*VIEW_SCALE+canvas.height/2;
   if(x<-220||x>canvas.width+220||y<-220||y>canvas.height+220) return;
@@ -1113,9 +1446,35 @@ function drawLandmark(landmark,camX,camY){
   for(let row=0;row<pattern.length;row++){
     for(let column=0;column<pattern[row].length;column++){
       const code=pattern[row][column];
-      if(code!==".") drawStructureBlock(code,originGX+column,originGY+row,camX,camY);
+      if(code==="p") drawStructureBlock(code,originGX+column,originGY+row,camX,camY);
     }
   }
+}
+
+function visibleStructureBlocks(startGX,endGX,startGY,endGY){
+  const blocks=[];
+  for(const landmark of landmarks){
+    const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+    const originGX=Math.round(landmark.x/TILE_METERS)-Math.floor(pattern[0].length/2);
+    const originGY=Math.round(landmark.y/TILE_METERS)-Math.floor(pattern.length/2);
+    for(let row=0;row<pattern.length;row++){
+      for(let column=0;column<pattern[row].length;column++){
+        const code=pattern[row][column];
+        const gx=originGX+column;
+        const gy=originGY+row;
+        if(code==="."||code==="p"||gx<startGX-1||gx>endGX+1||gy<startGY-1||gy>endGY+1) continue;
+        blocks.push({type:"structure",code,landmark,gx,gy});
+      }
+    }
+  }
+  return blocks;
+}
+
+function drawLandmarkLabel(landmark,camX,camY){
+  const x=(landmark.x-camX)*VIEW_SCALE+canvas.width/2;
+  const y=(landmark.y-camY)*VIEW_SCALE+canvas.height/2;
+  if(x<-220||x>canvas.width+220||y<-220||y>canvas.height+220) return;
+  const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
   if(Math.hypot(landmark.x-camX,landmark.y-camY)>70){
     ctx.save();
     ctx.font="bold 11px Georgia";
@@ -1135,15 +1494,16 @@ function addEffect(effect){
 
 function emitFootstep(x,y){
   const terrain=terrainAt(x,y);
-  if(["river","shallow","water","deepWater"].includes(terrain.biome)){
+  const bridge=bridgeAt(x,y,terrain);
+  if(!bridge&&["river","shallow","water","deepWater"].includes(terrain.biome)){
     addEffect({type:"ripple",layer:"ground",x,y,life:.72,size:1.3});
   }else{
     addEffect({
       type:"footprint",layer:"ground",x,y,life:2.8,size:.75,
       dir:state.player.dir,
-      color:terrain.biome==="beach"?"#806b45":roadAt(x,y)?"#665238":"#31452f"
+      color:bridge?bridge.material==="wood"?"#4f3422":"#555954":terrain.biome==="beach"?"#806b45":roadAt(x,y)?"#665238":"#31452f"
     });
-    if(roadAt(x,y)) addEffect({type:"dust",layer:"air",x,y,life:.5,size:.7,vx:(Math.random()-.5)*2,vy:-2-Math.random()*2});
+    if(roadAt(x,y)&&!bridge) addEffect({type:"dust",layer:"air",x,y,life:.5,size:.7,vx:(Math.random()-.5)*2,vy:-2-Math.random()*2});
   }
 }
 
@@ -1167,7 +1527,7 @@ function reactToCollision(hit,x,y){
   if(!hit||state.elapsed<state.blockedUntil) return;
   state.blockedUntil=state.elapsed+.2;
   if(hit.type==="tree") shakeTree(hit.tree,false);
-  else if(hit.type==="structure"){
+  else if(hit.type==="structure"||hit.type==="roadDecoration"){
     for(let i=0;i<3;i++) addEffect({type:"dust",layer:"air",x,y,life:.55,size:.7,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
   }
 }
@@ -1243,6 +1603,12 @@ function nearbyInteraction(){
         const label=structure.code==="D"?"Tür untersuchen":structure.landmark.type==="ruin"?"Ruine untersuchen":"Gebäude ansehen";
         if(distance<15&&(!best||distance<best.distance)) best={...structure,distance,label};
       }
+      const asset=roadDecorationAtGrid(gx,gy);
+      if(asset){
+        const meta=roadAssetCatalog[asset.kind];
+        const distance=Math.hypot(px-(asset.gx+meta.w*.5)*TILE_METERS,py-(asset.gy+meta.h*.5)*TILE_METERS);
+        if(distance<18&&(!best||distance<best.distance)) best={type:"roadDecoration",asset,distance,label:meta.label};
+      }
     }
   }
   return best;
@@ -1264,6 +1630,10 @@ function interactWithWorld(){
     if(target.tree.kind==="iceSpire") showToast("Im Eis sind uralte Luftblasen eingeschlossen.");
     else if(target.tree.kind==="cactus") showToast("Der Kaktus speichert Wasser für die trockene Jahreszeit.");
     else showToast(target.tree.kind==="dead"?"Das morsche Holz knarrt im Wind.":"Blätter rascheln durch die Krone.");
+  }else if(target.type==="roadDecoration"){
+    const meta=roadAssetCatalog[target.asset.kind];
+    for(let i=0;i<4;i++) addEffect({type:"dust",layer:"air",x:state.player.x,y:state.player.y,life:.45+Math.random()*.35,size:.55,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
+    showToast(meta.message,2600);
   }else{
     for(let i=0;i<7;i++) addEffect({type:"dust",layer:"air",x:state.player.x,y:state.player.y,life:.55+Math.random()*.45,size:.6,vx:(Math.random()-.5)*5,vy:-2-Math.random()*4});
     if(target.code==="D") showToast("Die schwere Tür gibt noch nicht nach.");
@@ -1339,15 +1709,36 @@ function drawWorld(){
     Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
     Math.floor(startY/TILE_METERS),Math.ceil(endY/TILE_METERS)
   );
-  for(const landmark of landmarks) drawLandmark(landmark,camX,camY);
+  const roadDecorations=visibleRoadDecorations(
+    Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
+    Math.floor(startY/TILE_METERS),Math.ceil(endY/TILE_METERS)
+  );
+  const structureBlocks=visibleStructureBlocks(
+    Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
+    Math.floor(startY/TILE_METERS),Math.ceil(endY/TILE_METERS)
+  );
+  for(const landmark of landmarks) drawLandmarkGround(landmark,camX,camY);
 
   const renderQueue=trees.map((tree)=>({type:"tree",y:(tree.gy+.8)*TILE_METERS,tree}));
+  for(const asset of roadDecorations){
+    const meta=roadAssetCatalog[asset.kind];
+    renderQueue.push({type:"roadDecoration",y:(asset.gy+meta.h-.12)*TILE_METERS,asset});
+  }
+  for(const structure of structureBlocks) renderQueue.push({...structure,y:(structure.gy+.92)*TILE_METERS});
   for(const peer of state.peers.values()) renderQueue.push({type:"peer",y:peer.y,player:peer});
   renderQueue.push({type:"local",y:state.player.y,player:state.player});
   renderQueue.sort((a,b)=>a.y-b.y);
   for(const item of renderQueue){
     if(item.type==="tree"){
       drawGridTree(item.tree,camX,camY);
+      continue;
+    }
+    if(item.type==="roadDecoration"){
+      drawRoadDecoration(item.asset,camX,camY);
+      continue;
+    }
+    if(item.type==="structure"){
+      drawStructureBlock(item.code,item.gx,item.gy,camX,camY);
       continue;
     }
     const player=item.player;
@@ -1358,6 +1749,7 @@ function drawWorld(){
       if(player.swimming) drawSwimmingOverlay(sx,sy,player);
     }
   }
+  for(const landmark of landmarks) drawLandmarkLabel(landmark,camX,camY);
   drawEffects(camX,camY,"air");
 
   const hour=(8+state.elapsed/120)%24;
@@ -1367,6 +1759,46 @@ function drawWorld(){
     ctx.fillRect(0,0,w,h);
   }
   drawAmbientNature();
+}
+
+function drawBackHair(c,u,style,hair,dir){
+  if(dir==="up"||style==="hood"||style==="undercut"||style==="mohawk"||style==="tousled") return;
+  c.fillStyle=shade(hair,-8);
+  if(dir==="side"){
+    if(style==="long"){
+      c.fillRect(3*u,4*u,3*u,10*u);
+      c.fillRect(2*u,10*u,3*u,4*u);
+    }else if(style==="curls"){
+      for(const [hx,hy] of [[3,5],[4,7],[3,9],[4,11]]) c.fillRect(hx*u,hy*u,3*u,3*u);
+    }else if(style==="ponytail"){
+      c.fillRect(2*u,5*u,3*u,7*u);
+      c.fillRect(3*u,11*u,2*u,3*u);
+    }else if(style==="bun"){
+      c.fillRect(2*u,0,4*u,4*u);
+    }else if(style==="bob"){
+      c.fillRect(4*u,4*u,3*u,7*u);
+    }else if(style==="braid"){
+      c.fillRect(4*u,5*u,2*u,7*u);
+      c.fillRect(3*u,10*u,3*u,3*u);
+    }
+    return;
+  }
+  if(style==="long"){
+    c.fillRect(3*u,3*u,2*u,11*u);
+    c.fillRect(11*u,3*u,2*u,11*u);
+  }else if(style==="curls"){
+    for(const [hx,hy] of [[3,5],[3,8],[10,6],[10,9]]) c.fillRect(hx*u,hy*u,3*u,3*u);
+  }else if(style==="ponytail"){
+    c.fillRect(11*u,6*u,3*u,7*u);
+  }else if(style==="bun"){
+    c.fillRect(6*u,-2*u,5*u,4*u);
+  }else if(style==="bob"){
+    c.fillRect(3*u,3*u,2*u,8*u);
+    c.fillRect(11*u,3*u,2*u,8*u);
+  }else if(style==="braid"){
+    c.fillRect(11*u,6*u,2*u,7*u);
+    c.fillRect(10*u,11*u,3*u,3*u);
+  }
 }
 
 function drawHair(c,u,style,hair,dir){
@@ -1381,12 +1813,11 @@ function drawHair(c,u,style,hair,dir){
       c.fillRect(6*u,1*u,4*u,1*u);
     }else if(style==="long"){
       c.fillRect(4*u,1*u,8*u,3*u);
-      c.fillRect(4*u,3*u,3*u,9*u);
-      c.fillRect(3*u,9*u,3*u,4*u);
+      c.fillRect(5*u,3*u,2*u,5*u);
       c.fillStyle=shade(hair,12);
-      c.fillRect(5*u,2*u,2*u,7*u);
+      c.fillRect(6*u,2*u,1*u,5*u);
     }else if(style==="curls"){
-      for(const [hx,hy] of [[5,0],[8,0],[10,1],[4,2],[6,2],[9,2],[4,4],[5,6],[4,8]]) c.fillRect(hx*u,hy*u,3*u,3*u);
+      for(const [hx,hy] of [[5,0],[8,0],[10,1],[4,2],[6,2],[9,2],[4,4]]) c.fillRect(hx*u,hy*u,3*u,3*u);
     }else if(style==="undercut"){
       c.fillRect(6*u,0,6*u,3*u);
       c.fillStyle=shade(hair,18);
@@ -1394,8 +1825,6 @@ function drawHair(c,u,style,hair,dir){
     }else if(style==="ponytail"){
       c.fillRect(5*u,1*u,7*u,3*u);
       c.fillRect(4*u,3*u,3*u,4*u);
-      c.fillRect(2*u,5*u,3*u,6*u);
-      c.fillRect(3*u,10*u,2*u,3*u);
     }else if(style==="bun"){
       c.fillRect(5*u,1*u,7*u,3*u);
       c.fillRect(4*u,2*u,2*u,5*u);
@@ -1406,8 +1835,6 @@ function drawHair(c,u,style,hair,dir){
     }else if(style==="braid"){
       c.fillRect(5*u,1*u,7*u,3*u);
       c.fillRect(5*u,3*u,2*u,3*u);
-      c.fillRect(4*u,6*u,2*u,5*u);
-      c.fillRect(3*u,10*u,2*u,2*u);
     }else if(style==="mohawk"){
       c.fillRect(6*u,0,5*u,2*u);
       c.fillRect(7*u,-1*u,3*u,2*u);
@@ -1439,15 +1866,15 @@ function drawHair(c,u,style,hair,dir){
     }
   }else if(style==="long"){
     c.fillRect(3*u,1*u,10*u,3*u);
-    c.fillRect(3*u,3*u,2*u,10*u);
-    c.fillRect(11*u,3*u,2*u,10*u);
     if(dir==="up"){
+      c.fillRect(3*u,3*u,2*u,10*u);
+      c.fillRect(11*u,3*u,2*u,10*u);
       c.fillRect(5*u,3*u,6*u,9*u);
       c.fillStyle=shade(hair,12);
       c.fillRect(5*u,3*u,2*u,7*u);
     }
   }else if(style==="curls"){
-    for(const [hx,hy] of [[3,1],[6,0],[9,0],[11,2],[3,4],[5,3],[8,3],[11,5],[3,7],[10,8]]) c.fillRect(hx*u,hy*u,3*u,3*u);
+    for(const [hx,hy] of [[3,1],[6,0],[9,0],[11,2],[3,4],[5,3],[8,3],[11,5]]) c.fillRect(hx*u,hy*u,3*u,3*u);
     if(dir==="up"){
       c.fillRect(5*u,5*u,6*u,5*u);
       c.fillStyle=shade(hair,13);
@@ -1467,8 +1894,6 @@ function drawHair(c,u,style,hair,dir){
       c.fillRect(5*u,3*u,6*u,4*u);
       c.fillRect(7*u,6*u,3*u,7*u);
       c.fillRect(6*u,11*u,4*u,3*u);
-    }else{
-      c.fillRect(11*u,7*u,3*u,5*u);
     }
   }else if(style==="bun"){
     c.fillRect(3*u,1*u,10*u,3*u);
@@ -1478,9 +1903,11 @@ function drawHair(c,u,style,hair,dir){
     if(dir==="up") c.fillRect(5*u,3*u,6*u,5*u);
   }else if(style==="bob"){
     c.fillRect(3*u,1*u,10*u,3*u);
-    c.fillRect(3*u,3*u,2*u,7*u);
-    c.fillRect(11*u,3*u,2*u,7*u);
+    c.fillRect(3*u,3*u,2*u,4*u);
+    c.fillRect(11*u,3*u,2*u,4*u);
     if(dir==="up"){
+      c.fillRect(3*u,6*u,2*u,4*u);
+      c.fillRect(11*u,6*u,2*u,4*u);
       c.fillRect(5*u,3*u,6*u,6*u);
       c.fillStyle=shade(hair,14);
       c.fillRect(5*u,3*u,2*u,4*u);
@@ -1493,9 +1920,6 @@ function drawHair(c,u,style,hair,dir){
       c.fillRect(5*u,3*u,6*u,3*u);
       c.fillRect(7*u,4*u,2*u,8*u);
       c.fillRect(6*u,11*u,3*u,2*u);
-    }else{
-      c.fillRect(11*u,7*u,2*u,5*u);
-      c.fillRect(10*u,11*u,3*u,2*u);
     }
   }else if(style==="mohawk"){
     c.fillRect(6*u,-1*u,4*u,3*u);
@@ -1633,6 +2057,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
 
     // Side view faces right here; mirroring above produces the complete left
     // sprite. The cloak always trails behind the torso.
+    drawBackHair(c,u,hairStyle,hair,"side");
     c.fillStyle=cloak;
     c.fillRect(2*u,8*u,5*u,10*u);
     c.fillStyle=shade(cloak,-18);
@@ -1667,6 +2092,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     drawBeard(c,u,beardStyle,beard,"side");
   }else if(dir==="down"){
     // Front view: the cloak sits behind the body and only shows at the sides.
+    drawBackHair(c,u,hairStyle,hair,"down");
     c.fillStyle=cloak;
     c.fillRect(2*u,8*u,12*u,10*u);
     c.fillStyle=shade(cloak,-18);
@@ -1720,13 +2146,13 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(4*u,9*u,8*u,8*u);
     c.fillStyle=shade(shirt,-16);
     c.fillRect(4*u,9*u,8*u,1*u);
+    drawOutfitDetails(c,u,outfit,"up",shirt);
     c.fillStyle=cloak;
     c.fillRect(3*u,8*u,10*u,10*u);
     c.fillStyle=shade(cloak,16);
     c.fillRect(4*u,9*u,1*u,7*u);
     c.fillStyle=shade(cloak,-18);
     c.fillRect(4*u,17*u,8*u,1*u);
-    drawOutfitDetails(c,u,outfit,"up",shirt);
     c.fillStyle=skin;
     c.fillRect(2*u,(10+step*.45)*u,2*u,5*u);
     c.fillRect(12*u,(10-step*.45)*u,2*u,5*u);
@@ -1793,7 +2219,9 @@ function movePlayer(dt){
   dx/=len;
   dy/=len;
   let speed=PLAYER_SPEED*(sprinting?SPRINT_MULTIPLIER:1);
-  if(terrain.biome==="deepWater") speed*=state.player.drowning ? .18 : .40;
+  const bridge=bridgeAt(state.player.x,state.player.y,terrain);
+  if(bridge) speed*=1.08;
+  else if(terrain.biome==="deepWater") speed*=state.player.drowning ? .18 : .40;
   else if(terrain.biome==="water") speed*=.52;
   else if(terrain.biome==="shallow") speed*=.72;
   else if(terrain.biome==="river") speed*=0.62;
@@ -2606,10 +3034,19 @@ window.__ARCHIPELAGO_DEBUG__ = {
   islandField,
   ensureRivers,
   riverAt,
+  roadSegmentAt,
   roadAt,
+  bridgeAt,
   treeForPlot,
+  treeFootprint,
   treeAtGrid,
+  roadDecorationForPlot,
+  roadDecorationAtGrid,
+  visibleRoadDecorations,
+  roadAssetCatalog,
+  drawRoadDecoration,
   structureAtGrid,
+  visibleStructureBlocks,
   collisionAt,
   canOccupy,
   movePlayer,

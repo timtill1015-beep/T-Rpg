@@ -2,10 +2,10 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.5)
+## Aktueller Stand (0.6)
 
 - richtiger Titelscreen mit animierter Weltkulisse
-- überarbeiteter Charaktereditor mit Haut-, Augen-, Haar-, Frisur-, Kleidungs- und Mantelvarianten
+- erweiterter Charaktereditor mit zehn Frisuren, sechs Bartstilen, sechs Kleidungsformen sowie zusätzlichen Haar-, Stoff- und Mantelfarben
 - vier eigenständige Blickrichtungen und animierte Laufzyklen; Seitenansichten besitzen echte Profilsprites
 - korrigierte Figuren-Layer: Mantel auf dem Rücken, richtungsgetreue Füße und reduzierte Gesichter ohne Nase/Mund
 - neues Ingame-HUD mit Lebensenergie, Ausdauer, Kompass, Uhrzeit, Region und Ortsanzeige
@@ -19,6 +19,8 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Kollisionen mit Baumstämmen, Naturformationen, Häusern und Ruinen
 - Fußspuren, Schwimmwellen, Luftblasen, Staub, fallende Blätter, Vegetationsbewegung und Interaktionen mit E
 - einheitliches 8-m-Blockraster: Terrain, Flüsse, Straßen, mehrteilige Bäume, Häuser und Ruinen bestehen aus denselben Weltblöcken
+- dreimal breitere Hauptwege und deutlich seltener gesetzte Geröllfelder im Hochland
+- getrennte Terrain-Ebene mit blockweise verschobenem Bildcache, begrenzte Welt-/Partikel-Caches und gedrosselte HUD-/Kartenupdates für deutlich stabilere Bildraten
 - Minimap und große beschriftete Weltkarte mit Legende
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
 

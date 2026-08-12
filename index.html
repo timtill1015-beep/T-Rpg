@@ -33,7 +33,7 @@
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.5</span>
+        <span class="title-version">PROTOTYP · 0.6</span>
       </div>
     </section>
 
@@ -104,6 +104,11 @@
                       <option value="bob">Kurzer Bob</option>
                       <option value="braid">Zopf</option>
                       <option value="mohawk">Irokese</option>
+                      <option value="long">Langes Haar</option>
+                      <option value="curls">Locken</option>
+                      <option value="undercut">Undercut</option>
+                      <option value="ponytail">Pferdeschwanz</option>
+                      <option value="bun">Dutt</option>
                       <option value="hood">Reisekapuze</option>
                     </select>
                   </label>
@@ -114,28 +119,66 @@
                       <option value="#d9b24c">Blond</option>
                       <option value="#8d3d2e">Rot</option>
                       <option value="#d7d7d7">Grau</option>
+                      <option value="#8a6a3c">Dunkelblond</option>
+                      <option value="#eee7d8">Weiß</option>
                     </select>
                   </label>
                 </div>
                 <div class="field-pair">
-                  <label>Oberteil
+                  <label>Bart
+                    <select id="beardStyleSelect">
+                      <option value="none">Keiner</option>
+                      <option value="stubble">Stoppeln</option>
+                      <option value="moustache">Schnurrbart</option>
+                      <option value="goatee">Kinnbart</option>
+                      <option value="full">Vollbart</option>
+                      <option value="braided">Geflochtener Bart</option>
+                    </select>
+                  </label>
+                  <label>Bartfarbe
+                    <select id="beardSelect">
+                      <option value="#3a2418">Braun</option>
+                      <option value="#161616">Schwarz</option>
+                      <option value="#d9b24c">Blond</option>
+                      <option value="#8d3d2e">Rot</option>
+                      <option value="#9d9d9d">Grau</option>
+                      <option value="#eee7d8">Weiß</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-pair">
+                  <label>Kleidung
+                    <select id="outfitSelect">
+                      <option value="traveler">Reisender</option>
+                      <option value="ranger">Waldläufer</option>
+                      <option value="raider">Küstenräuber</option>
+                      <option value="scholar">Gelehrter</option>
+                      <option value="north">Nordländer</option>
+                      <option value="desert">Wüstenwanderer</option>
+                    </select>
+                  </label>
+                  <label>Stofffarbe
                     <select id="shirtSelect">
                       <option value="#315d9b">Küstenblau</option>
                       <option value="#7b3f8c">Dämmerlila</option>
                       <option value="#3f7b46">Waldgrün</option>
                       <option value="#9a3c3c">Glutrot</option>
                       <option value="#b1812c">Dünenocker</option>
-                    </select>
-                  </label>
-                  <label>Mantel
-                    <select id="cloakSelect">
-                      <option value="#684431">Lederbraun</option>
-                      <option value="#243e46">Tiefsee</option>
-                      <option value="#4d5941">Moosgrün</option>
-                      <option value="#6b3441">Weinrot</option>
+                      <option value="#343b43">Nachtgrau</option>
+                      <option value="#b9aa83">Leinen</option>
                     </select>
                   </label>
                 </div>
+                <label>Mantelfarbe
+                  <select id="cloakSelect">
+                    <option value="#684431">Lederbraun</option>
+                    <option value="#243e46">Tiefsee</option>
+                    <option value="#4d5941">Moosgrün</option>
+                    <option value="#6b3441">Weinrot</option>
+                    <option value="#77736b">Wollgrau</option>
+                    <option value="#b58a55">Sand</option>
+                  </select>
+                </label>
               </div>
             </div>
           </div>
@@ -180,6 +223,7 @@
     </section>
 
     <section id="gamePanel" class="game-wrap hidden">
+      <canvas id="terrainCanvas" width="1280" height="720" aria-hidden="true"></canvas>
       <canvas id="gameCanvas" width="1280" height="720"></canvas>
       <div class="game-vignette" aria-hidden="true"></div>
 

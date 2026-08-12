@@ -19,10 +19,25 @@ const RIVER_INDEX_METERS = TILE_METERS * 8;
 const SWIM_STAMINA_DRAIN = 8;
 const DEEP_SWIM_STAMINA_DRAIN = 14;
 const DROWNING_DAMAGE = 28;
+// Cache a viewport-sized terrain surface on the world-tile grid. When the
+// camera crosses a block boundary, only the newly exposed row/column is drawn;
+// the existing surface is shifted into a second reusable canvas.
+const TERRAIN_TILE_PIXELS = Math.round(TILE_METERS * VIEW_SCALE);
+const TERRAIN_CACHE_LIMIT = 70000;
+const VISUAL_CACHE_LIMIT = 36000;
+// Large enough to keep deterministic tree object identity during broad scans,
+// still bounded so exploring the entire 20 km world cannot grow forever.
+const TREE_CACHE_LIMIT = 120000;
+const EFFECT_LIMIT = 56;
+const UI_UPDATE_MS = 100;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
 const $ = (id) => document.getElementById(id);
+const terrainCanvas = $("terrainCanvas");
+const terrainCtx = terrainCanvas.getContext("2d");
+terrainCtx.imageSmoothingEnabled = false;
+
 const canvas = $("gameCanvas");
 const ctx = canvas.getContext("2d");
 ctx.imageSmoothingEnabled = false;
@@ -56,6 +71,7 @@ const state = {
   mapOpen: false,
   lastTime: 0,
   lastNetSend: 0,
+  lastUiUpdate: 0,
   elapsed: 0,
   seed: 184731,
   previewDirection: 0,
@@ -83,6 +99,9 @@ const state = {
     eyes: "#243b53",
     hair: "#3a2418",
     hairStyle: "tousled",
+    beard: "#3a2418",
+    beardStyle: "none",
+    outfit: "traveler",
     shirt: "#315d9b",
     cloak: "#684431"
   },
@@ -204,6 +223,21 @@ const landmarks = [
 const terrainCache = new Map();
 const visualTileCache = new Map();
 const treePlotCache = new Map();
+const terrainFrameCache = {canvas:null,scratch:null,anchorX:NaN,anchorY:NaN,width:0,height:0,columns:0,rows:0,displayRevision:-1};
+const renderStats = {terrainFrameBuilds:0,terrainFrameShifts:0,tileBuilds:0};
+
+function cacheValue(cache,key,value,limit){
+  cache.set(key,value);
+  if(cache.size<=limit) return value;
+  const removeCount=Math.max(1,Math.ceil(limit*.12));
+  const keys=cache.keys();
+  for(let i=0;i<removeCount;i++){
+    const oldest=keys.next();
+    if(oldest.done) break;
+    cache.delete(oldest.value);
+  }
+  return value;
+}
 
 function hash2(x, y, seed = state.seed) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1442695041);
@@ -414,7 +448,8 @@ function roadAt(x,y){
   const gy=Math.floor(Math.max(0,Math.min(WORLD_SIZE-.001,y))/TILE_METERS);
   const nx=(gx*TILE_METERS+TILE_METERS/2)/WORLD_SIZE;
   const ny=(gy*TILE_METERS+TILE_METERS/2)/WORLD_SIZE;
-  const halfWidth=TILE_METERS*.78/WORLD_SIZE;
+  // Five blocks across at the widest points: about three times the old trail.
+  const halfWidth=TILE_METERS*2.34/WORLD_SIZE;
   for(const route of routes){
     for(let i=0;i<route.length-1;i++){
       const a=route[i];
@@ -463,8 +498,7 @@ function terrainAt(x,y){
   const river=riverAt(x,y,h);
   if(river && !["deepWater","water","shallow","packIce","glacier","snow"].includes(biome)) biome="river";
   const result={height:h,moisture,temp,latitude,biome,river,gx,gy};
-  terrainCache.set(key,result);
-  return result;
+  return cacheValue(terrainCache,key,result,TERRAIN_CACHE_LIMIT);
 }
 
 function isWalkable(x,y){
@@ -508,7 +542,8 @@ function tileDecoration(x,y,biome){
   if((biome==="forest"||biome==="jungle") && r>0.82) return r>.94?"mushrooms":r>.88?"fern":"grass";
   if(biome==="plains" && r>0.84) return r>0.94?"flowers":"grass";
   if(biome==="swamp" && r>0.82) return "reeds";
-  if((biome==="rock"||biome==="mountain") && r>0.70) return "rock";
+  if(biome==="rock" && r>0.992) return "rock";
+  if(biome==="mountain" && r>0.996) return "rock";
   if(biome==="beach" && r>0.91) return r>0.97?"driftwood":"shell";
   if((biome==="river"||biome==="oasis") && r>0.80) return r>.94?"lilies":"reeds";
   if((biome==="tundra"||biome==="glacier") && r>.82) return r>.95?"iceCrystal":"snowTuft";
@@ -518,7 +553,8 @@ function tileDecoration(x,y,biome){
   return null;
 }
 
-function drawDecoration(kind,px,py,size){
+function drawDecoration(target,kind,px,py,size){
+  const ctx=target;
   if(kind==="reeds"){
     ctx.fillStyle="#74834c";
     ctx.fillRect(px-size*.14,py-size*.10,size*.035,size*.28);
@@ -645,7 +681,7 @@ function treeForPlot(plotX,plotY){
   const gx=plotX*TREE_PLOT_TILES+1+Math.floor(hash2(plotX,plotY,1702)*2);
   const gy=plotY*TREE_PLOT_TILES+2;
   if(nearLandmarkGrid(gx,gy,3)){
-    treePlotCache.set(cacheKey,null);
+    cacheValue(treePlotCache,cacheKey,null,TREE_CACHE_LIMIT);
     return null;
   }
   const terrain=terrainAt((gx+.5)*TILE_METERS,(gy+.5)*TILE_METERS);
@@ -677,7 +713,7 @@ function treeForPlot(plotX,plotY){
     kind=speciesSeed>.42?"palm":"acacia";
   }
   if(plotSeed>chance){
-    treePlotCache.set(cacheKey,null);
+    cacheValue(treePlotCache,cacheKey,null,TREE_CACHE_LIMIT);
     return null;
   }
   const tree={
@@ -686,8 +722,7 @@ function treeForPlot(plotX,plotY){
     phase:hash2(plotX,plotY,1712)*Math.PI*2,
     reactUntil:0
   };
-  treePlotCache.set(cacheKey,tree);
-  return tree;
+  return cacheValue(treePlotCache,cacheKey,tree,TREE_CACHE_LIMIT);
 }
 
 const treeShapes = {
@@ -842,7 +877,8 @@ function visibleTrees(startGX,endGX,startGY,endGY){
   return trees;
 }
 
-function drawTile(wx,wy,sx,sy,size,terrain){
+function drawTile(target,wx,wy,sx,sy,size,terrain){
+  const ctx=target;
   const gx=Math.floor(wx/TILE_METERS);
   const gy=Math.floor(wy/TILE_METERS);
   const cacheKey=gx+","+gy;
@@ -859,7 +895,7 @@ function drawTile(wx,wy,sx,sy,size,terrain){
       roadColor:road?shade("#9b8255",Math.round((n-.5)*14)):null,
       waterLike:["water","deepWater","shallow","river"].includes(terrain.biome)
     };
-    visualTileCache.set(cacheKey,visual);
+    cacheValue(visualTileCache,cacheKey,visual,VISUAL_CACHE_LIMIT);
   }
   const {n,road,deco}=visual;
   ctx.fillStyle=visual.baseColor;
@@ -893,12 +929,89 @@ function drawTile(wx,wy,sx,sy,size,terrain){
   }else if(terrain.biome==="beach" && n>0.64){
     ctx.fillStyle="rgba(89,70,40,.20)";
     ctx.fillRect(Math.floor(sx+size*.65),Math.floor(sy+size*.30),Math.max(1,size*.08),Math.max(1,size*.08));
-  }else if(n>0.72){
+  }else if(n>(terrain.biome==="mountain"?.998:terrain.biome==="rock"?.995:.82)){
     ctx.fillStyle="rgba(0,0,0,.07)";
     ctx.fillRect(Math.floor(sx+size*.15),Math.floor(sy+size*.18),Math.max(1,size*.12),Math.max(1,size*.12));
   }
 
-  if(deco) drawDecoration(deco,Math.floor(sx+size*.5),Math.floor(sy+size*.5),size);
+  if(deco) drawDecoration(ctx,deco,Math.floor(sx+size*.5),Math.floor(sy+size*.5),size);
+}
+
+function renderTerrainFrame(anchorX,anchorY,width,height){
+  const tilePixels=TERRAIN_TILE_PIXELS;
+  const terrainScale=TILE_METERS*VIEW_SCALE/tilePixels;
+  const frameWidth=Math.ceil((width/terrainScale+tilePixels)/tilePixels)*tilePixels;
+  const frameHeight=Math.ceil((height/terrainScale+tilePixels)/tilePixels)*tilePixels;
+  const columns=frameWidth/tilePixels;
+  const rows=frameHeight/tilePixels;
+  const sameSize=terrainFrameCache.canvas&&terrainFrameCache.width===frameWidth&&terrainFrameCache.height===frameHeight;
+  if(sameSize&&terrainFrameCache.anchorX===anchorX&&terrainFrameCache.anchorY===anchorY) return terrainFrameCache.canvas;
+
+  const deltaX=sameSize?Math.round((anchorX-terrainFrameCache.anchorX)/TILE_METERS):columns;
+  const deltaY=sameSize?Math.round((anchorY-terrainFrameCache.anchorY)/TILE_METERS):rows;
+  const canShift=sameSize&&Math.abs(deltaX)<columns&&Math.abs(deltaY)<rows;
+  let frame;
+  let frameCtx;
+  if(canShift){
+    frame=terrainFrameCache.scratch;
+    frameCtx=frame.getContext("2d");
+    frameCtx.imageSmoothingEnabled=false;
+    frameCtx.clearRect(0,0,frameWidth,frameHeight);
+    frameCtx.drawImage(terrainFrameCache.canvas,-deltaX*tilePixels,-deltaY*tilePixels);
+    renderStats.terrainFrameShifts++;
+  }else{
+    frame=document.createElement("canvas");
+    frame.width=frameWidth;
+    frame.height=frameHeight;
+    frameCtx=frame.getContext("2d");
+    frameCtx.imageSmoothingEnabled=false;
+    renderStats.terrainFrameBuilds++;
+  }
+
+  for(let localY=0;localY<rows;localY++){
+    for(let localX=0;localX<columns;localX++){
+      const oldLocalX=localX+deltaX;
+      const oldLocalY=localY+deltaY;
+      if(canShift&&oldLocalX>=0&&oldLocalX<columns&&oldLocalY>=0&&oldLocalY<rows) continue;
+      const wx=anchorX+localX*TILE_METERS;
+      const wy=anchorY+localY*TILE_METERS;
+      if(wx<0||wy<0||wx>=WORLD_SIZE||wy>=WORLD_SIZE){
+        frameCtx.fillStyle=palette.deepWater;
+        frameCtx.fillRect(Math.floor(localX*tilePixels),Math.floor(localY*tilePixels),Math.ceil(tilePixels)+1,Math.ceil(tilePixels)+1);
+      }else{
+        drawTile(frameCtx,wx,wy,localX*tilePixels,localY*tilePixels,tilePixels,terrainAt(wx+TILE_METERS/2,wy+TILE_METERS/2));
+      }
+      renderStats.tileBuilds++;
+    }
+  }
+  const previous=terrainFrameCache.canvas;
+  terrainFrameCache.canvas=frame;
+  terrainFrameCache.scratch=previous||document.createElement("canvas");
+  if(terrainFrameCache.scratch.width!==frameWidth) terrainFrameCache.scratch.width=frameWidth;
+  if(terrainFrameCache.scratch.height!==frameHeight) terrainFrameCache.scratch.height=frameHeight;
+  terrainFrameCache.anchorX=anchorX;
+  terrainFrameCache.anchorY=anchorY;
+  terrainFrameCache.width=frameWidth;
+  terrainFrameCache.height=frameHeight;
+  terrainFrameCache.columns=columns;
+  terrainFrameCache.rows=rows;
+  return frame;
+}
+
+function syncTerrainLayer(frame,sourceX,sourceY,viewportWidth,viewportHeight){
+  const revision=renderStats.terrainFrameBuilds+renderStats.terrainFrameShifts;
+  if(terrainFrameCache.displayRevision!==revision||terrainCanvas.width!==frame.width||terrainCanvas.height!==frame.height){
+    if(terrainCanvas.width!==frame.width) terrainCanvas.width=frame.width;
+    if(terrainCanvas.height!==frame.height) terrainCanvas.height=frame.height;
+    terrainCtx.imageSmoothingEnabled=false;
+    terrainCtx.clearRect(0,0,terrainCanvas.width,terrainCanvas.height);
+    terrainCtx.drawImage(frame,0,0);
+    const terrainScale=TILE_METERS*VIEW_SCALE/TERRAIN_TILE_PIXELS;
+    terrainCanvas.style.width=(frame.width*terrainScale/viewportWidth*100)+"%";
+    terrainCanvas.style.height=(frame.height*terrainScale/viewportHeight*100)+"%";
+    terrainFrameCache.displayRevision=revision;
+  }
+  terrainCanvas.style.transform="translate3d("+(-sourceX/frame.width*100)+"%,"+(-sourceY/frame.height*100)+"%,0)";
 }
 
 const townBlocks = [
@@ -1017,7 +1130,7 @@ function drawLandmark(landmark,camX,camY){
 
 function addEffect(effect){
   state.effects.push({...effect,maxLife:effect.life});
-  if(state.effects.length>90) state.effects.splice(0,state.effects.length-90);
+  if(state.effects.length>EFFECT_LIMIT) state.effects.splice(0,state.effects.length-EFFECT_LIMIT);
 }
 
 function emitFootstep(x,y){
@@ -1210,24 +1323,16 @@ function drawWorld(){
   const camY=state.camera.y;
   const metresAcross=w/VIEW_SCALE;
   const metresHigh=h/VIEW_SCALE;
-  const startX=Math.floor((camX-metresAcross/2)/TILE_METERS)*TILE_METERS;
+  const viewLeft=camX-metresAcross/2;
+  const viewTop=camY-metresHigh/2;
+  const startX=Math.floor(viewLeft/TILE_METERS)*TILE_METERS;
   const endX=Math.ceil((camX+metresAcross/2)/TILE_METERS)*TILE_METERS;
-  const startY=Math.floor((camY-metresHigh/2)/TILE_METERS)*TILE_METERS;
+  const startY=Math.floor(viewTop/TILE_METERS)*TILE_METERS;
   const endY=Math.ceil((camY+metresHigh/2)/TILE_METERS)*TILE_METERS;
-  const size=TILE_METERS*VIEW_SCALE;
-
-  for(let wy=startY;wy<=endY;wy+=TILE_METERS){
-    for(let wx=startX;wx<=endX;wx+=TILE_METERS){
-      const sx=(wx-camX)*VIEW_SCALE+w/2;
-      const sy=(wy-camY)*VIEW_SCALE+h/2;
-      if(wx<0||wy<0||wx>WORLD_SIZE||wy>WORLD_SIZE){
-        ctx.fillStyle=palette.deepWater;
-        ctx.fillRect(sx,sy,size+1,size+1);
-        continue;
-      }
-      drawTile(wx,wy,sx,sy,size,terrainAt(wx+TILE_METERS/2,wy+TILE_METERS/2));
-    }
-  }
+  const terrainFrame=renderTerrainFrame(startX,startY,w,h);
+  const sourceX=(viewLeft-startX)/TILE_METERS*TERRAIN_TILE_PIXELS;
+  const sourceY=(viewTop-startY)/TILE_METERS*TERRAIN_TILE_PIXELS;
+  syncTerrainLayer(terrainFrame,sourceX,sourceY,w,h);
 
   drawEffects(camX,camY,"ground");
   const trees=visibleTrees(
@@ -1274,6 +1379,27 @@ function drawHair(c,u,style,hair,dir){
       c.fillRect(11*u,3*u,1*u,4*u);
       c.fillStyle="#59665d";
       c.fillRect(6*u,1*u,4*u,1*u);
+    }else if(style==="long"){
+      c.fillRect(4*u,1*u,8*u,3*u);
+      c.fillRect(4*u,3*u,3*u,9*u);
+      c.fillRect(3*u,9*u,3*u,4*u);
+      c.fillStyle=shade(hair,12);
+      c.fillRect(5*u,2*u,2*u,7*u);
+    }else if(style==="curls"){
+      for(const [hx,hy] of [[5,0],[8,0],[10,1],[4,2],[6,2],[9,2],[4,4],[5,6],[4,8]]) c.fillRect(hx*u,hy*u,3*u,3*u);
+    }else if(style==="undercut"){
+      c.fillRect(6*u,0,6*u,3*u);
+      c.fillStyle=shade(hair,18);
+      c.fillRect(5*u,3*u,2*u,3*u);
+    }else if(style==="ponytail"){
+      c.fillRect(5*u,1*u,7*u,3*u);
+      c.fillRect(4*u,3*u,3*u,4*u);
+      c.fillRect(2*u,5*u,3*u,6*u);
+      c.fillRect(3*u,10*u,2*u,3*u);
+    }else if(style==="bun"){
+      c.fillRect(5*u,1*u,7*u,3*u);
+      c.fillRect(4*u,2*u,2*u,5*u);
+      c.fillRect(2*u,0,4*u,4*u);
     }else if(style==="bob"){
       c.fillRect(5*u,1*u,7*u,3*u);
       c.fillRect(5*u,3*u,2*u,6*u);
@@ -1311,6 +1437,45 @@ function drawHair(c,u,style,hair,dir){
       c.fillStyle="#3f4c45";
       c.fillRect(5*u,8*u,6*u,2*u);
     }
+  }else if(style==="long"){
+    c.fillRect(3*u,1*u,10*u,3*u);
+    c.fillRect(3*u,3*u,2*u,10*u);
+    c.fillRect(11*u,3*u,2*u,10*u);
+    if(dir==="up"){
+      c.fillRect(5*u,3*u,6*u,9*u);
+      c.fillStyle=shade(hair,12);
+      c.fillRect(5*u,3*u,2*u,7*u);
+    }
+  }else if(style==="curls"){
+    for(const [hx,hy] of [[3,1],[6,0],[9,0],[11,2],[3,4],[5,3],[8,3],[11,5],[3,7],[10,8]]) c.fillRect(hx*u,hy*u,3*u,3*u);
+    if(dir==="up"){
+      c.fillRect(5*u,5*u,6*u,5*u);
+      c.fillStyle=shade(hair,13);
+      c.fillRect(6*u,5*u,2*u,3*u);
+    }
+  }else if(style==="undercut"){
+    c.fillRect(5*u,0,7*u,3*u);
+    c.fillRect(4*u,2*u,8*u,2*u);
+    c.fillStyle=shade(hair,20);
+    c.fillRect(3*u,3*u,2*u,3*u);
+    if(dir==="up") c.fillRect(5*u,3*u,6*u,2*u);
+  }else if(style==="ponytail"){
+    c.fillRect(3*u,1*u,10*u,3*u);
+    c.fillRect(3*u,3*u,2*u,5*u);
+    c.fillRect(11*u,3*u,2*u,5*u);
+    if(dir==="up"){
+      c.fillRect(5*u,3*u,6*u,4*u);
+      c.fillRect(7*u,6*u,3*u,7*u);
+      c.fillRect(6*u,11*u,4*u,3*u);
+    }else{
+      c.fillRect(11*u,7*u,3*u,5*u);
+    }
+  }else if(style==="bun"){
+    c.fillRect(3*u,1*u,10*u,3*u);
+    c.fillRect(3*u,3*u,2*u,5*u);
+    c.fillRect(11*u,3*u,2*u,5*u);
+    c.fillRect(6*u,-2*u,5*u,4*u);
+    if(dir==="up") c.fillRect(5*u,3*u,6*u,5*u);
   }else if(style==="bob"){
     c.fillRect(3*u,1*u,10*u,3*u);
     c.fillRect(3*u,3*u,2*u,7*u);
@@ -1353,6 +1518,87 @@ function drawHair(c,u,style,hair,dir){
   }
 }
 
+function drawBeard(c,u,style,color,dir){
+  if(!style||style==="none"||dir==="up") return;
+  c.save();
+  c.fillStyle=color;
+  if(style==="stubble") c.globalAlpha=.58;
+  if(dir==="side"){
+    if(style==="stubble"){
+      c.fillRect(8*u,8*u,3*u,2*u);
+      c.fillRect(7*u,9*u,3*u,1*u);
+    }else if(style==="moustache"){
+      c.fillRect(9*u,7*u,3*u,1*u);
+      c.fillRect(8*u,8*u,3*u,1*u);
+    }else if(style==="goatee"){
+      c.fillRect(9*u,8*u,2*u,3*u);
+      c.fillRect(8*u,10*u,3*u,2*u);
+    }else if(style==="full"||style==="braided"){
+      c.fillRect(7*u,7*u,5*u,3*u);
+      c.fillRect(6*u,9*u,5*u,3*u);
+      if(style==="braided"){
+        c.fillRect(8*u,11*u,2*u,4*u);
+        c.fillStyle=shade(color,18);
+        c.fillRect(8*u,13*u,2*u,1*u);
+      }
+    }
+  }else{
+    if(style==="stubble"){
+      c.fillRect(5*u,8*u,6*u,2*u);
+      c.fillRect(6*u,7*u,1*u,1*u);
+      c.fillRect(10*u,7*u,1*u,1*u);
+    }else if(style==="moustache"){
+      c.fillRect(5*u,8*u,3*u,1*u);
+      c.fillRect(9*u,8*u,3*u,1*u);
+      c.fillRect(7*u,9*u,3*u,1*u);
+    }else if(style==="goatee"){
+      c.fillRect(7*u,8*u,3*u,2*u);
+      c.fillRect(7*u,10*u,3*u,3*u);
+    }else if(style==="full"||style==="braided"){
+      c.fillRect(5*u,7*u,7*u,3*u);
+      c.fillRect(6*u,9*u,5*u,3*u);
+      if(style==="braided"){
+        c.fillRect(7*u,11*u,3*u,5*u);
+        c.fillStyle=shade(color,18);
+        c.fillRect(7*u,13*u,3*u,1*u);
+      }
+    }
+  }
+  c.restore();
+}
+
+function drawOutfitDetails(c,u,style,dir,shirt){
+  const side=dir==="side";
+  const back=dir==="up";
+  if(style==="ranger"){
+    c.fillStyle="#755438";
+    if(side) for(let i=0;i<5;i++) c.fillRect((7+i*.7)*u,(10+i)*u,2*u,1*u);
+    else for(let i=0;i<6;i++) c.fillRect((5+i)*u,(10+i)*u,2*u,1*u);
+  }else if(style==="raider"){
+    c.fillStyle="#a99d86";
+    c.fillRect((side?5:4)*u,(back?9:8)*u,(side?8:8)*u,2*u);
+    c.fillStyle="#6f675b";
+    c.fillRect((side?6:5)*u,(back?10:9)*u,(side?6:6)*u,1*u);
+  }else if(style==="scholar"){
+    c.fillStyle="#d0a94f";
+    c.fillRect((side?7:5)*u,9*u,(side?5:6)*u,1*u);
+    c.fillRect((side?7:7)*u,10*u,(side?1:2)*u,6*u);
+  }else if(style==="north"){
+    c.fillStyle="#d1c9b4";
+    c.fillRect((side?5:4)*u,8*u,(side?8:8)*u,2*u);
+    c.fillStyle="#8d887d";
+    c.fillRect((side?7:6)*u,9*u,(side?4:4)*u,1*u);
+  }else if(style==="desert"){
+    c.fillStyle="#e1c98d";
+    c.fillRect((side?6:4)*u,12*u,(side?6:8)*u,2*u);
+    c.fillStyle="#a9713e";
+    c.fillRect((side?9:8)*u,10*u,2*u,6*u);
+  }else{
+    c.fillStyle=shade(shirt,-24);
+    c.fillRect((side?9:7)*u,12*u,2*u,3*u);
+  }
+}
+
 function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   const u=scale;
   const moving=!!p.moving;
@@ -1367,6 +1613,9 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   const eyes=p.eyes||"#243b53";
   const hair=p.hair||"#3a2418";
   const hairStyle=p.hairStyle||"tousled";
+  const beard=p.beard||hair;
+  const beardStyle=p.beardStyle||"none";
+  const outfit=p.outfit||"traveler";
 
   c.save();
   c.translate(Math.round(x-8*u),Math.round(y-21*u+bob*u));
@@ -1406,6 +1655,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(6*u,9*u,6*u,8*u);
     c.fillStyle=shade(shirt,24);
     c.fillRect(10*u,10*u,2*u,5*u);
+    drawOutfitDetails(c,u,outfit,"side",shirt);
     c.fillStyle="#8e6d37";
     c.fillRect(6*u,15*u,6*u,1*u);
     c.fillStyle=skin;
@@ -1414,6 +1664,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     drawHair(c,u,hairStyle,hair,"side");
     c.fillStyle=eyes;
     c.fillRect(10*u,6*u,1*u,1*u);
+    drawBeard(c,u,beardStyle,beard,"side");
   }else if(dir==="down"){
     // Front view: the cloak sits behind the body and only shows at the sides.
     c.fillStyle=cloak;
@@ -1422,22 +1673,23 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(2*u,15*u,3*u,3*u);
     c.fillRect(11*u,15*u,3*u,3*u);
 
-    const leftLift=step===1?1:0;
-    const rightLift=step===-1?1:0;
+    const leftStride=step;
+    const rightStride=-step;
     c.fillStyle="#222b31";
-    c.fillRect(4*u,(16-leftLift)*u,3*u,5*u);
-    c.fillRect(9*u,(16-rightLift)*u,3*u,5*u);
+    c.fillRect(4*u,(16+leftStride)*u,3*u,5*u);
+    c.fillRect(9*u,(16+rightStride)*u,3*u,5*u);
     c.fillStyle="#151b20";
-    c.fillRect(3*u,(20-leftLift)*u,4*u,2*u);
-    c.fillRect(9*u,(20-rightLift)*u,4*u,2*u);
+    c.fillRect(4*u,(20+leftStride)*u,3*u,2*u);
+    c.fillRect(9*u,(20+rightStride)*u,3*u,2*u);
     c.fillStyle="#39434a";
-    c.fillRect(3*u,(21-leftLift)*u,4*u,1*u);
-    c.fillRect(9*u,(21-rightLift)*u,4*u,1*u);
+    c.fillRect(4*u,(21+leftStride)*u,3*u,1*u);
+    c.fillRect(9*u,(21+rightStride)*u,3*u,1*u);
 
     c.fillStyle=shirt;
     c.fillRect(4*u,9*u,8*u,8*u);
     c.fillStyle=shade(shirt,24);
     c.fillRect(4*u,9*u,8*u,1*u);
+    drawOutfitDetails(c,u,outfit,"down",shirt);
     c.fillStyle="#8e6d37";
     c.fillRect(4*u,15*u,8*u,1*u);
     c.fillStyle=skin;
@@ -1448,20 +1700,21 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle=eyes;
     c.fillRect(6*u,6*u,1*u,1*u);
     c.fillRect(10*u,6*u,1*u,1*u);
+    drawBeard(c,u,beardStyle,beard,"down");
   }else{
     // Back view: shoes point north, while the cloak correctly covers the back
     // between the shoulders and its hem. Arms and head remain in front of it.
-    const leftLift=step===1?1:0;
-    const rightLift=step===-1?1:0;
+    const leftStride=-step;
+    const rightStride=step;
     c.fillStyle="#222b31";
-    c.fillRect(4*u,(16-leftLift)*u,3*u,5*u);
-    c.fillRect(9*u,(16-rightLift)*u,3*u,5*u);
+    c.fillRect(4*u,(16+leftStride)*u,3*u,5*u);
+    c.fillRect(9*u,(16+rightStride)*u,3*u,5*u);
     c.fillStyle="#151b20";
-    c.fillRect(3*u,(18-leftLift)*u,4*u,2*u);
-    c.fillRect(9*u,(18-rightLift)*u,4*u,2*u);
+    c.fillRect(4*u,(18+leftStride)*u,3*u,2*u);
+    c.fillRect(9*u,(18+rightStride)*u,3*u,2*u);
     c.fillStyle="#39434a";
-    c.fillRect(3*u,(18-leftLift)*u,4*u,1*u);
-    c.fillRect(9*u,(18-rightLift)*u,4*u,1*u);
+    c.fillRect(4*u,(18+leftStride)*u,3*u,1*u);
+    c.fillRect(9*u,(18+rightStride)*u,3*u,1*u);
 
     c.fillStyle=shirt;
     c.fillRect(4*u,9*u,8*u,8*u);
@@ -1473,6 +1726,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(4*u,9*u,1*u,7*u);
     c.fillStyle=shade(cloak,-18);
     c.fillRect(4*u,17*u,8*u,1*u);
+    drawOutfitDetails(c,u,outfit,"up",shirt);
     c.fillStyle=skin;
     c.fillRect(2*u,(10+step*.45)*u,2*u,5*u);
     c.fillRect(12*u,(10-step*.45)*u,2*u,5*u);
@@ -1726,11 +1980,11 @@ function drawMapPaths(target,width,height,labels=false){
       if(index===0) target.moveTo(x,y); else target.lineTo(x,y);
     });
     target.strokeStyle="#6d5b3b";
-    target.lineWidth=labels?4:1;
+    target.lineWidth=labels?12:3;
     target.setLineDash(labels?[5,5]:[2,2]);
     target.stroke();
     target.strokeStyle="#c0a168";
-    target.lineWidth=labels?1.5:.6;
+    target.lineWidth=labels?4.5:1.8;
     target.stroke();
   }
   target.setLineDash([]);
@@ -1903,13 +2157,15 @@ function loop(ts){
   state.elapsed+=dt;
   movePlayer(dt);
   updateWorldReactions(dt);
-  drawWorld();
-  drawMinimap();
-  updateHud();
-  updatePortrait();
-  updateInteractionHint();
+  if(!state.paused&&!state.mapOpen) drawWorld();
+  if(ts-state.lastUiUpdate>=UI_UPDATE_MS){
+    state.lastUiUpdate=ts;
+    drawMinimap();
+    updateHud();
+    updateInteractionHint();
+    if(state.mapOpen) drawWorldMap();
+  }
   maybeSendNetwork(ts);
-  if(state.mapOpen) drawWorldMap();
   requestAnimationFrame(loop);
 }
 
@@ -1920,13 +2176,17 @@ function characterFromUI(){
     eyes:$("eyeSelect").value,
     hair:$("hairSelect").value,
     hairStyle:$("hairStyleSelect").value,
+    beard:$("beardSelect").value,
+    beardStyle:$("beardStyleSelect").value,
+    outfit:$("outfitSelect").value,
     shirt:$("shirtSelect").value,
     cloak:$("cloakSelect").value
   };
 }
 
 function paintPreview(ts=0){
-  if(!$("menuScreen").classList.contains("hidden")){
+  if(!$("menuScreen").classList.contains("hidden")&&ts-(paintPreview._last||0)>=40){
+    paintPreview._last=ts;
     previewCtx.clearRect(0,0,preview.width,preview.height);
     const sky=previewCtx.createLinearGradient(0,0,0,preview.height);
     sky.addColorStop(0,"#446d73");
@@ -2000,6 +2260,7 @@ function startGame(){
   state.mapOpen=false;
   $("deathMenu").classList.add("hidden");
   state.lastTime=performance.now();
+  state.lastUiUpdate=0;
   updatePortrait();
   requestAnimationFrame(loop);
   broadcast({type:"hello",player:publicPlayer()});
@@ -2011,13 +2272,16 @@ function publicPlayer(){
   return {
     id:p.id,name:p.name,x:p.x,y:p.y,dir:p.dir,moving:p.moving,walkTime:p.walkTime,
     health:p.health,stamina:p.stamina,swimming:p.swimming,drowning:p.drowning,
-    skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,shirt:p.shirt,cloak:p.cloak
+    skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,
+    beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak
   };
 }
 
 function sanitizePlayer(p){
   if(!p||typeof p!=="object") return null;
-  const styles=["tousled","bob","braid","mohawk","hood"];
+  const styles=["tousled","bob","braid","mohawk","long","curls","undercut","ponytail","bun","hood"];
+  const beardStyles=["none","stubble","moustache","goatee","full","braided"];
+  const outfits=["traveler","ranger","raider","scholar","north","desert"];
   return {
     id:String(p.id||"peer").slice(0,64),
     name:String(p.name||"Spieler").slice(0,18),
@@ -2034,6 +2298,9 @@ function sanitizePlayer(p){
     eyes:String(p.eyes||"#243b53").slice(0,16),
     hair:String(p.hair||"#3a2418").slice(0,16),
     hairStyle:styles.includes(p.hairStyle)?p.hairStyle:"tousled",
+    beard:String(p.beard||p.hair||"#3a2418").slice(0,16),
+    beardStyle:beardStyles.includes(p.beardStyle)?p.beardStyle:"none",
+    outfit:outfits.includes(p.outfit)?p.outfit:"traveler",
     shirt:String(p.shirt||"#315d9b").slice(0,16),
     cloak:String(p.cloak||"#684431").slice(0,16)
   };
@@ -2265,7 +2532,7 @@ $("beginBtn").addEventListener("click",()=>showMenu(false));
 $("multiplayerTitleBtn").addEventListener("click",()=>showMenu(true));
 $("backTitleBtn").addEventListener("click",()=>{cleanupNetwork();showTitle();});
 
-["playerName","skinSelect","eyeSelect","hairSelect","hairStyleSelect","shirtSelect","cloakSelect"].forEach((id)=>{
+["playerName","skinSelect","eyeSelect","hairSelect","hairStyleSelect","beardSelect","beardStyleSelect","outfitSelect","shirtSelect","cloakSelect"].forEach((id)=>{
   $(id).addEventListener("input",updatePortrait);
 });
 
@@ -2335,6 +2602,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   WORLD_SIZE,
   TILE_METERS,
   terrainAt,
+  tileDecoration,
   islandField,
   ensureRivers,
   riverAt,
@@ -2355,9 +2623,14 @@ window.__ARCHIPELAGO_DEBUG__ = {
   teleportPlayer,
   setDebugMode,
   drawCharacter,
+  sanitizePlayer,
   drawWorld,
   drawWorldMap,
   mapColorAt,
+  renderTerrainFrame,
+  syncTerrainLayer,
+  renderStats,
+  terrainFrameCache,
   landmarks,
   rivers,
   routes,

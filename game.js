@@ -35,7 +35,8 @@ const VISUAL_CACHE_LIMIT = 36000;
 const TREE_CACHE_LIMIT = 120000;
 const ROAD_DECOR_CACHE_LIMIT = 24000;
 const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
-const EFFECT_LIMIT = 56;
+const EFFECT_LIMIT = 180;
+const GROUND_DECAL_LIMIT = 120;
 const UI_UPDATE_MS = 100;
 const INVENTORY_COLUMNS = 10;
 const INVENTORY_ROWS = 6;
@@ -50,6 +51,8 @@ const ANIMAL_HIT_RANGE = TILE_METERS * 2.75;
 const CORPSE_DRAG_RANGE = TILE_METERS * 1.4;
 const HORSE_MOUNT_RANGE = TILE_METERS * 2;
 const HORSE_FOLLOW_DISTANCE = TILE_METERS * 2.35;
+const CORPSE_POOL_GROWTH_SECONDS = 70;
+const CORPSE_TRAIL_FRESH_SECONDS = 95;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -179,6 +182,7 @@ const state = {
   camera: {x:10000,y:10000},
   effects: [],
   footstepDistance: 0,
+  horseTrackDistance:0,
   blockedUntil: 0,
   interactionTarget: null,
   dead: false,
@@ -284,6 +288,15 @@ function updateMobileControlState(){
   const definition=equipped&&itemCatalog[equipped.itemId];
   const attackLabel=$("mobileAttackLabel");
   if(attackLabel) attackLabel.textContent=definition?.short||"Benutzen";
+  const commandHorse=relevantOwnedHorse();
+  const horseButton=document.querySelector('[data-mobile-action="horse-command"]');
+  const horseLabel=$("mobileHorseCommandLabel");
+  if(horseButton){
+    horseButton.disabled=!commandHorse;
+    horseButton.classList.toggle("active",commandHorse?.command==="stay");
+    horseButton.setAttribute("aria-pressed",String(commandHorse?.command==="stay"));
+  }
+  if(horseLabel) horseLabel.textContent=commandHorse?.command==="stay"?"Folgen":"Bleiben";
 }
 
 const palette = {
@@ -419,6 +432,19 @@ function hash2(x, y, seed = state.seed) {
   h = h ^ (h >>> 13);
   h = Math.imul(h, 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function stableTextHash(value){
+  let hash=2166136261;
+  for(const char of String(value||"entity")) hash=Math.imul(hash^char.charCodeAt(0),16777619);
+  return hash>>>0;
+}
+
+function blinkClosed(entity){
+  const seed=stableTextHash(entity?.id||entity?.name||entity?.species||"entity");
+  const interval=3.15+(seed%370)/100;
+  const phase=(state.elapsed+(seed%997)/173)%interval;
+  return phase<.105||(phase>.19&&phase<.255&&seed%5===0);
 }
 
 function smooth(t){ return t*t*(3-2*t); }
@@ -1725,8 +1751,9 @@ function fallenTreeHitShapes(physics){
   return {segment,trunkRadius:profile.trunkRadius,crown:{x:segment.bx,y:segment.by,radius:profile.crownRadius}};
 }
 
-function fallenTreeCollisionAt(x,y){
+function fallenTreeCollisionAt(x,y,ignorePhysics=null){
   for(const physics of treePhysicsStates.values()){
+    if(physics===ignorePhysics) continue;
     if(!["falling","fallen"].includes(physics.status)) continue;
     const shapes=fallenTreeHitShapes(physics);
     const trunkHit=pointSegmentDistance(x,y,shapes.segment.ax,shapes.segment.ay,shapes.segment.bx,shapes.segment.by)<shapes.trunkRadius;
@@ -1802,25 +1829,54 @@ function animalDirection(animal){
   return vy<0?"up":"down";
 }
 
-function animalSpawnAllowed(species,x,y){
+function animalSpawnAllowed(species,x,y,owned=false){
   if(x<32||y<32||x>WORLD_SIZE-32||y>WORLD_SIZE-32) return false;
   const meta=animalCatalog[species];
   const terrain=terrainAt(x,y);
-  if(!meta.habitats.includes(terrain.biome)||isSwimmingBiome(terrain.biome)) return false;
-  const gx=Math.floor(x/TILE_METERS);
-  const gy=Math.floor(y/TILE_METERS);
-  return !structureAtGrid(gx,gy)&&!treeAtGrid(gx,gy)&&!roadDecorationAtGrid(gx,gy);
+  if((!owned&&!meta.habitats.includes(terrain.biome))||isSwimmingBiome(terrain.biome)) return false;
+  const radius=Math.max(2,meta.radius*.8);
+  const samples=[[0,0],[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]];
+  for(const [sx,sy] of samples){
+    const px=x+sx*radius;
+    const py=y+sy*radius;
+    const gx=Math.floor(px/TILE_METERS);
+    const gy=Math.floor(py/TILE_METERS);
+    if(structureAtGrid(gx,gy)||roadDecorationAtGrid(gx,gy)||treeOccupiesGrid(gx,gy)||fallenTreeCollisionAt(px,py)) return false;
+  }
+  return true;
+}
+
+function treeOccupiesGrid(gx,gy){
+  const plotX=Math.floor(gx/TREE_PLOT_TILES);
+  const plotY=Math.floor(gy/TREE_PLOT_TILES);
+  for(let py=plotY;py<=plotY+2;py++) for(let px=plotX-1;px<=plotX+1;px++){
+    const tree=treeForPlot(px,py);
+    if(!tree) continue;
+    const physics=treePhysicsStates.get(treeKey(tree));
+    if(physics&&physics.status!=="standing") continue;
+    if(treeFootprint(tree.kind,tree.variant).some(([dx,dy])=>tree.gx+dx===gx&&tree.gy+dy===gy)) return tree;
+  }
+  return null;
 }
 
 function animalSpawnPoint(species,cellX,cellY,index){
   const cellMetres=ANIMAL_CELL_TILES*TILE_METERS;
   const baseX=(cellX+.12+hash2(cellX*7+index,cellY,8101)*.76)*cellMetres;
   const baseY=(cellY+.12+hash2(cellX,cellY*7+index,8102)*.76)*cellMetres;
-  for(let attempt=0;attempt<12;attempt++){
+  for(let attempt=0;attempt<20;attempt++){
     const angle=hash2(cellX+attempt,cellY-index,8110+index)*Math.PI*2;
     const radius=attempt*TILE_METERS*1.45;
     const x=baseX+Math.cos(angle)*radius;
     const y=baseY+Math.sin(angle)*radius;
+    if(animalSpawnAllowed(species,x,y)) return {x,y};
+  }
+  // Bounded deterministic fallback: a fixed spiral avoids both spawn spikes
+  // and an entity appearing in a canopy merely because random retries failed.
+  for(let slot=0;slot<48;slot++){
+    const ring=1+Math.floor(slot/8);
+    const angle=(slot%8)*Math.PI/4+hash2(cellX,cellY,8149+index)*.28;
+    const x=baseX+Math.cos(angle)*ring*TILE_METERS*1.35;
+    const y=baseY+Math.sin(angle)*ring*TILE_METERS*1.35;
     if(animalSpawnAllowed(species,x,y)) return {x,y};
   }
   return null;
@@ -1861,15 +1917,18 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
   const animal={
     id,species,originCellX:cellX,originCellY:cellY,
     x:point.x,y:point.y,homeX:point.x,homeY:point.y,
-    heading,vx:0,vy:0,dir:"down",gait:hash2(cellX,index,8210)*4,
+    heading,vx:0,vy:0,dir:"down",gait:hash2(cellX,index,8210)*Math.PI*2,
+    motionSpeed:0,gaitMode:"idle",trackDistance:0,
     health:meta.maxHealth,maxHealth:meta.maxHealth,status:"alive",
     wanderTimer:.8+hash2(cellX,cellY,8211+index)*3.4,idleUntil:0,
     hitFlash:0,fleeUntil:0,aggressionUntil:0,attackCooldown:0,
+    attackPhase:"idle",attackTimer:0,attackHitDone:false,
     bloodLevel:0,corpseDamage:0,harvestCount:0,lootQueue:null,
     angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,
+    deadAt:null,bloodPoolGrowth:0,bloodTrailDistance:0,bloodReserve:1,
     breed:horseVariant?.breed||null,coat:horseVariant?.coat||null,
     saddled:species==="horse"&&hash2(cellX,index+cellY,8253)<.22,
-    owned:false,riderId:null,mountStamina:100
+    owned:false,riderId:null,mountStamina:100,command:"follow"
   };
   Object.assign(animal,overrides);
   return cacheAnimalState(id,animal);
@@ -1928,17 +1987,20 @@ function findStartingHorsePoint(x,y){
   for(const [ox,oy] of preferred){
     const px=x+ox;
     const py=y+oy;
-    if(animalSpawnAllowed("horse",px,py)) return {x:px,y:py};
+    if(animalSpawnAllowed("horse",px,py,true)) return {x:px,y:py};
   }
-  for(let ring=2;ring<=6;ring++){
+  for(let ring=2;ring<=12;ring++){
     for(let step=0;step<16;step++){
       const angle=step/16*Math.PI*2;
       const px=x+Math.cos(angle)*ring*TILE_METERS;
       const py=y+Math.sin(angle)*ring*TILE_METERS;
-      if(animalSpawnAllowed("horse",px,py)) return {x:px,y:py};
+      if(animalSpawnAllowed("horse",px,py,true)) return {x:px,y:py};
     }
   }
-  return {x:Math.min(WORLD_SIZE-32,x+14),y};
+  // The player's already validated land cell is the final bounded fallback;
+  // offset by the minimum combined radius so the two bodies do not overlap.
+  const facing=directionVector(state.player.dir);
+  return {x:Math.max(32,Math.min(WORLD_SIZE-32,x-facing.x*(animalCatalog.horse.radius+PLAYER_RADIUS+1))),y:Math.max(32,Math.min(WORLD_SIZE-32,y-facing.y*(animalCatalog.horse.radius+PLAYER_RADIUS+1)))};
 }
 
 function spawnStartingHorse(){
@@ -1998,8 +2060,8 @@ function moveAnimalBody(animal,dt){
 }
 
 function injurePlayerFromBoar(animal){
-  if(animal.attackCooldown>0||state.dead) return;
-  animal.attackCooldown=1.15;
+  if(animal.attackPhase!=="charge"||animal.attackHitDone||state.dead) return;
+  animal.attackHitDone=true;
   state.player.health=Math.max(0,state.player.health-14);
   const dx=state.player.x-animal.x;
   const dy=state.player.y-animal.y;
@@ -2009,12 +2071,60 @@ function injurePlayerFromBoar(animal){
   if(state.player.health<=0) killPlayer("Von einem Wildschwein niedergerannt");
 }
 
+function advanceAnimalGait(animal,moved,dt){
+  const speed=dt>0?moved/dt:0;
+  animal.motionSpeed=lerp(animal.motionSpeed||0,speed,1-Math.exp(-dt*12));
+  const previous=animal.gaitMode;
+  animal.gaitMode=speed<.55?"idle":speed<(animal.species==="horse"?24:15)?"walk":"gallop";
+  if(animal.gaitMode!==previous&&animal.gaitMode==="idle") animal.gait=Math.round((animal.gait||0)/Math.PI)*Math.PI;
+  if(moved>.001){
+    const strideLength=animal.species==="horse"?(animal.gaitMode==="gallop"?9.2:6.8):(animal.species==="boar"?5.4:2.8);
+    animal.gait=(animal.gait||0)+moved/strideLength*Math.PI*2;
+  }
+}
+
+function updateBoarAttack(animal,dt,dx,dy,distance,meta){
+  if(animal.attackPhase==="idle"){
+    if(animal.aggressionUntil<=state.elapsed||distance>=190) return null;
+    animal.heading=Math.atan2(dy,dx);
+    if(distance<meta.radius+PLAYER_RADIUS+8&&animal.attackCooldown<=0){
+      animal.attackPhase="windup";
+      animal.attackTimer=.42;
+      animal.attackHitDone=false;
+      return 0;
+    }
+    return meta.runSpeed;
+  }
+  animal.attackTimer-=dt;
+  if(animal.attackPhase==="windup"){
+    if(animal.attackTimer<=0){
+      animal.attackPhase="charge";
+      animal.attackTimer=.5;
+      animal.heading=Math.atan2(dy,dx);
+    }
+    return 0;
+  }
+  if(animal.attackPhase==="charge"){
+    const active=animal.attackTimer<=.38&&animal.attackTimer>=.10;
+    if(active&&distance<meta.radius+PLAYER_RADIUS+2.4) injurePlayerFromBoar(animal);
+    if(animal.attackTimer<=0){animal.attackPhase="recover";animal.attackTimer=.62;}
+    return meta.runSpeed*1.55;
+  }
+  if(animal.attackTimer<=0){
+    animal.attackPhase="idle";
+    animal.attackCooldown=.65;
+    animal.attackHitDone=false;
+  }
+  return 0;
+}
+
 function updateLivingAnimal(animal,dt){
   const meta=animalCatalog[animal.species];
   if(animal.species==="horse"&&animal.riderId){
     animal.hitFlash=0;
     animal.vx=0;
     animal.vy=0;
+    animal.motionSpeed=0;
     return;
   }
   animal.hitFlash=Math.max(0,animal.hitFlash-dt);
@@ -2026,15 +2136,19 @@ function updateLivingAnimal(animal,dt){
   let speed=meta.walkSpeed;
 
   if(animal.species==="horse"&&animal.owned){
-    if(distance>HORSE_FOLLOW_DISTANCE){
-      animal.heading=Math.atan2(dy,dx);
-      speed=distance>HORSE_FOLLOW_DISTANCE*2.2?meta.runSpeed:meta.walkSpeed;
+    const facing=directionVector(state.player.dir);
+    const targetX=state.player.x-facing.x*HORSE_FOLLOW_DISTANCE;
+    const targetY=state.player.y-facing.y*HORSE_FOLLOW_DISTANCE;
+    const followDx=targetX-animal.x;
+    const followDy=targetY-animal.y;
+    const followDistance=Math.hypot(followDx,followDy);
+    if(animal.command!=="stay"&&followDistance>2.2){
+      animal.heading=Math.atan2(followDy,followDx);
+      speed=followDistance>HORSE_FOLLOW_DISTANCE*1.65?meta.runSpeed:Math.min(meta.walkSpeed,followDistance*2.2);
     }else speed=0;
     animal.wanderTimer=1;
-  }else if(animal.species==="boar"&&animal.aggressionUntil>state.elapsed&&distance<190){
-    animal.heading=Math.atan2(dy,dx);
-    speed=meta.runSpeed;
-    if(distance<meta.radius+PLAYER_RADIUS+2) injurePlayerFromBoar(animal);
+  }else if(animal.species==="boar"&&(animal.attackPhase!=="idle"||animal.aggressionUntil>state.elapsed&&distance<190)){
+    speed=updateBoarAttack(animal,dt,dx,dy,distance,meta)??0;
   }else if(animal.fleeUntil>state.elapsed||((animal.species==="chicken"||animal.species==="horse"&&!animal.owned)&&distance<meta.timidRange)){
     animal.heading=Math.atan2(-dy,-dx)+(hash2(Math.floor(state.elapsed*4),animal.originCellY,8420)-.5)*.36;
     speed=meta.runSpeed;
@@ -2057,9 +2171,31 @@ function updateLivingAnimal(animal,dt){
   const response=1-Math.exp(-dt*(animal.species==="chicken"?8:animal.species==="horse"?4:5));
   animal.vx=lerp(animal.vx,Math.cos(animal.heading)*speed,response);
   animal.vy=lerp(animal.vy,Math.sin(animal.heading)*speed,response);
+  const oldX=animal.x;
+  const oldY=animal.y;
   moveAnimalBody(animal,dt);
+  if(state.draggingAnimalId===animal.id){
+    const dx=animal.x-state.player.x;
+    const dy=animal.y-state.player.y;
+    const separation=Math.hypot(dx,dy);
+    const minimum=meta.radius+PLAYER_RADIUS*.82;
+    if(separation<minimum){
+      const facing=directionVector(state.player.dir);
+      const nx=separation>.001?dx/separation:-facing.x;
+      const ny=separation>.001?dy/separation:-facing.y;
+      const correction=Math.min(minimum-separation,dt*36);
+      const x=animal.x+nx*correction;
+      const y=animal.y+ny*correction;
+      if(animalCanStand(animal,x,y)){animal.x=x;animal.y=y;}
+    }
+  }
   animal.dir=animalDirection(animal);
-  animal.gait+=dt*Math.hypot(animal.vx,animal.vy)*.42;
+  const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
+  advanceAnimalGait(animal,moved,dt);
+  if(animal.species==="horse"&&moved>.02){
+    animal.trackDistance=(animal.trackDistance||0)+moved;
+    if(animal.trackDistance>=6.6){animal.trackDistance%=6.6;emitGroundTrack(animal.x,animal.y,animal.dir,"hoof");}
+  }
 }
 
 function updateAnimalRagdoll(animal,dt){
@@ -2067,24 +2203,44 @@ function updateAnimalRagdoll(animal,dt){
   const meta=animalCatalog[animal.species];
   if(state.draggingAnimalId===animal.id){
     const facing=directionVector(state.player.dir);
-    const towDistance=meta.radius+PLAYER_RADIUS+5;
+    const towDistance=meta.radius+PLAYER_RADIUS+1;
     const targetX=state.player.x-facing.x*towDistance;
     const targetY=state.player.y-facing.y*towDistance;
-    animal.vx+=(targetX-animal.x)*dt*16;
-    animal.vy+=(targetY-animal.y)*dt*16;
+    // Critically damped spring: it converges quickly without the overshoot of
+    // the previous accumulating pull force and remains stable at capped dt.
+    const omega=13;
+    animal.vx+=((targetX-animal.x)*omega*omega-2*omega*animal.vx)*dt;
+    animal.vy+=((targetY-animal.y)*omega*omega-2*omega*animal.vy)*dt;
     const speed=Math.hypot(animal.vx,animal.vy);
-    if(speed>36){animal.vx=animal.vx/speed*36;animal.vy=animal.vy/speed*36;}
-    animal.angularVelocity+=(animal.vx*Math.sin(animal.angle)-animal.vy*Math.cos(animal.angle))*dt*.018;
-    animal.ragdollPhase+=dt*(5+speed*.12);
+    const cap=PLAYER_SPEED*1.12;
+    if(speed>cap){animal.vx=animal.vx/speed*cap;animal.vy=animal.vy/speed*cap;}
+    animal.angularVelocity+=(animal.vx*Math.sin(animal.angle)-animal.vy*Math.cos(animal.angle))*dt*.009;
+    animal.ragdollPhase+=dt*Math.min(2.2,.25+speed*.035);
   }else{
-    animal.ragdollPhase+=dt*Math.hypot(animal.vx,animal.vy)*.08;
+    animal.ragdollPhase+=dt*Math.hypot(animal.vx,animal.vy)*.025;
   }
+  const oldX=animal.x;
+  const oldY=animal.y;
   moveAnimalBody(animal,dt);
   const damping=Math.exp(-dt*(state.draggingAnimalId===animal.id?4.5:7));
   animal.vx*=damping;
   animal.vy*=damping;
   animal.angle+=animal.angularVelocity*dt;
   animal.angularVelocity*=Math.exp(-dt*5.5);
+  animal.motionSpeed=0;
+  animal.gaitMode="dead";
+  const age=Math.max(0,state.elapsed-(animal.deadAt??state.elapsed));
+  const bloodCapacity=Math.min(1,animal.bloodLevel/1.5)*Math.max(.32,1-animal.harvestCount*.055);
+  animal.bloodPoolGrowth=Math.min(bloodCapacity,age/CORPSE_POOL_GROWTH_SECONDS*bloodCapacity);
+  if(state.draggingAnimalId===animal.id&&age<CORPSE_TRAIL_FRESH_SECONDS&&animal.bloodReserve>0){
+    const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
+    animal.bloodTrailDistance=(animal.bloodTrailDistance||0)+moved;
+    if(animal.bloodTrailDistance>=4.2){
+      animal.bloodTrailDistance%=4.2;
+      animal.bloodReserve=Math.max(0,animal.bloodReserve-.025);
+      addEffect({type:"bloodDecal",layer:"ground",decal:true,x:animal.x,y:animal.y,life:38,size:.7+animal.bloodLevel*.42,color:"#5b1718"});
+    }
+  }
 }
 
 function updateAnimals(dt){
@@ -2095,12 +2251,22 @@ function updateAnimals(dt){
   }
 }
 
-function emitBlood(animal,count=5){
+function emitBlood(animal,count=5,impact=null){
+  const direction=impact||{x:animal.x-state.player.x,y:animal.y-state.player.y};
+  const length=Math.hypot(direction.x,direction.y)||1;
+  const nx=direction.x/length;
+  const ny=direction.y/length;
   for(let index=0;index<count;index++) addEffect({
-    type:"blood",layer:"ground",x:animal.x+(Math.random()-.5)*3,y:animal.y+(Math.random()-.5)*3,
-    life:1.4+Math.random()*1.6,size:.55+Math.random()*.65,
-    vx:(Math.random()-.5)*10,vy:(Math.random()-.5)*8-2,
+    type:"blood",layer:"air",x:animal.x+(Math.random()-.5)*3,y:animal.y+(Math.random()-.5)*3,
+    life:.65+Math.random()*.75,size:.45+Math.random()*.7,
+    vx:nx*(8+Math.random()*12)+(Math.random()-.5)*7,vy:ny*(7+Math.random()*10)-6-Math.random()*7,
     color:index%3===0?"#8f211d":"#5f1718"
+  });
+  const stains=Math.max(1,Math.ceil(count*.3));
+  for(let index=0;index<stains;index++) addEffect({
+    type:"bloodDecal",layer:"ground",decal:true,x:animal.x+nx*(2+Math.random()*5)+(Math.random()-.5)*2,
+    y:animal.y+ny*(2+Math.random()*5)+(Math.random()-.5)*2,life:32+Math.random()*20,
+    size:.5+Math.random()*.5,color:index%2?"#571718":"#771c1b"
   });
 }
 
@@ -2113,6 +2279,10 @@ function killAnimal(animal,damage){
   animal.status="dead";
   animal.health=0;
   animal.bloodLevel=Math.min(1.6,Math.max(.65,animal.bloodLevel+.24));
+  animal.deadAt=state.elapsed;
+  animal.bloodPoolGrowth=0;
+  animal.bloodReserve=Math.min(1.25,.55+animal.bloodLevel*.42);
+  animal.attackPhase="idle";
   const dx=animal.x-state.player.x;
   const dy=animal.y-state.player.y;
   const distance=Math.hypot(dx,dy)||1;
@@ -2128,6 +2298,7 @@ function killAnimal(animal,damage){
 function harvestAnimalCorpse(animal,damage){
   animal.corpseDamage+=damage;
   animal.bloodLevel=Math.min(1.8,animal.bloodLevel+damage/animal.maxHealth*.32);
+  animal.bloodReserve=Math.min(1.25,(animal.bloodReserve||0)+damage/animal.maxHealth*.16);
   animal.hitFlash=.14;
   animal.angularVelocity+=(Math.random()-.5)*1.8;
   emitBlood(animal,Math.min(9,3+Math.ceil(damage/12)));
@@ -2172,8 +2343,8 @@ function damageAnimal(animal,damage,itemId){
 }
 
 function drawBloodPool(animal,x,y,unit){
-  if(animal.status==="alive"||animal.bloodLevel<.18) return;
-  const size=Math.max(2,Math.round(unit*(1.2+animal.bloodLevel*2.2)));
+  if(animal.status==="alive"||animal.bloodLevel<.18||animal.bloodPoolGrowth<=.01) return;
+  const size=Math.max(2,Math.round(unit*(.9+animal.bloodPoolGrowth*3.1)));
   ctx.fillStyle="rgba(75,15,17,.66)";
   ctx.fillRect(Math.round(x-size),Math.round(y-unit*.45),size*2,Math.max(2,Math.round(size*.72)));
   ctx.fillStyle="rgba(125,28,23,.46)";
@@ -2204,7 +2375,7 @@ function drawChicken(animal,x,y){
     ctx.fillStyle="#e8e1c4";ctx.fillRect(1*u,-7*u,4*u,4*u);
     ctx.fillStyle="#d7a73a";ctx.fillRect(5*u,-5*u,2*u,u);
     ctx.fillStyle="#a7352e";ctx.fillRect(2*u,-9*u,u,2*u);ctx.fillRect(3*u,-9*u,u,u);
-    ctx.fillStyle="#1b211d";ctx.fillRect(4*u,-6*u,u,u);
+    ctx.fillStyle="#1b211d";ctx.fillRect(4*u,(blinkClosed(animal)?-5:-6)*u,u,u);
     ctx.fillStyle="#b78939";ctx.fillRect((-2-step)*u,u,u,3*u);ctx.fillRect((1+step)*u,u,u,3*u);
     drawAnimalBloodMarks(ctx,animal,u);
   }else{
@@ -2215,6 +2386,7 @@ function drawChicken(animal,x,y){
     drawAnimalBloodMarks(ctx,animal,u);
     ctx.fillStyle="#e1d8b9";ctx.fillRect((3+flop)*u,-2*u,4*u,4*u);
     ctx.fillStyle="#d7a73a";ctx.fillRect((7+flop)*u,-u,2*u,u);
+    ctx.fillStyle="#24201b";ctx.fillRect((5+flop)*u,-u,2*u,Math.max(1,u/2));
     ctx.fillStyle="#987136";ctx.fillRect((-3-flop)*u,u,u,3*u);ctx.fillRect((2+flop)*u,u,u,3*u);
     if(!animal.lootQueue?.length){ctx.fillStyle="#d7c9aa";ctx.fillRect(-2*u,-3*u,5*u,u);}
   }
@@ -2228,13 +2400,14 @@ function drawBoar(animal,x,y){
   ctx.translate(Math.round(x),Math.round(y));
   ctx.scale(flip,1);
   if(animal.status==="alive"){
-    const step=Math.sin(animal.gait*3.2)>.1?1:-1;
+    const step=animal.gaitMode==="idle"?0:(Math.sin(animal.gait)>.1?1:-1);
+    const attackDrop=animal.attackPhase==="windup"?2:animal.attackPhase==="charge"?1:0;
     ctx.fillStyle="rgba(0,0,0,.30)";ctx.fillRect(-6*u,u,13*u,2*u);
     ctx.fillStyle=animal.hitFlash>0?"#9d5d51":"#5e4637";ctx.fillRect(-6*u,-5*u,10*u,6*u);
-    ctx.fillStyle="#463329";ctx.fillRect(-4*u,-7*u,5*u,3*u);ctx.fillRect(2*u,-5*u,5*u,5*u);
-    ctx.fillStyle="#3a2922";ctx.fillRect(6*u,-3*u,3*u,3*u);ctx.fillRect(0,-7*u,2*u,2*u);
-    ctx.fillStyle="#d5c49a";ctx.fillRect(6*u,0,3*u,u);ctx.fillRect(7*u,-u,u,2*u);
-    ctx.fillStyle="#151815";ctx.fillRect(5*u,-4*u,u,u);
+    ctx.fillStyle="#463329";ctx.fillRect(-4*u,-7*u,5*u,3*u);ctx.fillRect(2*u,(-5+attackDrop)*u,5*u,5*u);
+    ctx.fillStyle="#3a2922";ctx.fillRect(6*u,(-3+attackDrop)*u,3*u,3*u);ctx.fillRect(0,-7*u,2*u,2*u);
+    ctx.fillStyle="#d5c49a";ctx.fillRect(6*u,attackDrop*u,3*u,u);ctx.fillRect(7*u,(-1+attackDrop)*u,u,2*u);
+    ctx.fillStyle="#151815";ctx.fillRect(5*u,(blinkClosed(animal)?-3:-4+attackDrop)*u,u,u);
     ctx.fillStyle="#3d2d25";ctx.fillRect((-4-step)*u,u,2*u,4*u);ctx.fillRect((2+step)*u,u,2*u,4*u);
     ctx.fillStyle="#7a5a42";ctx.fillRect(-7*u,-4*u,u,2*u);
     drawAnimalBloodMarks(ctx,animal,u);
@@ -2244,6 +2417,7 @@ function drawBoar(animal,x,y){
     drawAnimalBloodMarks(ctx,animal,u);
     ctx.fillStyle="#453129";ctx.fillRect((4+flop)*u,-3*u,5*u,5*u);
     ctx.fillStyle="#d5c49a";ctx.fillRect((8+flop)*u,u,3*u,u);
+    ctx.fillStyle="#211b18";ctx.fillRect((6+flop)*u,0,2*u,Math.max(1,u/2));
     ctx.fillStyle="#34251f";
     for(const [lx,phase] of [[-4,-1],[-1,1],[2,-1],[4,1]]) ctx.fillRect((lx+phase*flop)*u,u,2*u,4*u);
     if(!animal.lootQueue?.length){ctx.fillStyle="#c8b996";ctx.fillRect(-3*u,-4*u,6*u,u);ctx.fillRect(-u,-5*u,2*u,3*u);}
@@ -2258,7 +2432,8 @@ function drawHorse(animal,x,y){
   const dir=animal.dir||animalDirection(animal);
   const side=dir==="left"||dir==="right";
   const flip=dir==="left"?-1:1;
-  const stride=Math.hypot(animal.vx||0,animal.vy||0)>.8?(Math.sin((animal.gait||0)*3.2)>.05?1:-1):0;
+  const phase=animal.gait||0;
+  const stride=animal.gaitMode==="idle"?0:(Math.sin(phase)>.05?(animal.gaitMode==="gallop"?2:1):(animal.gaitMode==="gallop"?-2:-1));
   const bodyLength=Math.max(11,Math.round(13*breed.bodyLength));
   const bodyHeight=Math.max(5,Math.round(6*breed.bodyHeight));
   const legLength=Math.max(5,Math.round(7*breed.legLength));
@@ -2281,9 +2456,10 @@ function drawHorse(animal,x,y){
     ctx.fillRect((left-stride)*u,(legLength-2)*u,3*u,2*u);
     ctx.fillRect((right+stride)*u,(legLength-2)*u,3*u,2*u);
 
+    const tailWave=animal.gaitMode==="idle"?Math.round(Math.sin(state.elapsed*.9+(stableTextHash(animal.id)%17))*0.5):Math.round(Math.sin(phase*.55)*2);
     ctx.fillStyle=coat.mane;
-    ctx.fillRect((-bodyLength/2-3)*u,-bodyHeight*u,3*u,2*u);
-    ctx.fillRect((-bodyLength/2-5)*u,(-bodyHeight+1)*u,3*u,u);
+    ctx.fillRect((-bodyLength/2-3)*u,(-bodyHeight+tailWave)*u,3*u,2*u);
+    ctx.fillRect((-bodyLength/2-5)*u,(-bodyHeight+1+tailWave)*u,3*u,u);
     ctx.fillStyle=coat.body;
     ctx.fillRect(Math.round(-bodyLength/2*u),-bodyHeight*u,bodyLength*u,bodyHeight*u);
     ctx.fillStyle=coat.light;
@@ -2306,10 +2482,13 @@ function drawHorse(animal,x,y){
     ctx.fillRect((bodyLength/2+1)*u,(-bodyHeight-9)*u,u,2*u);
     ctx.fillRect((bodyLength/2+4)*u,(-bodyHeight-9)*u,u,2*u);
     ctx.fillStyle="#111817";
-    ctx.fillRect((bodyLength/2+3)*u,(-bodyHeight-6)*u,u,u);
+    ctx.fillRect((bodyLength/2+3)*u,(blinkClosed(animal)?-bodyHeight-5:-bodyHeight-6)*u,u,u);
     ctx.fillStyle=coat.marking;
     ctx.fillRect((bodyLength/2+4)*u,(-bodyHeight-4)*u,2*u,u);
   }else{
+    const tailWave=animal.gaitMode==="idle"?0:Math.round(Math.sin(phase*.55));
+    ctx.fillStyle=coat.mane;
+    ctx.fillRect((dir==="up"?-2+tailWave:3+tailWave)*u,(-bodyHeight+1)*u,2*u,5*u);
     ctx.fillStyle=coat.shadow;
     ctx.fillRect(-4*u,-u,2*u,legLength*u);ctx.fillRect(2*u,-u,2*u,legLength*u);
     ctx.fillStyle=coat.body;
@@ -2327,7 +2506,8 @@ function drawHorse(animal,x,y){
     ctx.fillStyle=coat.marking;
     ctx.fillRect(-u,(-bodyHeight-7)*u,2*u,3*u);
     ctx.fillStyle="#111817";
-    ctx.fillRect(-2*u,(-bodyHeight-5)*u,u,u);ctx.fillRect(u,(-bodyHeight-5)*u,u,u);
+    const eyeY=(blinkClosed(animal)?-bodyHeight-4:-bodyHeight-5)*u;
+    ctx.fillRect(-2*u,eyeY,u,u);ctx.fillRect(u,eyeY,u,u);
     ctx.fillStyle=coat.mane;
     ctx.fillRect(-3*u,(-bodyHeight-9)*u,u,2*u);ctx.fillRect(2*u,(-bodyHeight-9)*u,u,2*u);
   }
@@ -2353,23 +2533,29 @@ function drawAnimal(animal,camX,camY){
 }
 
 function drawMountedPair(horse,player,x,y,local=false){
-  const mountSprite={...horse,dir:player.dir||horse.dir,moving:player.moving,gait:Number(player.walkTime)||horse.gait||0};
-  if(player.moving){
-    const facing=directionVector(player.dir||"down");
-    mountSprite.vx=facing.x*10;
-    mountSprite.vy=facing.y*10;
-  }
+  const mountSprite={...horse,dir:player.dir||horse.dir,gait:Number(horse.gait)||0,motionSpeed:Number(horse.motionSpeed)||0,gaitMode:horse.gaitMode||"idle"};
   drawHorse(mountSprite,x,y);
-  // One-pixel character units produce a clearly seated silhouette while still
-  // retaining the player's selected hair, clothing and held item. The lower
-  // walking legs are clipped at the saddle instead of covering the horse.
+  // Keep the on-foot world scale; only the lower walking limbs are clipped.
   ctx.save();
   ctx.beginPath();
   const sideView=mountSprite.dir==="left"||mountSprite.dir==="right";
-  const riderY=sideView?y-11:y-16;
-  ctx.rect(Math.round(x-70),Math.round(y-80),140,sideView?67:62);
+  const riderY=sideView?y-12:y-15;
+  ctx.rect(Math.round(x-72),Math.round(y-86),144,sideView?70:66);
   ctx.clip();
-  drawCharacter(ctx,x,riderY,player,1.45,local);
+  drawCharacter(ctx,x,riderY,{...player,moving:false,riding:true},WORLD_CHARACTER_SCALE,local);
+  ctx.restore();
+  // Bent thighs and boots make the seat explicit and never reuse walk frames.
+  ctx.save();
+  ctx.translate(Math.round(x),Math.round(y));
+  if(mountSprite.dir==="left") ctx.scale(-1,1);
+  ctx.fillStyle="#222b31";
+  if(sideView){
+    ctx.fillRect(-2,-17,10,4);ctx.fillRect(6,-16,4,9);
+    ctx.fillStyle="#171c20";ctx.fillRect(6,-9,6,3);
+  }else{
+    ctx.fillRect(-10,-18,5,8);ctx.fillRect(5,-18,5,8);
+    ctx.fillStyle="#171c20";ctx.fillRect(-11,-11,6,3);ctx.fillRect(5,-11,6,3);
+  }
   ctx.restore();
   if(mountSprite.saddled){
     const u=2;
@@ -2425,7 +2611,7 @@ function drawDragTether(camX,camY){
   }
 }
 
-function collisionAt(x,y){
+function collisionAt(x,y,ignorePhysics=null){
   if(x<PLAYER_RADIUS||y<PLAYER_RADIUS||x>WORLD_SIZE-PLAYER_RADIUS||y>WORLD_SIZE-PLAYER_RADIUS) return {type:"edge"};
   const gx=Math.floor(x/TILE_METERS);
   const gy=Math.floor(y/TILE_METERS);
@@ -2434,7 +2620,7 @@ function collisionAt(x,y){
     const physics=treePhysicsStates.get(treeKey(tree));
     if(!physics||physics.status==="standing") return {type:"tree",tree,gx,gy};
   }
-  const fallenTree=fallenTreeCollisionAt(x,y);
+  const fallenTree=fallenTreeCollisionAt(x,y,ignorePhysics);
   if(fallenTree) return fallenTree;
   const structure=structureAtGrid(gx,gy);
   if(structure&&structure.code!=="p") return structure;
@@ -2522,24 +2708,37 @@ function drawLandmarkLabel(landmark,camX,camY){
 }
 
 function addEffect(effect){
+  if(effect.decal){
+    let decals=0;
+    for(const candidate of state.effects) if(candidate.decal) decals++;
+    if(decals>=GROUND_DECAL_LIMIT){
+      const oldest=state.effects.findIndex((candidate)=>candidate.decal);
+      if(oldest>=0) state.effects.splice(oldest,1);
+    }
+  }
   state.effects.push({...effect,maxLife:effect.life});
   if(state.effects.length>EFFECT_LIMIT) state.effects.splice(0,state.effects.length-EFFECT_LIMIT);
 }
 
-function emitFootstep(x,y){
+function emitGroundTrack(x,y,dir,kind="foot"){
   const terrain=terrainAt(x,y);
   const bridge=bridgeAt(x,y,terrain);
   if(!bridge&&["river","shallow","water","deepWater"].includes(terrain.biome)){
     addEffect({type:"ripple",layer:"ground",x,y,life:.72,size:1.3});
   }else{
+    const soft={snow:[32,"#9aa7a4"],glacier:[22,"#92aaa9"],packIce:[12,"#789596"],tundra:[19,"#536a59"],beach:[24,"#806b45"],desert:[22,"#826641"],swamp:[18,"#35422f"],forest:[9,"#31452f"],jungle:[9,"#28402d"],plains:[7,"#42523a"],oasis:[8,"#3c5439"]};
+    const profile=soft[terrain.biome];
+    if(!profile&&!roadAt(x,y)) return;
     addEffect({
-      type:"footprint",layer:"ground",x,y,life:2.8,size:.75,
-      dir:state.player.dir,
-      color:bridge?bridge.material==="wood"?"#4f3422":"#555954":terrain.biome==="beach"?"#806b45":roadAt(x,y)?"#665238":"#31452f"
+      type:kind==="hoof"?"hoofprint":"footprint",layer:"ground",decal:true,x,y,
+      life:bridge?3.5:profile?.[0]||4.5,size:kind==="hoof"?1.05:.75,dir,
+      color:bridge?bridge.material==="wood"?"#4f3422":"#555954":roadAt(x,y)?"#665238":profile[1]
     });
     if(roadAt(x,y)&&!bridge) addEffect({type:"dust",layer:"ground",x,y,life:.5,size:.7,vx:(Math.random()-.5)*2,vy:-2-Math.random()*2});
   }
 }
+
+function emitFootstep(x,y){emitGroundTrack(x,y,state.player.dir,"foot");}
 
 function shakeTree(tree,strong=false){
   tree.reactUntil=Math.max(tree.reactUntil,state.elapsed+(strong?1.35:.55));
@@ -2569,14 +2768,20 @@ function reactToCollision(hit,x,y){
 function updateWorldReactions(dt){
   updateItemAction(dt);
   updateTreePhysics(dt);
+  resolveFallenTreeOverlaps(dt);
   updateAnimals(dt);
   for(const effect of state.effects){
     effect.life-=dt;
     effect.x+=(effect.vx||0)*dt;
     effect.y+=(effect.vy||0)*dt;
-    if(effect.type==="leaf"||effect.type==="woodChip"||effect.type==="blood") effect.vy+=5*dt;
+    if(effect.type==="leaf"||effect.type==="woodChip"||effect.type==="blood") effect.vy+=11*dt;
+    if(effect.type==="blood"&&effect.layer==="air"&&effect.life<.18){
+      effect.layer="ground";effect.type="bloodDecal";effect.decal=true;effect.life=22;effect.maxLife=22;effect.vx=0;effect.vy=0;effect.size*=.8;
+    }
   }
   state.effects=state.effects.filter((effect)=>effect.life>0);
+  let decalOverflow=state.effects.reduce((sum,effect)=>sum+(effect.decal?1:0),0)-GROUND_DECAL_LIMIT;
+  if(decalOverflow>0) state.effects=state.effects.filter((effect)=>!effect.decal||decalOverflow--<=0);
   const follow=1-Math.exp(-dt*7.5);
   state.camera.x=lerp(state.camera.x,state.player.x,follow);
   state.camera.y=lerp(state.camera.y,state.player.y,follow);
@@ -2596,12 +2801,15 @@ function drawEffects(camX,camY,layer){
       ctx.strokeStyle="#b8dde0";
       ctx.lineWidth=1;
       ctx.strokeRect(Math.round(x-size),Math.round(y-size*.45),Math.round(size*2),Math.max(2,Math.round(size*.9)));
-    }else if(effect.type==="footprint"){
+    }else if(effect.type==="footprint"||effect.type==="hoofprint"){
       ctx.fillStyle=effect.color;
       const horizontal=effect.dir==="left"||effect.dir==="right";
       const width=(horizontal?effect.size*1.3:effect.size)*VIEW_SCALE;
       const height=(horizontal?effect.size:effect.size*1.3)*VIEW_SCALE;
-      ctx.fillRect(Math.round(x-width/2),Math.round(y-height/2),Math.max(2,Math.round(width)),Math.max(2,Math.round(height)));
+      if(effect.type==="hoofprint"){
+        ctx.fillRect(Math.round(x-width*.8),Math.round(y-height/2),Math.max(2,Math.round(width*.55)),Math.max(2,Math.round(height)));
+        ctx.fillRect(Math.round(x+width*.25),Math.round(y-height/2),Math.max(2,Math.round(width*.55)),Math.max(2,Math.round(height)));
+      }else ctx.fillRect(Math.round(x-width/2),Math.round(y-height/2),Math.max(2,Math.round(width)),Math.max(2,Math.round(height)));
     }else if(effect.type==="leaf"){
       ctx.fillStyle=effect.color;
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
@@ -2614,7 +2822,7 @@ function drawEffects(camX,camY,layer){
       ctx.fillStyle=effect.color||"#b47c43";
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,Math.max(2,Math.round(size*.55)));
-    }else if(effect.type==="blood"){
+    }else if(effect.type==="blood"||effect.type==="bloodDecal"){
       ctx.fillStyle=effect.color||"#731c1a";
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,Math.max(2,Math.round(size*.65)));
@@ -2790,6 +2998,33 @@ function dismountHorse(){
   state.player.stamina=Number.isFinite(horse.riderStamina)?horse.riderStamina:100;
   if(point){state.player.x=point.x;state.player.y=point.y;}
   showToast("Abgestiegen · Das Pferd bleibt in deiner Nähe.",1900);
+  return true;
+}
+
+function relevantOwnedHorse(){
+  const mounted=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(mounted?.owned) return mounted;
+  const starter=state.starterHorseId&&animalStates.get(state.starterHorseId);
+  if(starter?.owned) return starter;
+  let best=null;
+  let bestDistance=Infinity;
+  for(const animal of animalStates.values()) if(animal.species==="horse"&&animal.owned&&animal.status==="alive"){
+    const distance=Math.hypot(animal.x-state.player.x,animal.y-state.player.y);
+    if(distance<bestDistance){best=animal;bestDistance=distance;}
+  }
+  return best;
+}
+
+function toggleHorseCommand(){
+  if(!state.running||state.paused||state.mapOpen||state.inventoryOpen||state.dead) return false;
+  const horse=relevantOwnedHorse();
+  if(!horse){showToast("Kein eigenes Pferd verfügbar.");return false;}
+  horse.command=horse.command==="stay"?"follow":"stay";
+  if(horse.command==="stay"){
+    horse.homeX=horse.x;horse.homeY=horse.y;horse.vx=0;horse.vy=0;
+    showToast("Pferd: STAY · bleibt an dieser Position",1900);
+  }else showToast("Pferd: FOLLOW · folgt dir mit Abstand",1900);
+  updateMobileControlState();
   return true;
 }
 
@@ -3321,6 +3556,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   const beard=p.beard||hair;
   const beardStyle=p.beardStyle||"none";
   const outfit=p.outfit||"traveler";
+  const blinking=blinkClosed(p);
 
   c.save();
   c.translate(Math.round(x-8*u),Math.round(y-21*u+bob*u));
@@ -3368,8 +3604,8 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect((10+step*.5)*u,10*u,2*u,5*u);
     c.fillRect(6*u,3*u,6*u,7*u);
     drawHair(c,u,hairStyle,hair,"side");
-    c.fillStyle=eyes;
-    c.fillRect(10*u,6*u,1*u,1*u);
+    c.fillStyle=blinking?shade(skin,-42):eyes;
+    c.fillRect(10*u,(blinking?7:6)*u,blinking?2*u:u,Math.max(1,u));
     drawBeard(c,u,beardStyle,beard,"side");
   }else if(dir==="down"){
     // Front view: the cloak sits behind the body and only shows at the sides.
@@ -3404,9 +3640,10 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(12*u,(10-step*.5)*u,2*u,5*u);
     c.fillRect(4*u,3*u,8*u,7*u);
     drawHair(c,u,hairStyle,hair,"down");
-    c.fillStyle=eyes;
-    c.fillRect(6*u,6*u,1*u,1*u);
-    c.fillRect(10*u,6*u,1*u,1*u);
+    c.fillStyle=blinking?shade(skin,-42):eyes;
+    const eyeY=(blinking?7:6)*u;
+    c.fillRect(6*u,eyeY,blinking?2*u:u,Math.max(1,u));
+    c.fillRect(10*u,eyeY,blinking?2*u:u,Math.max(1,u));
     drawBeard(c,u,beardStyle,beard,"down");
   }else{
     // Back view: shoes point north, while the cloak correctly covers the back
@@ -3873,6 +4110,61 @@ function updateItemAction(dt){
   }
 }
 
+function pushOutOfTree(entity,radius,physics,maxPush,animal=null){
+  const shapes=fallenTreeHitShapes(physics);
+  const hit=segmentDistance(entity.x,entity.y,shapes.segment.ax,shapes.segment.ay,shapes.segment.bx,shapes.segment.by);
+  const sx=lerp(shapes.segment.ax,shapes.segment.bx,hit.t);
+  const sy=lerp(shapes.segment.ay,shapes.segment.by,hit.t);
+  const trunkOverlap=shapes.trunkRadius+radius-hit.distance;
+  const crownDistance=Math.hypot(entity.x-shapes.crown.x,entity.y-shapes.crown.y);
+  const crownOverlap=shapes.crown.radius+radius-crownDistance;
+  if(trunkOverlap<=0&&crownOverlap<=0) return false;
+  const useCrown=crownOverlap>trunkOverlap;
+  const originX=useCrown?shapes.crown.x:sx;
+  const originY=useCrown?shapes.crown.y:sy;
+  let nx=entity.x-originX;
+  let ny=entity.y-originY;
+  const length=Math.hypot(nx,ny);
+  if(length>.001){nx/=length;ny/=length;}
+  else{nx=-physics.fallDirection.y;ny=physics.fallDirection.x;}
+  const distance=Math.min(maxPush,Math.max(trunkOverlap,crownOverlap)+.18);
+  const rotations=[0,.55,-.55,1.05,-1.05];
+  for(const rotation of rotations){
+    const cos=Math.cos(rotation),sin=Math.sin(rotation);
+    const rx=nx*cos-ny*sin;
+    const ry=nx*sin+ny*cos;
+    const x=entity.x+rx*distance;
+    const y=entity.y+ry*distance;
+    const terrain=terrainAt(x,y);
+    let allowed=!isSwimmingBiome(terrain.biome)&&!collisionAt(x,y,physics);
+    if(animal&&allowed&&animal.status==="alive"&&!animalCatalog[animal.species].habitats.includes(terrain.biome)&&!(animal.species==="horse"&&animal.owned)) allowed=false;
+    if(!allowed) continue;
+    entity.x=x;entity.y=y;
+    if("vx" in entity){entity.vx+=rx*Math.min(8,distance*2);entity.vy+=ry*Math.min(8,distance*2);}
+    return true;
+  }
+  return false;
+}
+
+function resolveFallenTreeOverlaps(dt){
+  const playerMount=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  const animals=activeAnimalsNear(state.player.x,state.player.y,180);
+  for(const physics of treePhysicsStates.values()){
+    if(!["falling","fallen"].includes(physics.status)) continue;
+    const segment=fallenTreeSegment(physics);
+    if(Math.min(Math.hypot(state.player.x-segment.ax,state.player.y-segment.ay),Math.hypot(state.player.x-segment.bx,state.player.y-segment.by))>220) continue;
+    const maxPush=Math.max(.28,dt*38);
+    if(playerMount){
+      pushOutOfTree(playerMount,animalCatalog.horse.radius*.78,physics,maxPush,playerMount);
+      state.player.x=playerMount.x;state.player.y=playerMount.y;
+    }else pushOutOfTree(state.player,PLAYER_RADIUS,physics,maxPush);
+    for(const animal of animals){
+      if(animal===playerMount) continue;
+      pushOutOfTree(animal,animalCatalog[animal.species].radius*.72,physics,maxPush,animal);
+    }
+  }
+}
+
 function updateTreePhysics(dt){
   for(const physics of treePhysicsStates.values()){
     if(physics.status!=="falling") continue;
@@ -3919,6 +4211,7 @@ function moveMountedPlayer(dt,horse,dx,dy){
   if(!moving){
     horse.vx=lerp(horse.vx,0,1-Math.exp(-dt*10));
     horse.vy=lerp(horse.vy,0,1-Math.exp(-dt*10));
+    advanceAnimalGait(horse,0,dt);
     state.player.x=horse.x;
     state.player.y=horse.y;
     return;
@@ -3947,15 +4240,16 @@ function moveMountedPlayer(dt,horse,dx,dy){
   const moved=Math.hypot(horse.x-oldX,horse.y-oldY);
   horse.vx=dt?(horse.x-oldX)/dt:0;
   horse.vy=dt?(horse.y-oldY)/dt:0;
-  horse.gait+=moved*(galloping?.92:.62);
+  advanceAnimalGait(horse,moved,dt);
   state.player.x=horse.x;
   state.player.y=horse.y;
   state.player.moving=moved>.02;
   state.player.walkTime+=dt*(galloping?2.2:1.45);
   if(isSafeGroundBiome(terrainAt(horse.x,horse.y).biome)) state.lastSafe={x:horse.x,y:horse.y};
-  state.footstepDistance+=moved;
-  if(state.footstepDistance>=8.5){
-    state.footstepDistance%=8.5;
+  state.horseTrackDistance+=moved;
+  if(state.horseTrackDistance>=6.4){
+    state.horseTrackDistance%=6.4;
+    emitGroundTrack(horse.x-dx*3,horse.y-dy*3,horse.dir,"hoof");
     for(let index=0;index<(galloping?3:2);index++) addEffect({
       type:"dust",layer:"ground",x:horse.x-dx*4+(Math.random()-.5)*3,y:horse.y-dy*4+(Math.random()-.5)*3,
       life:.45+Math.random()*.35,size:.55+Math.random()*.35,vx:-dx*4+(Math.random()-.5)*3,vy:-dy*4+(Math.random()-.5)*3
@@ -4163,7 +4457,8 @@ function updateHud(){
   $("healthFill").style.width=state.player.health.toFixed(1)+"%";
   $("healthText").textContent=Math.ceil(state.player.health)+" / 100";
   $("staminaText").textContent=state.mountedHorseId?"PFERDEAUSDAUER":state.player.drowning?"ERTRINKEN":state.player.swimming?"SCHWIMMEN":"AUSDAUER";
-  $("movementStateText").textContent=state.mountedHorseId?"REITET":state.player.drowning?"SINKT":state.player.swimming?"SCHWIMMT":"LV. 1";
+  const commandHorse=relevantOwnedHorse();
+  $("movementStateText").textContent=state.mountedHorseId?"REITET":state.player.drowning?"SINKT":state.player.swimming?"SCHWIMMT":commandHorse?.command==="stay"?"PFERD STAY":"PFERD FOLLOW";
   $("locationText").textContent=near.distance<650?near.landmark.short:biomeNames[terrain.biome];
   const dirText={up:"N",right:"O",down:"S",left:"W"};
   $("compassDirection").textContent=dirText[state.player.dir]||"N";
@@ -4485,6 +4780,7 @@ function startGame(){
   state.lastSafe={x:state.player.x,y:state.player.y};
   state.effects=[];
   state.footstepDistance=0;
+  state.horseTrackDistance=0;
   state.player.stamina=100;
   state.player.health=100;
   state.player.swimming=false;
@@ -4529,7 +4825,7 @@ function publicPlayer(){
     heldItem:p.heldItem,actionType:p.actionType,actionProgress:p.actionProgress,
     skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,
     beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak,
-    mount:horse?{breed:horse.breed,coat:horse.coat,saddled:true}:null
+    mount:horse?{breed:horse.breed,coat:horse.coat,saddled:true,command:horse.command,gait:horse.gait,gaitMode:horse.gaitMode,motionSpeed:horse.motionSpeed}:null
   };
 }
 
@@ -4541,7 +4837,11 @@ function sanitizePlayer(p){
   const mount=p.mount&&typeof p.mount==="object"?{
     breed:Object.hasOwn(horseBreedCatalog,p.mount.breed)?p.mount.breed:"warmblood",
     coat:Object.hasOwn(horseCoatCatalog,p.mount.coat)?p.mount.coat:"bay",
-    saddled:true
+    saddled:true,
+    command:p.mount.command==="stay"?"stay":"follow",
+    gait:Number.isFinite(Number(p.mount.gait))?Number(p.mount.gait):0,
+    gaitMode:["idle","walk","gallop"].includes(p.mount.gaitMode)?p.mount.gaitMode:"idle",
+    motionSpeed:Number.isFinite(Number(p.mount.motionSpeed))?Math.max(0,Math.min(120,Number(p.mount.motionSpeed))):0
   }:null;
   return {
     id:String(p.id||"peer").slice(0,64),
@@ -4777,6 +5077,7 @@ function toggleMap(force){
 
 window.addEventListener("keydown",(event)=>{
   const key=event.key.toLowerCase();
+  const editable=event.target instanceof HTMLElement&&(event.target.isContentEditable||["INPUT","TEXTAREA","SELECT"].includes(event.target.tagName));
   if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright","shift"].includes(key)){
     keyboardHeldKeys.add(key);
     state.keys.add(key);
@@ -4815,6 +5116,7 @@ window.addEventListener("keydown",(event)=>{
     interactWithWorld();
     event.preventDefault();
   }
+  if(key==="h"&&!editable&&!event.repeat&&toggleHorseCommand()) event.preventDefault();
 });
 window.addEventListener("keyup",(event)=>{
   const key=event.key.toLowerCase();
@@ -4949,6 +5251,7 @@ for(const button of document.querySelectorAll("[data-mobile-action]")){
   const action=button.dataset.mobileAction;
   const handler=action==="attack"?()=>useEquippedItem()
     :action==="interact"?()=>interactWithWorld()
+    :action==="horse-command"?()=>toggleHorseCommand()
     :action==="inventory"?()=>{
       if(state.paused) togglePause(false);
       toggleInventory();
@@ -5045,6 +5348,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   findTreeToolTarget,
   performAxeImpact,
   updateTreePhysics,
+  resolveFallenTreeOverlaps,
   treePhysicalProfile,
   fallenTreeSegment,
   fallenTreeHitShapes,
@@ -5055,9 +5359,18 @@ window.__ARCHIPELAGO_DEBUG__ = {
   findAnimalTarget,
   damageAnimal,
   updateAnimals,
+  updateLivingAnimal,
+  updateAnimalRagdoll,
+  advanceAnimalGait,
+  animalSpawnAllowed,
+  blinkClosed,
+  addEffect,
+  emitGroundTrack,
   spawnStartingHorse,
   mountHorse,
   dismountHorse,
+  toggleHorseCommand,
+  relevantOwnedHorse,
   horseCanOccupy,
   isSwimmingBiome,
   isSafeGroundBiome,

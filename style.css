@@ -162,6 +162,7 @@ input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d6aa5220
   .mobile-toolbar button b{font:700 14px "Courier New",monospace;color:var(--gold-light)}
   .mobile-toolbar button span{font:6px "Courier New",monospace;color:#9cafab;letter-spacing:.04em}
   .mobile-toolbar button.active{border-color:var(--gold-light);background:#3a321d;color:var(--gold-light)}
+  .mobile-toolbar button:disabled{opacity:.38;filter:saturate(.4)}
   .mobile-controls{position:absolute;z-index:21;left:0;right:0;bottom:0;display:flex;align-items:flex-end;justify-content:space-between;padding:0 max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));pointer-events:none}
   .mobile-controls button{pointer-events:auto;margin:0;padding:0;display:grid;place-items:center;align-content:center;color:#d9ddd4;background:linear-gradient(145deg,#20383dda,#0a181ce8);border:1px solid #75898ab8;box-shadow:0 5px 15px #000a,inset 0 1px #ffffff18;text-shadow:0 2px #000;transition:background .08s,border-color .08s,scale .08s,box-shadow .08s}
   .mobile-controls button:hover:not(:disabled){transform:none;color:#d9ddd4}
@@ -178,7 +179,7 @@ input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d6aa5220
   .mobile-attack{right:0;bottom:6px;width:88px;height:88px;border-width:2px!important;border-color:#9b7b42!important;background:radial-gradient(circle at 38% 32%,#59492fdf,#171b1be8 70%)!important}.mobile-attack b{font-size:25px!important}
   .quickbar{z-index:20;left:auto;right:max(9px,env(safe-area-inset-right));top:calc(max(8px,env(safe-area-inset-top)) + 58px);bottom:auto;translate:0;display:flex;flex-direction:column;gap:4px;padding:4px}
   .quickbar button{width:48px;height:48px}.quickbar kbd{font-size:7px}.quickbar small{display:none}.quick-icon{scale:.78}
-  .player-hud{left:max(8px,env(safe-area-inset-left));top:max(8px,env(safe-area-inset-top));width:min(240px,calc(100% - 180px));height:64px;padding:6px}.player-hud #playerPortrait{width:42px;height:50px}.player-name-row{margin-bottom:5px}.player-name-row strong{font-size:12px}.meter{height:12px;margin-bottom:3px}.meter span{line-height:10px}
+  .player-hud{left:max(8px,env(safe-area-inset-left));top:max(8px,env(safe-area-inset-top));width:min(240px,calc(100% - 224px));height:64px;padding:6px}.player-hud #playerPortrait{width:42px;height:50px}.player-name-row{margin-bottom:5px}.player-name-row strong{font-size:12px}.meter{height:12px;margin-bottom:3px}.meter span{line-height:10px}
   .world-hud,.quest-hud{display:none}
   .compass{top:calc(max(8px,env(safe-area-inset-top)) + 69px);width:188px;height:34px;font-size:7px;backdrop-filter:none}.compass strong{font-size:11px}
   .minimap-frame{left:max(8px,env(safe-area-inset-left));right:auto;top:calc(max(8px,env(safe-area-inset-top)) + 118px);bottom:auto;width:108px;padding:4px;opacity:.86;backdrop-filter:none}.minimap{width:98px;height:98px}.minimap-head,.minimap-footer{display:none}

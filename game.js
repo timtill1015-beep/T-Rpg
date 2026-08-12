@@ -6,11 +6,16 @@ const WORLD_SIZE = 10000;
 // structures all use this same grid; only tiny ground clutter may use sub-blocks.
 const TILE_METERS = 8;
 const VIEW_SCALE = 2.35;
-const PLAYER_SPEED = 92;
-const SPRINT_MULTIPLIER = 1.62;
+const PLAYER_SPEED = 44;
+const SPRINT_MULTIPLIER = 1.55;
+// The in-world sprite is roughly two world blocks tall, matching the grid scale.
+const WORLD_CHARACTER_SCALE = 1.65;
+const PLAYER_RADIUS = 2.15;
 const NET_SEND_HZ = 12;
 const MAP_SAMPLE = 4;
-const TREE_PLOT_TILES = 5;
+const TREE_PLOT_TILES = 4;
+const RIVER_TRACE_STEP = TILE_METERS * 4;
+const RIVER_INDEX_METERS = TILE_METERS * 8;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -51,6 +56,11 @@ const state = {
   elapsed: 0,
   seed: 184731,
   previewDirection: 0,
+  camera: {x:5000,y:5000},
+  effects: [],
+  footstepDistance: 0,
+  blockedUntil: 0,
+  interactionTarget: null,
   player: {
     id: "local",
     name: "Abenteurer",
@@ -132,14 +142,19 @@ const landforms = [
   [0.91,0.49,0.043,0.068,-0.38,0.45,63]
 ];
 
-const rivers = [
-  {name:"Silberlauf",width:0.0055,points:[[0.53,0.45],[0.50,0.48],[0.48,0.52],[0.45,0.56],[0.42,0.60],[0.39,0.64]]},
-  {name:"Dornfluss",width:0.0046,points:[[0.55,0.48],[0.58,0.50],[0.60,0.54],[0.61,0.58],[0.62,0.62]]},
-  {name:"Nebelaue",width:0.0042,points:[[0.43,0.45],[0.40,0.47],[0.38,0.51],[0.36,0.53]]},
-  {name:"Nordstrom",width:0.0038,points:[[0.25,0.23],[0.24,0.26],[0.22,0.29],[0.20,0.32]]},
-  {name:"Königsbach",width:0.0042,points:[[0.76,0.23],[0.74,0.27],[0.75,0.31],[0.78,0.35]]},
-  {name:"Südader",width:0.0039,points:[[0.77,0.69],[0.75,0.72],[0.76,0.76],[0.79,0.78]]}
+// Anchors only select a mountain catchment. The actual rivers are traced from
+// high ground to the coast and every stored point is lower than the previous
+// one, so a river can no longer run uphill or end in the middle of a field.
+const riverSources = [
+  {name:"Silberlauf",anchor:[0.50,0.48],width:19},
+  {name:"Dornfluss",anchor:[0.57,0.50],width:16},
+  {name:"Nebelaue",anchor:[0.40,0.48],width:14},
+  {name:"Nordstrom",anchor:[0.24,0.26],width:13},
+  {name:"Königsbach",anchor:[0.75,0.27],width:14},
+  {name:"Südader",anchor:[0.76,0.72],width:13}
 ];
+let rivers = [];
+const riverSegmentIndex = new Map();
 
 const routes = [
   [[0.39,0.53],[0.43,0.56],[0.48,0.58],[0.54,0.56],[0.59,0.52],[0.57,0.45]],
@@ -237,6 +252,105 @@ function islandField(x,y){
   return (joined+coast+cuts)*borderClamp;
 }
 
+function findRiverSource(source){
+  const centreX=source.anchor[0]*WORLD_SIZE;
+  const centreY=source.anchor[1]*WORLD_SIZE;
+  let best={x:snapToGrid(centreX),y:snapToGrid(centreY),height:-Infinity};
+  for(let oy=-480;oy<=480;oy+=64){
+    for(let ox=-480;ox<=480;ox+=64){
+      const x=snapToGrid(centreX+ox);
+      const y=snapToGrid(centreY+oy);
+      const height=islandField(x,y);
+      if(height>best.height && height<.82) best={x,y,height};
+    }
+  }
+  return best;
+}
+
+function findLowerOutlet(current,previousAngle,visited){
+  for(let ring=1;ring<=30;ring++){
+    const radius=RIVER_TRACE_STEP*ring;
+    let best=null;
+    for(let direction=0;direction<32;direction++){
+      const angle=direction/32*Math.PI*2;
+      const x=snapToGrid(current.x+Math.cos(angle)*radius);
+      const y=snapToGrid(current.y+Math.sin(angle)*radius);
+      if(x<0||y<0||x>WORLD_SIZE||y>WORLD_SIZE) continue;
+      const key=Math.round(x/RIVER_TRACE_STEP)+","+Math.round(y/RIVER_TRACE_STEP);
+      if(visited.has(key)) continue;
+      const height=islandField(x,y);
+      if(height>=current.height-.0012) continue;
+      const turn=previousAngle==null?0:Math.abs(Math.atan2(Math.sin(angle-previousAngle),Math.cos(angle-previousAngle)));
+      const score=height+turn*.006+hash2(Math.round(x/32),Math.round(y/32),2401)*.002;
+      if(!best||score<best.score) best={x,y,height,angle,score,key};
+    }
+    if(best) return best;
+  }
+  return null;
+}
+
+function traceRiver(source,index){
+  let current=findRiverSource(source);
+  let previousAngle=null;
+  const points=[{x:current.x,y:current.y,bed:current.height}];
+  const visited=new Set();
+  visited.add(Math.round(current.x/RIVER_TRACE_STEP)+","+Math.round(current.y/RIVER_TRACE_STEP));
+
+  for(let section=0;section<90&&current.height>.125;section++){
+    const outlet=findLowerOutlet(current,previousAngle,visited);
+    if(!outlet) break;
+    const distance=Math.hypot(outlet.x-current.x,outlet.y-current.y);
+    const steps=Math.max(1,Math.round(distance/RIVER_TRACE_STEP));
+    const nx=-(outlet.y-current.y)/distance;
+    const ny=(outlet.x-current.x)/distance;
+    const bend=(hash2(index,section,2601)-.5)*Math.min(22,distance*.12);
+    for(let step=1;step<=steps;step++){
+      const t=step/steps;
+      const meander=Math.sin(t*Math.PI)*bend;
+      points.push({
+        x:snapToGrid(lerp(current.x,outlet.x,t)+nx*meander),
+        y:snapToGrid(lerp(current.y,outlet.y,t)+ny*meander),
+        bed:lerp(current.height,outlet.height,t)-points.length*.0000005
+      });
+    }
+    previousAngle=outlet.angle;
+    current=outlet;
+    visited.add(outlet.key);
+  }
+
+  return {
+    name:source.name,
+    width:source.width,
+    points,
+    source:points[0],
+    mouth:points[points.length-1]
+  };
+}
+
+function ensureRivers(){
+  if(rivers.length) return rivers;
+  rivers=riverSources.map(traceRiver).filter((river)=>river.points.length>3&&river.mouth.bed<.18);
+  for(const river of rivers){
+    for(let index=0;index<river.points.length-1;index++){
+      const a=river.points[index];
+      const b=river.points[index+1];
+      const padding=river.width;
+      const minX=Math.floor((Math.min(a.x,b.x)-padding)/RIVER_INDEX_METERS);
+      const maxX=Math.floor((Math.max(a.x,b.x)+padding)/RIVER_INDEX_METERS);
+      const minY=Math.floor((Math.min(a.y,b.y)-padding)/RIVER_INDEX_METERS);
+      const maxY=Math.floor((Math.max(a.y,b.y)+padding)/RIVER_INDEX_METERS);
+      for(let by=minY;by<=maxY;by++){
+        for(let bx=minX;bx<=maxX;bx++){
+          const key=bx+","+by;
+          if(!riverSegmentIndex.has(key)) riverSegmentIndex.set(key,[]);
+          riverSegmentIndex.get(key).push({river,index,a,b});
+        }
+      }
+    }
+  }
+  return rivers;
+}
+
 function segmentDistance(px,py,ax,ay,bx,by){
   const dx=bx-ax;
   const dy=by-ay;
@@ -248,19 +362,18 @@ function segmentDistance(px,py,ax,ay,bx,by){
 }
 
 function riverAt(x,y,height){
-  if(height<0.17 || height>0.66) return null;
-  const nx=x/WORLD_SIZE;
-  const ny=y/WORLD_SIZE;
-  for(const river of rivers){
-    for(let i=0;i<river.points.length-1;i++){
-      const a=river.points[i];
-      const b=river.points[i+1];
-      const hit=segmentDistance(nx,ny,a[0],a[1],b[0],b[1]);
+  if(height<0.12 || height>0.82) return null;
+  ensureRivers();
+  const candidates=riverSegmentIndex.get(Math.floor(x/RIVER_INDEX_METERS)+","+Math.floor(y/RIVER_INDEX_METERS))||[];
+  for(const candidate of candidates){
+      const {river,index:i,a,b}=candidate;
+      const hit=segmentDistance(x,y,a.x,a.y,b.x,b.y);
       const flow=(i+hit.t)/(river.points.length-1);
-      const meander=(valueNoise(x,y,310,500+i)-0.5)*0.0018;
-      const width=river.width*(0.58+flow*0.72)+meander;
-      if(hit.distance<Math.max(0.0018,width)) return {river,flow};
-    }
+      const width=river.width*(.55+flow*.9);
+      if(hit.distance<width*.5){
+        const length=Math.hypot(b.x-a.x,b.y-a.y)||1;
+        return {river,flow,bed:lerp(a.bed,b.bed,hit.t),dirX:(b.x-a.x)/length,dirY:(b.y-a.y)/length};
+      }
   }
   return null;
 }
@@ -322,11 +435,11 @@ function isWalkable(x,y){
 
 function findSpawn(){
   const candidates=[[4500,5700],[4700,5660],[4450,5550],[3890,5050],[5700,4500]];
-  for(const point of candidates) if(isWalkable(point[0],point[1])) return point;
+  for(const point of candidates) if(canOccupy(point[0],point[1]).ok) return point;
   for(let r=0;r<350;r++){
     const x=5000+(hash2(r,1)-0.5)*3000;
     const y=5200+(hash2(r,2)-0.5)*3000;
-    if(isWalkable(x,y)) return [x,y];
+    if(canOccupy(x,y).ok) return [x,y];
   }
   return [5000,5000];
 }
@@ -424,63 +537,147 @@ function treeForPlot(plotX,plotY){
   const cacheKey=plotX+","+plotY;
   if(treePlotCache.has(cacheKey)) return treePlotCache.get(cacheKey);
   const plotSeed=hash2(plotX,plotY,1701);
-  const gx=plotX*TREE_PLOT_TILES+1+Math.floor(hash2(plotX,plotY,1702)*3);
-  const gy=plotY*TREE_PLOT_TILES+2+Math.floor(hash2(plotX,plotY,1703)*2);
+  const gx=plotX*TREE_PLOT_TILES+1+Math.floor(hash2(plotX,plotY,1702)*2);
+  const gy=plotY*TREE_PLOT_TILES+2;
   if(nearLandmarkGrid(gx,gy,3)){
     treePlotCache.set(cacheKey,null);
     return null;
   }
   const terrain=terrainAt((gx+.5)*TILE_METERS,(gy+.5)*TILE_METERS);
   let chance=0;
-  let kind="broadleaf";
-  if(terrain.biome==="forest"){chance=.91;kind=plotSeed>.68?"pine":"broadleaf";}
-  else if(terrain.biome==="jungle"){chance=.95;kind=plotSeed>.72?"palm":"jungle";}
-  else if(terrain.biome==="swamp"){chance=.48;kind="dead";}
-  else if(terrain.biome==="plains"){chance=.08;kind="broadleaf";}
+  let kind="oak";
+  if(terrain.biome==="forest"){
+    chance=.88;
+    kind=plotSeed<.34?"oak":plotSeed<.52?"birch":plotSeed<.74?"ancient":"pine";
+  }else if(terrain.biome==="jungle"){
+    chance=.94;
+    kind=plotSeed>.76?"palm":"jungle";
+  }else if(terrain.biome==="swamp"){
+    chance=.54;
+    kind=plotSeed>.56?"willow":"dead";
+  }else if(terrain.biome==="plains"){
+    chance=.11;
+    kind=plotSeed>.72?"birch":"oak";
+  }
   if(plotSeed>chance){
     treePlotCache.set(cacheKey,null);
     return null;
   }
-  const tree={gx,gy,kind};
+  const tree={
+    gx,gy,kind,
+    variant:Math.floor(hash2(plotX,plotY,1711)*3),
+    phase:hash2(plotX,plotY,1712)*Math.PI*2,
+    reactUntil:0
+  };
   treePlotCache.set(cacheKey,tree);
   return tree;
 }
 
+const treeShapes = {
+  oak:[
+    [[-1,-4],[0,-4],[1,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1]],
+    [[0,-5],[-1,-4],[0,-4],[1,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]],
+    [[-1,-4],[0,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1]]
+  ],
+  birch:[
+    [[0,-5],[-1,-4],[0,-4],[1,-4],[-1,-3],[0,-3],[1,-3],[-1,-2],[0,-2],[1,-2],[0,-1]],
+    [[-1,-5],[0,-5],[-1,-4],[0,-4],[1,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[-1,-2],[0,-2],[1,-2],[0,-1]],
+    [[0,-5],[-1,-4],[0,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[-1,-2],[0,-2],[1,-2],[0,-1]]
+  ],
+  ancient:[
+    [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[3,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1]],
+    [[0,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[3,-2],[-1,-1],[0,-1],[1,-1]],
+    [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-1,-1],[0,-1],[1,-1]]
+  ],
+  pine:[
+    [[0,-6],[-1,-5],[0,-5],[1,-5],[-1,-4],[0,-4],[1,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]],
+    [[0,-7],[-1,-6],[0,-6],[1,-6],[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-1,-3],[0,-3],[1,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]],
+    [[0,-6],[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-1,-3],[0,-3],[1,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]]
+  ],
+  jungle:[
+    [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-1,-2],[0,-2],[1,-2],[0,-1]],
+    [[0,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]],
+    [[-1,-5],[0,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-1,-2],[0,-2],[1,-2],[0,-1]]
+  ],
+  willow:[
+    [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-2,-1],[0,-1],[2,-1]],
+    [[0,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-2,-1],[1,-1]],
+    [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-1,-2],[0,-2],[1,-2],[-2,-1],[2,-1]]
+  ]
+};
+
+const treePalettes = {
+  oak:["#254b2e","#37663a","#4f7d43"],
+  birch:["#315b37","#477747","#6b9557"],
+  ancient:["#1e432b","#2c5a34","#477443"],
+  pine:["#17382c","#23503a","#376748"],
+  jungle:["#16402a","#245b32","#3e743d"],
+  willow:["#334d2d","#4e6838","#73834a"]
+};
+
+function drawTreeBlock(gx,gy,camX,camY,colors,seed){
+  const size=TILE_METERS*VIEW_SCALE;
+  const x=Math.floor((gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
+  const y=Math.floor((gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2);
+  const block=Math.ceil(size)+1;
+  ctx.fillStyle=colors[1];
+  ctx.fillRect(x,y,block,block);
+  ctx.fillStyle=colors[0];
+  ctx.fillRect(x,y+block-3,block,3);
+  ctx.fillRect(x+block-3,y,3,block);
+  ctx.fillStyle=colors[2];
+  const chip=Math.max(2,Math.floor(block*.22));
+  const side=hash2(gx,gy,seed)>.5?3:block-chip-3;
+  ctx.fillRect(x+side,y+3,chip,chip);
+  if(hash2(gx,gy,seed+1)>.58){
+    ctx.fillStyle=colors[0];
+    ctx.fillRect(x+3,y+Math.floor(block*.56),chip,chip);
+  }
+}
+
 function drawGridTree(tree,camX,camY){
   const {gx,gy,kind}=tree;
-  // Even shadows are whole grid blocks so the silhouette never slips off-grid.
-  drawGridBlock(gx-1,gy,camX,camY,"rgba(8,18,12,.18)");
-  drawGridBlock(gx,gy,camX,camY,kind==="palm"?"#76512e":"#5b3d29","#93673a");
+  const distance=Math.hypot(state.player.x-(gx+.5)*TILE_METERS,state.player.y-(gy+.5)*TILE_METERS);
+  const reaction=tree.reactUntil>state.elapsed?1:Math.max(0,1-distance/24);
+  const sway=Math.sin(state.elapsed*(reaction?9:1.2)+tree.phase)*(reaction*1.6+.25);
+  const revealPlayer=distance<28&&state.player.y<(gy+.8)*TILE_METERS;
+  drawGridBlock(gx-1,gy,camX,camY,"rgba(8,18,12,.16)");
+  const paleTrunk=kind==="birch";
+  drawGridBlock(gx,gy,camX,camY,paleTrunk?"#9d957d":kind==="palm"?"#76512e":"#5b3d29",paleTrunk?"#5e5b54":"#93673a");
 
   if(kind==="dead"){
     drawGridBlock(gx,gy-1,camX,camY,"#514536","#75634b");
     drawGridBlock(gx,gy-2,camX,camY,"#463c31");
     drawGridBlock(gx-1,gy-2,camX,camY,"#463c31");
-    drawGridBlock(gx+1,gy-1,camX,camY,"#514536");
+    drawGridBlock(gx+1,gy-2,camX,camY,"#514536");
     return;
   }
 
   if(kind==="palm"){
     drawGridBlock(gx,gy-1,camX,camY,"#76512e","#93673a");
-    drawGridBlock(gx,gy-2,camX,camY,"#31653a","#4c8245");
-    drawGridBlock(gx-1,gy-2,camX,camY,"#285733","#42763f");
-    drawGridBlock(gx+1,gy-2,camX,camY,"#285733","#42763f");
-    drawGridBlock(gx-2,gy-2,camX,camY,"#234e2e");
-    drawGridBlock(gx+2,gy-2,camX,camY,"#234e2e");
-    drawGridBlock(gx,gy-3,camX,camY,"#39713c","#5b914a");
+    ctx.save();
+    ctx.translate(Math.round(sway),0);
+    if(revealPlayer) ctx.globalAlpha=.38;
+    const colors=["#1d512e","#2e6a37","#4a8645"];
+    for(const [dx,dy] of [[0,-3],[-1,-3],[1,-3],[-2,-3],[2,-3],[0,-4],[-1,-4],[1,-4]]){
+      drawTreeBlock(gx+dx,gy+dy,camX,camY,colors,3100+tree.variant);
+    }
+    ctx.restore();
     return;
   }
 
-  const dark=kind==="jungle"?"#1f482d":kind==="pine"?"#214431":"#2d5736";
-  const mid=kind==="jungle"?"#2d6136":kind==="pine"?"#2b5638":"#3b6b3e";
-  const light=kind==="jungle"?"#477a3e":kind==="pine"?"#3d6941":"#568047";
-  const leafBlocks=kind==="pine"
-    ? [[0,-4,light],[-1,-3,dark],[0,-3,mid],[1,-3,dark],[-1,-2,dark],[0,-2,mid],[1,-2,dark],[0,-1,light]]
-    : [[0,-3,light],[-1,-2,dark],[0,-2,mid],[1,-2,dark],[-1,-1,mid],[0,-1,light],[1,-1,mid]];
-  for(const [dx,dy,color] of leafBlocks) drawGridBlock(gx+dx,gy+dy,camX,camY,color,light);
+  const shapes=treeShapes[kind]||treeShapes.oak;
+  const colors=treePalettes[kind]||treePalettes.oak;
+  const leafBlocks=shapes[tree.variant%shapes.length];
+  ctx.save();
+  ctx.translate(Math.round(sway),0);
+  if(revealPlayer) ctx.globalAlpha=.38;
+  for(const [dx,dy] of leafBlocks) drawTreeBlock(gx+dx,gy+dy,camX,camY,colors,3200+tree.variant);
+  ctx.restore();
 }
 
-function drawVisibleTrees(camX,camY,startGX,endGX,startGY,endGY){
+function visibleTrees(startGX,endGX,startGY,endGY){
+  const trees=[];
   const minPlotX=Math.floor(startGX/TREE_PLOT_TILES)-1;
   const maxPlotX=Math.floor(endGX/TREE_PLOT_TILES)+1;
   const minPlotY=Math.floor(startGY/TREE_PLOT_TILES)-1;
@@ -488,9 +685,10 @@ function drawVisibleTrees(camX,camY,startGX,endGX,startGY,endGY){
   for(let py=minPlotY;py<=maxPlotY;py++){
     for(let px=minPlotX;px<=maxPlotX;px++){
       const tree=treeForPlot(px,py);
-      if(tree) drawGridTree(tree,camX,camY);
+      if(tree) trees.push(tree);
     }
   }
+  return trees;
 }
 
 function drawTile(wx,wy,sx,sy,size,terrain){
@@ -530,6 +728,17 @@ function drawTile(wx,wy,sx,sy,size,terrain){
       ctx.fillStyle=terrain.biome==="river"?"rgba(224,243,239,.20)":"rgba(210,240,245,.15)";
       ctx.fillRect(Math.floor(sx+size*.12),Math.floor(sy+size*.45),Math.max(2,size*.45),Math.max(1,size*.055));
     }
+    if(terrain.biome==="river"&&terrain.river){
+      const flow=terrain.river;
+      const travel=(state.elapsed*18+(gx*7+gy*11))%Math.max(3,size*.64);
+      const alongX=flow.dirX>=0?travel:size*.64-travel;
+      const alongY=flow.dirY>=0?travel:size*.64-travel;
+      const cx=sx+size*.18+Math.abs(flow.dirX)*alongX;
+      const cy=sy+size*.18+Math.abs(flow.dirY)*alongY;
+      ctx.fillStyle="rgba(226,247,243,.34)";
+      if(Math.abs(flow.dirX)>Math.abs(flow.dirY)) ctx.fillRect(Math.floor(cx),Math.floor(sy+size*.48),Math.max(2,size*.24),2);
+      else ctx.fillRect(Math.floor(sx+size*.48),Math.floor(cy),2,Math.max(2,size*.24));
+    }
   }else if(terrain.biome==="beach" && n>0.64){
     ctx.fillStyle="rgba(89,70,40,.20)";
     ctx.fillRect(Math.floor(sx+size*.65),Math.floor(sy+size*.30),Math.max(1,size*.08),Math.max(1,size*.08));
@@ -565,6 +774,54 @@ const ruinBlocks = [
   ".SS...SS.",
   "..S...S.."
 ];
+
+function structureAtGrid(gx,gy){
+  for(const landmark of landmarks){
+    const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+    const originGX=Math.round(landmark.x/TILE_METERS)-Math.floor(pattern[0].length/2);
+    const originGY=Math.round(landmark.y/TILE_METERS)-Math.floor(pattern.length/2);
+    const column=gx-originGX;
+    const row=gy-originGY;
+    if(row<0||row>=pattern.length||column<0||column>=pattern[row].length) continue;
+    const code=pattern[row][column];
+    if(code!==".") return {type:"structure",code,landmark,gx,gy};
+  }
+  return null;
+}
+
+function treeAtGrid(gx,gy){
+  const plotX=Math.floor(gx/TREE_PLOT_TILES);
+  const plotY=Math.floor(gy/TREE_PLOT_TILES);
+  for(let py=plotY-1;py<=plotY+1;py++){
+    for(let px=plotX-1;px<=plotX+1;px++){
+      const tree=treeForPlot(px,py);
+      if(tree&&tree.gx===gx&&tree.gy===gy) return tree;
+    }
+  }
+  return null;
+}
+
+function collisionAt(x,y){
+  if(x<PLAYER_RADIUS||y<PLAYER_RADIUS||x>WORLD_SIZE-PLAYER_RADIUS||y>WORLD_SIZE-PLAYER_RADIUS) return {type:"edge"};
+  const terrain=terrainAt(x,y);
+  if(["deepWater","water","shallow"].includes(terrain.biome)) return {type:"water",terrain};
+  const gx=Math.floor(x/TILE_METERS);
+  const gy=Math.floor(y/TILE_METERS);
+  const tree=treeAtGrid(gx,gy);
+  if(tree) return {type:"tree",tree,gx,gy};
+  const structure=structureAtGrid(gx,gy);
+  if(structure&&structure.code!=="p") return structure;
+  return null;
+}
+
+function canOccupy(x,y){
+  const samples=[[0,0],[-1,-1],[1,-1],[-1,1],[1,1],[0,-1],[0,1],[-1,0],[1,0]];
+  for(const [sx,sy] of samples){
+    const hit=collisionAt(x+sx*PLAYER_RADIUS,y+sy*PLAYER_RADIUS);
+    if(hit) return {ok:false,hit};
+  }
+  return {ok:true,hit:null};
+}
 
 function drawStructureBlock(code,gx,gy,camX,camY){
   const colors={
@@ -609,12 +866,148 @@ function drawLandmark(landmark,camX,camY){
   }
 }
 
+function addEffect(effect){
+  state.effects.push({...effect,maxLife:effect.life});
+  if(state.effects.length>90) state.effects.splice(0,state.effects.length-90);
+}
+
+function emitFootstep(x,y){
+  const terrain=terrainAt(x,y);
+  if(terrain.biome==="river"){
+    addEffect({type:"ripple",layer:"ground",x,y,life:.72,size:1.3});
+  }else{
+    addEffect({
+      type:"footprint",layer:"ground",x,y,life:2.8,size:.75,
+      dir:state.player.dir,
+      color:terrain.biome==="beach"?"#806b45":roadAt(x,y)?"#665238":"#31452f"
+    });
+    if(roadAt(x,y)) addEffect({type:"dust",layer:"air",x,y,life:.5,size:.7,vx:(Math.random()-.5)*2,vy:-2-Math.random()*2});
+  }
+}
+
+function shakeTree(tree,strong=false){
+  tree.reactUntil=Math.max(tree.reactUntil,state.elapsed+(strong?1.35:.55));
+  const count=strong?8:3;
+  for(let i=0;i<count;i++){
+    addEffect({
+      type:"leaf",layer:"air",
+      x:(tree.gx+.5)*TILE_METERS+(Math.random()-.5)*12,
+      y:(tree.gy-1.5)*TILE_METERS+(Math.random()-.5)*10,
+      life:.75+Math.random()*.65,size:.65+Math.random()*.45,
+      vx:(Math.random()-.5)*7,vy:3+Math.random()*5,
+      color:["#6f8f42","#4f7738","#9a9a4d"][i%3]
+    });
+  }
+}
+
+function reactToCollision(hit,x,y){
+  if(!hit||state.elapsed<state.blockedUntil) return;
+  state.blockedUntil=state.elapsed+.2;
+  if(hit.type==="tree") shakeTree(hit.tree,false);
+  else if(hit.type==="water") addEffect({type:"ripple",layer:"ground",x,y,life:.9,size:1.5});
+  else if(hit.type==="structure"){
+    for(let i=0;i<3;i++) addEffect({type:"dust",layer:"air",x,y,life:.55,size:.7,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
+  }
+}
+
+function updateWorldReactions(dt){
+  for(const effect of state.effects){
+    effect.life-=dt;
+    effect.x+=(effect.vx||0)*dt;
+    effect.y+=(effect.vy||0)*dt;
+    if(effect.type==="leaf") effect.vy+=5*dt;
+  }
+  state.effects=state.effects.filter((effect)=>effect.life>0);
+  const follow=1-Math.exp(-dt*7.5);
+  state.camera.x=lerp(state.camera.x,state.player.x,follow);
+  state.camera.y=lerp(state.camera.y,state.player.y,follow);
+}
+
+function drawEffects(camX,camY,layer){
+  for(const effect of state.effects){
+    if(effect.layer!==layer) continue;
+    const x=(effect.x-camX)*VIEW_SCALE+canvas.width/2;
+    const y=(effect.y-camY)*VIEW_SCALE+canvas.height/2;
+    if(x<-30||y<-30||x>canvas.width+30||y>canvas.height+30) continue;
+    const progress=1-effect.life/effect.maxLife;
+    ctx.save();
+    ctx.globalAlpha=Math.min(1,effect.life/effect.maxLife*1.6);
+    if(effect.type==="ripple"){
+      const size=(effect.size+progress*3.5)*VIEW_SCALE;
+      ctx.strokeStyle="#b8dde0";
+      ctx.lineWidth=1;
+      ctx.strokeRect(Math.round(x-size),Math.round(y-size*.45),Math.round(size*2),Math.max(2,Math.round(size*.9)));
+    }else if(effect.type==="footprint"){
+      ctx.fillStyle=effect.color;
+      const horizontal=effect.dir==="left"||effect.dir==="right";
+      const width=(horizontal?effect.size*1.3:effect.size)*VIEW_SCALE;
+      const height=(horizontal?effect.size:effect.size*1.3)*VIEW_SCALE;
+      ctx.fillRect(Math.round(x-width/2),Math.round(y-height/2),Math.max(2,Math.round(width)),Math.max(2,Math.round(height)));
+    }else if(effect.type==="leaf"){
+      ctx.fillStyle=effect.color;
+      const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
+      ctx.fillRect(Math.round(x),Math.round(y),size,size);
+    }else if(effect.type==="dust"){
+      ctx.fillStyle="#b8a47a";
+      const size=Math.max(2,Math.round((effect.size+progress)*VIEW_SCALE));
+      ctx.fillRect(Math.round(x),Math.round(y),size,size);
+    }
+    ctx.restore();
+  }
+}
+
+function nearbyInteraction(){
+  const px=state.player.x;
+  const py=state.player.y;
+  const playerGX=Math.floor(px/TILE_METERS);
+  const playerGY=Math.floor(py/TILE_METERS);
+  let best=null;
+  for(let gy=playerGY-2;gy<=playerGY+2;gy++){
+    for(let gx=playerGX-2;gx<=playerGX+2;gx++){
+      const tree=treeAtGrid(gx,gy);
+      if(tree){
+        const distance=Math.hypot(px-(tree.gx+.5)*TILE_METERS,py-(tree.gy+.5)*TILE_METERS);
+        if(distance<15&&(!best||distance<best.distance)) best={type:"tree",tree,distance,label:"Baum untersuchen"};
+      }
+      const structure=structureAtGrid(gx,gy);
+      if(structure&&structure.code!=="p"){
+        const distance=Math.hypot(px-(gx+.5)*TILE_METERS,py-(gy+.5)*TILE_METERS);
+        const label=structure.code==="D"?"Tür untersuchen":structure.landmark.type==="ruin"?"Ruine untersuchen":"Gebäude ansehen";
+        if(distance<15&&(!best||distance<best.distance)) best={...structure,distance,label};
+      }
+    }
+  }
+  return best;
+}
+
+function updateInteractionHint(){
+  state.interactionTarget=nearbyInteraction();
+  const hint=$("interactionHint");
+  if(!hint) return;
+  hint.classList.toggle("hidden",!state.interactionTarget);
+  if(state.interactionTarget) hint.innerHTML='<kbd>E</kbd> '+state.interactionTarget.label;
+}
+
+function interactWithWorld(){
+  const target=state.interactionTarget||nearbyInteraction();
+  if(!target) return;
+  if(target.type==="tree"){
+    shakeTree(target.tree,true);
+    showToast(target.tree.kind==="dead"?"Das morsche Holz knarrt im Wind.":"Blätter rascheln durch die Krone.");
+  }else{
+    for(let i=0;i<7;i++) addEffect({type:"dust",layer:"air",x:state.player.x,y:state.player.y,life:.55+Math.random()*.45,size:.6,vx:(Math.random()-.5)*5,vy:-2-Math.random()*4});
+    if(target.code==="D") showToast("Die schwere Tür gibt noch nicht nach.");
+    else if(target.landmark.type==="ruin") showToast("Verwitterte Zeichen glimmen für einen Augenblick.");
+    else showToast(target.landmark.name+" wirkt bewohnt.");
+  }
+}
+
 function drawWorld(){
   const w=canvas.width;
   const h=canvas.height;
   ctx.clearRect(0,0,w,h);
-  const camX=state.player.x;
-  const camY=state.player.y;
+  const camX=state.camera.x;
+  const camY=state.camera.y;
   const metresAcross=w/VIEW_SCALE;
   const metresHigh=h/VIEW_SCALE;
   const startX=Math.floor((camX-metresAcross/2)/TILE_METERS)*TILE_METERS;
@@ -636,19 +1029,30 @@ function drawWorld(){
     }
   }
 
-  drawVisibleTrees(
-    camX,camY,
+  drawEffects(camX,camY,"ground");
+  const trees=visibleTrees(
     Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
     Math.floor(startY/TILE_METERS),Math.ceil(endY/TILE_METERS)
   );
   for(const landmark of landmarks) drawLandmark(landmark,camX,camY);
 
-  for(const peer of state.peers.values()){
-    const sx=(peer.x-camX)*VIEW_SCALE+w/2;
-    const sy=(peer.y-camY)*VIEW_SCALE+h/2;
-    if(sx>-60&&sx<w+60&&sy>-80&&sy<h+60) drawCharacter(ctx,sx,sy,peer,2.35,false);
+  const renderQueue=trees.map((tree)=>({type:"tree",y:(tree.gy+.8)*TILE_METERS,tree}));
+  for(const peer of state.peers.values()) renderQueue.push({type:"peer",y:peer.y,player:peer});
+  renderQueue.push({type:"local",y:state.player.y,player:state.player});
+  renderQueue.sort((a,b)=>a.y-b.y);
+  for(const item of renderQueue){
+    if(item.type==="tree"){
+      drawGridTree(item.tree,camX,camY);
+      continue;
+    }
+    const player=item.player;
+    const sx=(player.x-camX)*VIEW_SCALE+w/2;
+    const sy=(player.y-camY)*VIEW_SCALE+h/2;
+    if(sx>-45&&sx<w+45&&sy>-60&&sy<h+45){
+      drawCharacter(ctx,sx,sy,player,item.type==="local"?WORLD_CHARACTER_SCALE:WORLD_CHARACTER_SCALE*.94,item.type==="local");
+    }
   }
-  drawCharacter(ctx,w/2,h/2,state.player,2.65,true);
+  drawEffects(camX,camY,"air");
 
   const hour=(8+state.elapsed/120)%24;
   if(hour<6||hour>19){
@@ -920,10 +1324,31 @@ function movePlayer(dt){
   else state.player.dir=dy>0?"down":"up";
   state.player.walkTime+=dt*(sprinting?1.9:1.15);
 
-  const nx=Math.max(0,Math.min(WORLD_SIZE,state.player.x+dx*speed*dt));
-  const ny=Math.max(0,Math.min(WORLD_SIZE,state.player.y+dy*speed*dt));
-  if(isWalkable(nx,state.player.y)) state.player.x=nx;
-  if(isWalkable(state.player.x,ny)) state.player.y=ny;
+  const oldX=state.player.x;
+  const oldY=state.player.y;
+  const distance=speed*dt;
+  const steps=Math.max(1,Math.ceil(distance/(TILE_METERS*.18)));
+  const stepX=dx*distance/steps;
+  const stepY=dy*distance/steps;
+  for(let step=0;step<steps;step++){
+    const nextX=Math.max(PLAYER_RADIUS,Math.min(WORLD_SIZE-PLAYER_RADIUS,state.player.x+stepX));
+    const xCheck=canOccupy(nextX,state.player.y);
+    if(xCheck.ok) state.player.x=nextX;
+    else reactToCollision(xCheck.hit,nextX,state.player.y);
+
+    const nextY=Math.max(PLAYER_RADIUS,Math.min(WORLD_SIZE-PLAYER_RADIUS,state.player.y+stepY));
+    const yCheck=canOccupy(state.player.x,nextY);
+    if(yCheck.ok) state.player.y=nextY;
+    else reactToCollision(yCheck.hit,state.player.x,nextY);
+  }
+  const moved=Math.hypot(state.player.x-oldX,state.player.y-oldY);
+  state.player.moving=moved>.02;
+  state.footstepDistance+=moved;
+  const stepInterval=terrainAt(state.player.x,state.player.y).biome==="river"?4.5:6.5;
+  if(state.footstepDistance>=stepInterval){
+    state.footstepDistance%=stepInterval;
+    emitFootstep(state.player.x,state.player.y);
+  }
 }
 
 function nearestLandmark(x,y){
@@ -995,11 +1420,11 @@ function drawMapPaths(target,width,height,labels=false){
     target.stroke();
   }
   target.setLineDash([]);
-  for(const river of rivers){
+  for(const river of ensureRivers()){
     target.beginPath();
     river.points.forEach((point,index)=>{
-      const x=point[0]*width;
-      const y=point[1]*height;
+      const x=point.x/WORLD_SIZE*width;
+      const y=point.y/WORLD_SIZE*height;
       if(index===0) target.moveTo(x,y); else target.lineTo(x,y);
     });
     target.strokeStyle="#255f78";
@@ -1155,10 +1580,12 @@ function loop(ts){
   state.lastTime=ts;
   state.elapsed+=dt;
   movePlayer(dt);
+  updateWorldReactions(dt);
   drawWorld();
   drawMinimap();
   updateHud();
   updatePortrait();
+  updateInteractionHint();
   maybeSendNetwork(ts);
   if(state.mapOpen) drawWorldMap();
   requestAnimationFrame(loop);
@@ -1228,6 +1655,14 @@ function startGame(){
   const spawn=findSpawn();
   state.player.x=spawn[0]+(Math.random()-.5)*28;
   state.player.y=spawn[1]+(Math.random()-.5)*28;
+  if(!canOccupy(state.player.x,state.player.y).ok){
+    state.player.x=spawn[0];
+    state.player.y=spawn[1];
+  }
+  state.camera.x=state.player.x;
+  state.camera.y=state.player.y;
+  state.effects=[];
+  state.footstepDistance=0;
   state.player.stamina=100;
   state.player.health=100;
   state.player.walkTime=0;
@@ -1482,6 +1917,10 @@ window.addEventListener("keydown",(event)=>{
     toggleMap();
     event.preventDefault();
   }
+  if(key==="e"&&state.running&&!state.paused&&!state.mapOpen&&!event.repeat){
+    interactWithWorld();
+    event.preventDefault();
+  }
 });
 window.addEventListener("keyup",(event)=>state.keys.delete(event.key.toLowerCase()));
 window.addEventListener("blur",()=>state.keys.clear());
@@ -1542,8 +1981,18 @@ requestAnimationFrame(paintPreview);
 window.__ARCHIPELAGO_DEBUG__ = {
   terrainAt,
   islandField,
+  ensureRivers,
+  riverAt,
   roadAt,
   treeForPlot,
+  treeAtGrid,
+  structureAtGrid,
+  collisionAt,
+  canOccupy,
+  movePlayer,
+  updateWorldReactions,
+  nearbyInteraction,
+  interactWithWorld,
   drawCharacter,
   drawWorld,
   landmarks,

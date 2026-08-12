@@ -37,6 +37,9 @@ const ROAD_DECOR_CACHE_LIMIT = 24000;
 const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
 const EFFECT_LIMIT = 180;
 const GROUND_DECAL_LIMIT = 120;
+const BLOOD_DECALS_PER_CELL = 18;
+const CROW_ACTIVE_LIMIT = 72;
+const SKY_SHADOW_LIMIT = 10;
 const UI_UPDATE_MS = 100;
 const INVENTORY_COLUMNS = 10;
 const INVENTORY_ROWS = 6;
@@ -51,8 +54,9 @@ const ANIMAL_HIT_RANGE = TILE_METERS * 2.75;
 const CORPSE_DRAG_RANGE = TILE_METERS * 1.4;
 const HORSE_MOUNT_RANGE = TILE_METERS * 2;
 const HORSE_FOLLOW_DISTANCE = TILE_METERS * 2.35;
-const CORPSE_POOL_GROWTH_SECONDS = 70;
 const CORPSE_TRAIL_FRESH_SECONDS = 95;
+const BLOOD_POOL_LIFE_SECONDS = 240;
+const BLOOD_CELL_METERS = TILE_METERS * 8;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -126,6 +130,11 @@ const animalCatalog = {
     name:"Pferd",corpseName:"Pferd",maxHealth:180,radius:5.2,walkSpeed:13,runSpeed:29,
     habitats:["plains","forest","oasis","desert","beach","tundra"],spawnChance:.14,group:[1,3],timidRange:42,
     mountable:true,invulnerable:true,loot:[]
+  },
+  crow:{
+    name:"Rabe",corpseName:"Rabe",maxHealth:12,radius:1.2,walkSpeed:0,runSpeed:34,
+    habitats:["forest","jungle","swamp","plains","tundra"],spawnChance:0,group:[0,0],timidRange:42,
+    ambient:true,invulnerable:true,loot:[]
   }
 };
 
@@ -181,6 +190,8 @@ const state = {
   previewDirection: 0,
   camera: {x:10000,y:10000},
   effects: [],
+  effectSerial:0,
+  nextSkyShadowAt:9,
   footstepDistance: 0,
   horseTrackDistance:0,
   blockedUntil: 0,
@@ -217,7 +228,8 @@ const state = {
     beardStyle: "none",
     outfit: "traveler",
     shirt: "#315d9b",
-    cloak: "#684431"
+    cloak: "#684431",
+    bleed:{intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0}
   },
   peers: new Map(),
   network: {
@@ -1688,7 +1700,7 @@ function treePhysicalProfile(tree){
   }
   const lengthTiles=Math.max(2,1-minY);
   const crownWidthTiles=Math.max(1,maxX-minX+1);
-  const trunkRadius=TILE_METERS*(tree.kind==="ancient"?.34:tree.kind==="dead"?.22:.28);
+  const trunkRadius=TILE_METERS*.5;
   return {
     lengthTiles,
     length:lengthTiles*TILE_METERS,
@@ -1710,7 +1722,7 @@ function getTreePhysics(tree,create=false){
     physics={
       key,tree,status:"standing",health:maxHealth,maxHealth,
       fallDirection:{x:0,y:1},fallProgress:0,angularVelocity:0,
-      splitHits:0,segments:1
+      splitHits:0,segments:1,woodPieces:null
     };
     treePhysicsStates.set(key,physics);
   }
@@ -1766,6 +1778,10 @@ function fallenTreeCollisionAt(x,y,ignorePhysics=null){
 }
 
 function drawPhysicalTree(tree,physics,camX,camY){
+  if(physics.status==="split"){
+    drawWoodPieces(tree,physics,camX,camY);
+    return;
+  }
   const block=TILE_METERS*VIEW_SCALE;
   const baseX=Math.round(((tree.gx+.5)*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
   const baseY=Math.round(((tree.gy+1)*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2);
@@ -1781,27 +1797,18 @@ function drawPhysicalTree(tree,physics,camX,camY){
   ctx.rotate(targetAngle*eased);
   ctx.imageSmoothingEnabled=false;
 
-  if(physics.status==="split"){
-    const segmentLength=lengthTiles*block/3;
-    for(let section=0;section<3;section++){
-      const offset=section*(segmentLength+block*.14);
-      ctx.fillStyle="rgba(4,10,8,.24)";
-      ctx.fillRect(Math.round(-block*.28),Math.round(-offset-segmentLength+block*.12),Math.round(block*.72),Math.round(segmentLength));
-      ctx.fillStyle=section%2?shade(trunk,8):trunk;
-      ctx.fillRect(Math.round(-block*.23),Math.round(-offset-segmentLength),Math.round(block*.58),Math.round(segmentLength-block*.12));
-      ctx.fillStyle="#b88a55";
-      ctx.fillRect(Math.round(-block*.18),Math.round(-offset-segmentLength),Math.round(block*.48),Math.max(2,Math.round(block*.12)));
-    }
-    ctx.restore();
-    return;
-  }
-
   ctx.fillStyle="rgba(3,10,7,.24)";
-  ctx.fillRect(Math.round(-block*.34),Math.round(-lengthTiles*block+block*.25),Math.round(block*.86),Math.round(lengthTiles*block));
+  ctx.fillRect(Math.round(-block*.55),Math.round(-lengthTiles*block+block*.25),Math.round(block*1.1),Math.round(lengthTiles*block));
   ctx.fillStyle=trunk;
-  ctx.fillRect(Math.round(-block*.24),Math.round(-lengthTiles*block),Math.round(block*.55),Math.round(lengthTiles*block));
+  ctx.fillRect(Math.round(-block*.5),Math.round(-lengthTiles*block),Math.round(block),Math.round(lengthTiles*block));
   ctx.fillStyle=shade(trunk,22);
-  ctx.fillRect(Math.round(-block*.18),Math.round(-lengthTiles*block),Math.round(block*.15),Math.round(lengthTiles*block));
+  for(let tile=0;tile<lengthTiles;tile++){
+    const py=Math.round(-(tile+1)*block);
+    ctx.fillRect(Math.round(-block*.42),py+2,Math.max(2,Math.round(block*.16)),Math.round(block)-3);
+    ctx.fillStyle=shade(trunk,tile%2?10:-8);
+    ctx.fillRect(Math.round(block*.12),py+Math.round(block*.24),Math.round(block*.24),Math.max(2,Math.round(block*.14)));
+    ctx.fillStyle=shade(trunk,22);
+  }
 
   // Reuse the standing tree's own block footprint. The fallen crown therefore
   // has the same width and length as the tree the player actually cut down.
@@ -1816,6 +1823,99 @@ function drawPhysicalTree(tree,physics,camX,camY){
     ctx.fillRect(px,py+Math.ceil(block)-2,Math.ceil(block)+1,3);
   }
   ctx.restore();
+}
+
+function createWoodPieces(physics){
+  if(physics.woodPieces) return physics.woodPieces;
+  const segment=fallenTreeSegment(physics);
+  const totalTiles=treePhysicalProfile(physics.tree).lengthTiles;
+  physics.woodPieces=[];
+  for(let index=0;index<3;index++){
+    const t=(index+.5)/3;
+    physics.woodPieces.push({
+      x:lerp(segment.ax,segment.bx,t),y:lerp(segment.ay,segment.by,t),
+      vx:physics.fallDirection.x*(index-1)*3+(hash2(physics.tree.gx+index,physics.tree.gy,8741)-.5)*6,
+      vy:physics.fallDirection.y*(index-1)*3+(hash2(physics.tree.gx,physics.tree.gy+index,8742)-.5)*4,
+      z:0,vz:5.5+Math.abs(index-1)*1.2,
+      angle:treeFallTargetAngle(physics)+(index-1)*.08,angularVelocity:(index-1)*.45,
+      lengthTiles:Math.max(1,Math.round(totalTiles/3)),settled:false,settleTimer:0
+    });
+  }
+  return physics.woodPieces;
+}
+
+function woodPieceCells(x,y,angle,lengthTiles){
+  const cells=[];
+  for(let tile=0;tile<lengthTiles;tile++) cells.push({
+    x:x-Math.sin(angle)*tile*TILE_METERS,
+    y:y+Math.cos(angle)*tile*TILE_METERS
+  });
+  return cells;
+}
+
+function woodGridPositionFree(x,y,angle,piece,physics){
+  const half=TILE_METERS*.48;
+  const candidateCells=woodPieceCells(x,y,angle,piece.lengthTiles);
+  for(const cell of candidateCells) for(const [ox,oy] of [[0,0],[-half,0],[half,0],[0,-half],[0,half]]) if(collisionAt(cell.x+ox,cell.y+oy,physics)) return false;
+  const occupied=new Set(candidateCells.map((cell)=>Math.round(cell.x/TILE_METERS)+","+Math.round(cell.y/TILE_METERS)));
+  for(const other of physics.woodPieces||[]){
+    if(other===piece||!other.settled) continue;
+    for(const cell of woodPieceCells(other.x,other.y,other.angle,other.lengthTiles)) if(occupied.has(Math.round(cell.x/TILE_METERS)+","+Math.round(cell.y/TILE_METERS))) return false;
+  }
+  return true;
+}
+
+function snapWoodPiece(piece,physics){
+  const gx=Math.round(piece.x/TILE_METERS);
+  const gy=Math.round(piece.y/TILE_METERS);
+  const angle=Math.round(piece.angle/(Math.PI/2))*Math.PI/2;
+  const candidates=[[0,0]];
+  for(let ring=1;ring<=2;ring++) for(let step=0;step<8*ring;step++){
+    const angle=step/(8*ring)*Math.PI*2;
+    candidates.push([Math.round(Math.cos(angle)*ring),Math.round(Math.sin(angle)*ring)]);
+  }
+  const seen=new Set();
+  for(const [dx,dy] of candidates){
+    const key=dx+","+dy;if(seen.has(key)) continue;seen.add(key);
+    const x=(gx+dx)*TILE_METERS;
+    const y=(gy+dy)*TILE_METERS;
+    if(Math.hypot(x-piece.x,y-piece.y)>TILE_METERS*2.6||!woodGridPositionFree(x,y,angle,piece,physics)) continue;
+    piece.x=x;piece.y=y;piece.vx=0;piece.vy=0;piece.angle=angle;piece.angularVelocity=0;piece.settled=true;
+    return true;
+  }
+  return false;
+}
+
+function updateWoodPieces(physics,dt){
+  for(const piece of createWoodPieces(physics)){
+    if(piece.settled) continue;
+    piece.x+=piece.vx*dt;piece.y+=piece.vy*dt;piece.z+=piece.vz*dt;piece.vz-=dt*18;piece.angle+=piece.angularVelocity*dt;
+    piece.vx*=Math.exp(-dt*2.5);piece.vy*=Math.exp(-dt*2.5);piece.angularVelocity*=Math.exp(-dt*3.2);
+    if(piece.z<=0&&piece.vz<0){
+      piece.z=0;piece.vz=Math.abs(piece.vz)*.28;piece.vx*=.55;piece.vy*=.55;piece.angularVelocity*=.45;
+      if(piece.vz<.75) piece.vz=0;
+    }
+    if(piece.z===0&&Math.hypot(piece.vx,piece.vy)<.8&&Math.abs(piece.vz)<.8) piece.settleTimer+=dt; else piece.settleTimer=0;
+    if(piece.settleTimer>.35) snapWoodPiece(piece,physics);
+  }
+}
+
+function drawWoodPieces(tree,physics,camX,camY){
+  const block=TILE_METERS*VIEW_SCALE;
+  const trunk=tree.kind==="birch"?"#9d957d":tree.kind==="frostPine"?"#65706a":tree.kind==="palm"?"#76512e":"#5b3d29";
+  for(const [index,piece] of createWoodPieces(physics).entries()){
+    const x=(piece.x-camX)*VIEW_SCALE+canvas.width/2;
+    const y=(piece.y-camY)*VIEW_SCALE+canvas.height/2-piece.z*VIEW_SCALE;
+    ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.rotate(piece.angle);
+    ctx.fillStyle="rgba(4,10,8,.24)";ctx.fillRect(-block*.52,-block*.42,block*1.04,piece.lengthTiles*block);
+    for(let tile=0;tile<piece.lengthTiles;tile++){
+      const py=tile*block;
+      ctx.fillStyle=tile%2?shade(trunk,7):trunk;ctx.fillRect(-block*.5,py-block*.5,block,block);
+      ctx.fillStyle=shade(trunk,22);ctx.fillRect(-block*.4,py-block*.38,block*.16,block*.72);
+      ctx.fillStyle="#b88a55";if(tile===0||tile===piece.lengthTiles-1)ctx.fillRect(-block*.38,py-block*.5,block*.76,Math.max(2,block*.12));
+    }
+    ctx.restore();
+  }
 }
 
 function animalCellKey(cellX,cellY){
@@ -1922,16 +2022,76 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
     health:meta.maxHealth,maxHealth:meta.maxHealth,status:"alive",
     wanderTimer:.8+hash2(cellX,cellY,8211+index)*3.4,idleUntil:0,
     hitFlash:0,fleeUntil:0,aggressionUntil:0,attackCooldown:0,
-    attackPhase:"idle",attackTimer:0,attackHitDone:false,
+    attackPhase:"idle",attackTimer:0,attackHitDone:false,dashHeading:heading,telegraphParticleTimer:0,
     bloodLevel:0,corpseDamage:0,harvestCount:0,lootQueue:null,
     angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,
-    deadAt:null,bloodPoolGrowth:0,bloodTrailDistance:0,bloodReserve:1,
+    deadAt:null,bloodTrailDistance:0,bloodReserve:1,
     breed:horseVariant?.breed||null,coat:horseVariant?.coat||null,
     saddled:species==="horse"&&hash2(cellX,index+cellY,8253)<.22,
     owned:false,riderId:null,mountStamina:100,command:"follow"
   };
   Object.assign(animal,overrides);
   return cacheAnimalState(id,animal);
+}
+
+function ensureTreeCrows(tree){
+  if(tree.crowIds) return tree.crowIds.map((id)=>animalStates.get(id)).filter(Boolean);
+  tree.crowIds=[];
+  if(["dead","cactus","iceSpire","palm"].includes(tree.kind)||hash2(tree.gx,tree.gy,8610)>.28) return [];
+  const existingCrows=[...animalStates.values()].filter((animal)=>animal.species==="crow"&&!animal.removed).length;
+  const count=Math.min(CROW_ACTIVE_LIMIT-existingCrows,1+Math.floor(hash2(tree.gx,tree.gy,8611)*3));
+  const profile=treePhysicalProfile(tree);
+  for(let index=0;index<count;index++){
+    const id="crow:"+treeKey(tree)+":"+index;
+    const x=(tree.gx+.5)*TILE_METERS+(index-(count-1)/2)*2.4;
+    const y=(tree.gy-profile.lengthTiles+.6)*TILE_METERS+index*.7;
+    const crow=createAnimalState("crow",Math.floor(tree.gx/ANIMAL_CELL_TILES),Math.floor(tree.gy/ANIMAL_CELL_TILES),index,{x,y},{
+      id,homeX:x,homeY:y,associatedTreeKey:treeKey(tree),associatedTree:tree,flightState:"perched",flightTime:0,
+      hiddenFactor:.38+hash2(tree.gx+index,tree.gy,8612)*.35,dir:index%2?"left":"right",gait:index*Math.PI*.7
+    });
+    tree.crowIds.push(id);
+  }
+  return tree.crowIds.map((id)=>animalStates.get(id)).filter(Boolean);
+}
+
+function launchTreeCrows(tree,reason="near"){
+  const crows=ensureTreeCrows(tree);
+  for(let index=0;index<crows.length;index++){
+    const crow=crows[index];
+    if(crow.flightState!=="perched") continue;
+    const base=Math.atan2(crow.y-state.player.y,crow.x-state.player.x);
+    const spread=(index-(crows.length-1)/2)*.48+(hash2(tree.gx+index,tree.gy,8615)-.5)*.35;
+    crow.flightState="flying";crow.flightTime=0;crow.heading=base+spread;
+    crow.vx=Math.cos(crow.heading)*(reason==="fall"?38:31);
+    crow.vy=Math.sin(crow.heading)*(reason==="fall"?38:31)-6;
+  }
+  return crows.length;
+}
+
+function updateCrow(crow,dt){
+  const distance=Math.hypot(state.player.x-crow.x,state.player.y-crow.y);
+  const tree=crow.associatedTree||crow.associatedTreeKey&&treePhysicsStates.get(crow.associatedTreeKey)?.tree;
+  if(crow.flightState==="perched"){
+    crow.gait+=dt*.55;
+    crow.motionSpeed=0;
+    if(distance<38||tree&&treePhysicsStates.get(crow.associatedTreeKey)?.status&&!['standing'].includes(treePhysicsStates.get(crow.associatedTreeKey)?.status)) launchTreeCrows(tree,"near");
+    return;
+  }
+  crow.flightTime+=dt;
+  crow.gait+=dt*(9+Math.hypot(crow.vx,crow.vy)*.08);
+  crow.vx+=Math.cos(crow.heading)*dt*3;
+  crow.vy=lerp(crow.vy,Math.sin(crow.heading)*25-8,1-Math.exp(-dt*1.7));
+  crow.x+=crow.vx*dt;crow.y+=crow.vy*dt;crow.dir=crow.vx<0?"left":"right";
+  if(crow.flightTime>11||distance>ANIMAL_ACTIVE_RADIUS*1.35) crow.removed=true;
+}
+
+function pruneDistantCrows(){
+  const limit=ANIMAL_ACTIVE_RADIUS*1.55;
+  for(const [id,crow] of animalStates){
+    if(crow.species!=="crow"||Math.hypot(state.player.x-crow.x,state.player.y-crow.y)<=limit) continue;
+    if(crow.associatedTree) crow.associatedTree.crowIds=null;
+    animalStates.delete(id);
+  }
 }
 
 function animalsForCell(cellX,cellY){
@@ -1962,11 +2122,19 @@ function animalsInRect(left,top,right,bottom){
   for(let cellY=minY;cellY<=maxY;cellY++){
     for(let cellX=minX;cellX<=maxX;cellX++){
       for(const animal of animalsForCell(cellX,cellY)){
-        if(seen.has(animal.id)||animal.x<left-margin||animal.x>right+margin||animal.y<top-margin||animal.y>bottom+margin) continue;
+        if(animal.removed||seen.has(animal.id)||animal.x<left-margin||animal.x>right+margin||animal.y<top-margin||animal.y>bottom+margin) continue;
         seen.add(animal.id);
         result.push(animal);
       }
     }
+  }
+  const startGX=Math.floor(left/TILE_METERS)-6;
+  const endGX=Math.ceil(right/TILE_METERS)+6;
+  const startGY=Math.floor(top/TILE_METERS)-6;
+  const endGY=Math.ceil(bottom/TILE_METERS)+6;
+  for(const tree of visibleTrees(startGX,endGX,startGY,endGY)) for(const crow of ensureTreeCrows(tree)){
+    if(crow.removed||seen.has(crow.id)||crow.x<left-margin||crow.x>right+margin||crow.y<top-margin||crow.y>bottom+margin) continue;
+    seen.add(crow.id);result.push(crow);
   }
   if(state.draggingAnimalId){
     const dragged=animalStates.get(state.draggingAnimalId);
@@ -2063,12 +2231,52 @@ function injurePlayerFromBoar(animal){
   if(animal.attackPhase!=="charge"||animal.attackHitDone||state.dead) return;
   animal.attackHitDone=true;
   state.player.health=Math.max(0,state.player.health-14);
+  applyPlayerBleed(.72,9,1.15);
   const dx=state.player.x-animal.x;
   const dy=state.player.y-animal.y;
   const length=Math.hypot(dx,dy)||1;
   for(let i=0;i<5;i++) addEffect({type:"dust",layer:"ground",x:state.player.x,y:state.player.y,life:.4+Math.random()*.25,size:.55,vx:dx/length*5+(Math.random()-.5)*4,vy:dy/length*5+(Math.random()-.5)*4});
-  showToast("Das verwundete Wildschwein rammt dich · -14 Leben",1500);
+  showToast("Keiler-Dash · -14 Leben · BLUTUNG",1700);
   if(state.player.health<=0) killPlayer("Von einem Wildschwein niedergerannt");
+}
+
+function applyPlayerBleed(intensity,duration,volume){
+  const bleed=state.player.bleed||(state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0});
+  bleed.intensity=Math.min(1,Math.max(bleed.intensity,intensity));
+  bleed.duration=Math.min(12,Math.max(bleed.duration,duration));
+  bleed.volume=Math.min(1.5,Math.max(bleed.volume,volume));
+  bleed.tickCooldown=Math.max(.7,bleed.tickCooldown||0);
+}
+
+function updatePlayerBleed(dt){
+  const bleed=state.player.bleed;
+  if(!bleed||bleed.duration<=0||bleed.volume<=0||state.dead) return;
+  bleed.duration=Math.max(0,bleed.duration-dt);
+  bleed.intensity=Math.max(0,bleed.intensity-dt*.045);
+  bleed.tickCooldown-=dt;
+  if(bleed.tickCooldown<=0){
+    const damage=Math.max(1,Math.round(bleed.intensity*2));
+    state.player.health=Math.max(1,state.player.health-damage);
+    bleed.volume=Math.max(0,bleed.volume-.12);
+    bleed.tickCooldown=1.45;
+  }
+  if(bleed.duration<=0||bleed.volume<=0){bleed.intensity=0;bleed.duration=0;return;}
+  if(state.player.moving){
+    bleed.trailDistance+=dt*(state.mountedHorseId?20:12);
+    if(bleed.trailDistance>=3.2){
+      bleed.trailDistance%=3.2;
+      const spent=Math.min(bleed.volume,.035);
+      bleed.volume-=spent;
+      addBloodWorldEffect(state.player.x+(Math.random()-.5)*1.4,state.player.y+(Math.random()-.5)*1.4,.48+bleed.intensity*.45,55,"#68191a");
+    }
+  }
+}
+
+function emitBoarTelegraph(animal){
+  const terrain=terrainAt(animal.x,animal.y);
+  const colors={snow:"#d6dfdc",glacier:"#bfd4d2",tundra:"#8e9a88",desert:"#c8a261",beach:"#cbb071",swamp:"#69735b"};
+  addEffect({type:"dust",layer:"ground",x:animal.x+(Math.random()-.5)*5,y:animal.y+2+(Math.random()-.5)*2,
+    life:.55,size:.85,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2,color:colors[terrain.biome]||"#9c8764"});
 }
 
 function advanceAnimalGait(animal,moved,dt){
@@ -2078,7 +2286,7 @@ function advanceAnimalGait(animal,moved,dt){
   animal.gaitMode=speed<.55?"idle":speed<(animal.species==="horse"?24:15)?"walk":"gallop";
   if(animal.gaitMode!==previous&&animal.gaitMode==="idle") animal.gait=Math.round((animal.gait||0)/Math.PI)*Math.PI;
   if(moved>.001){
-    const strideLength=animal.species==="horse"?(animal.gaitMode==="gallop"?9.2:6.8):(animal.species==="boar"?5.4:2.8);
+    const strideLength=animal.species==="horse"?(animal.gaitMode==="gallop"?9.2:6.8):(animal.species==="boar"?5.4:animal.species==="chicken"?5.2:2.8);
     animal.gait=(animal.gait||0)+moved/strideLength*Math.PI*2;
   }
 }
@@ -2091,24 +2299,29 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
       animal.attackPhase="windup";
       animal.attackTimer=.42;
       animal.attackHitDone=false;
+      animal.telegraphParticleTimer=0;
       return 0;
     }
     return meta.runSpeed;
   }
   animal.attackTimer-=dt;
   if(animal.attackPhase==="windup"){
+    animal.telegraphParticleTimer-=dt;
+    if(animal.telegraphParticleTimer<=0){animal.telegraphParticleTimer=.09;emitBoarTelegraph(animal);}
     if(animal.attackTimer<=0){
       animal.attackPhase="charge";
       animal.attackTimer=.5;
-      animal.heading=Math.atan2(dy,dx);
+      animal.dashHeading=Math.atan2(dy,dx);
+      animal.heading=animal.dashHeading;
     }
     return 0;
   }
   if(animal.attackPhase==="charge"){
+    animal.heading=animal.dashHeading;
     const active=animal.attackTimer<=.38&&animal.attackTimer>=.10;
     if(active&&distance<meta.radius+PLAYER_RADIUS+2.4) injurePlayerFromBoar(animal);
     if(animal.attackTimer<=0){animal.attackPhase="recover";animal.attackTimer=.62;}
-    return meta.runSpeed*1.55;
+    return meta.runSpeed*1.9;
   }
   if(animal.attackTimer<=0){
     animal.attackPhase="idle";
@@ -2230,23 +2443,28 @@ function updateAnimalRagdoll(animal,dt){
   animal.motionSpeed=0;
   animal.gaitMode="dead";
   const age=Math.max(0,state.elapsed-(animal.deadAt??state.elapsed));
-  const bloodCapacity=Math.min(1,animal.bloodLevel/1.5)*Math.max(.32,1-animal.harvestCount*.055);
-  animal.bloodPoolGrowth=Math.min(bloodCapacity,age/CORPSE_POOL_GROWTH_SECONDS*bloodCapacity);
   if(state.draggingAnimalId===animal.id&&age<CORPSE_TRAIL_FRESH_SECONDS&&animal.bloodReserve>0){
     const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
     animal.bloodTrailDistance=(animal.bloodTrailDistance||0)+moved;
-    if(animal.bloodTrailDistance>=4.2){
-      animal.bloodTrailDistance%=4.2;
-      animal.bloodReserve=Math.max(0,animal.bloodReserve-.025);
-      addEffect({type:"bloodDecal",layer:"ground",decal:true,x:animal.x,y:animal.y,life:38,size:.7+animal.bloodLevel*.42,color:"#5b1718"});
+    const freshness=.18+.82*Math.exp(-age/26);
+    const spacing=lerp(3.2,6.8,1-freshness);
+    if(animal.bloodTrailDistance>=spacing){
+      animal.bloodTrailDistance%=spacing;
+      const spent=Math.min(animal.bloodReserve,.035*lucklessCurve(freshness));
+      animal.bloodReserve=Math.max(0,animal.bloodReserve-spent);
+      addBloodWorldEffect(animal.x,animal.y,1.05+animal.bloodLevel*.62,90+freshness*45,"#5b1718");
     }
   }
 }
 
+function lucklessCurve(value){return .55+value*.9;}
+
 function updateAnimals(dt){
   if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
+  pruneDistantCrows();
   for(const animal of activeAnimalsNear(state.player.x,state.player.y)){
-    if(animal.status==="alive") updateLivingAnimal(animal,dt);
+    if(animal.species==="crow") updateCrow(animal,dt);
+    else if(animal.status==="alive") updateLivingAnimal(animal,dt);
     else updateAnimalRagdoll(animal,dt);
   }
 }
@@ -2263,11 +2481,11 @@ function emitBlood(animal,count=5,impact=null){
     color:index%3===0?"#8f211d":"#5f1718"
   });
   const stains=Math.max(1,Math.ceil(count*.3));
-  for(let index=0;index<stains;index++) addEffect({
-    type:"bloodDecal",layer:"ground",decal:true,x:animal.x+nx*(2+Math.random()*5)+(Math.random()-.5)*2,
-    y:animal.y+ny*(2+Math.random()*5)+(Math.random()-.5)*2,life:32+Math.random()*20,
-    size:.5+Math.random()*.5,color:index%2?"#571718":"#771c1b"
-  });
+  for(let index=0;index<stains;index++) addBloodWorldEffect(
+    animal.x+nx*(2+Math.random()*5)+(Math.random()-.5)*2,
+    animal.y+ny*(2+Math.random()*5)+(Math.random()-.5)*2,
+    .65+Math.random()*.65,75+Math.random()*50,index%2?"#571718":"#771c1b"
+  );
 }
 
 function prepareAnimalLoot(animal){
@@ -2280,8 +2498,8 @@ function killAnimal(animal,damage){
   animal.health=0;
   animal.bloodLevel=Math.min(1.6,Math.max(.65,animal.bloodLevel+.24));
   animal.deadAt=state.elapsed;
-  animal.bloodPoolGrowth=0;
   animal.bloodReserve=Math.min(1.25,.55+animal.bloodLevel*.42);
+  animal.bloodPoolEffectId=null;
   animal.attackPhase="idle";
   const dx=animal.x-state.player.x;
   const dy=animal.y-state.player.y;
@@ -2291,6 +2509,8 @@ function killAnimal(animal,damage){
   animal.angularVelocity=(hash2(Math.floor(animal.x),Math.floor(animal.y),8501)-.5)*5;
   animal.angle=0;
   prepareAnimalLoot(animal);
+  createCorpseBloodPool(animal);
+  animal.bloodReserve=Math.max(0,animal.bloodReserve-.1);
   emitBlood(animal,animal.species==="boar"?10:6);
   showToast(animalCatalog[animal.species].name+" erlegt · der Kadaver kann gezogen und zerlegt werden",2600);
 }
@@ -2298,10 +2518,11 @@ function killAnimal(animal,damage){
 function harvestAnimalCorpse(animal,damage){
   animal.corpseDamage+=damage;
   animal.bloodLevel=Math.min(1.8,animal.bloodLevel+damage/animal.maxHealth*.32);
-  animal.bloodReserve=Math.min(1.25,(animal.bloodReserve||0)+damage/animal.maxHealth*.16);
   animal.hitFlash=.14;
   animal.angularVelocity+=(Math.random()-.5)*1.8;
-  emitBlood(animal,Math.min(9,3+Math.ceil(damage/12)));
+  const released=Math.min(animal.bloodReserve||0,.04+damage/animal.maxHealth*.1);
+  animal.bloodReserve=Math.max(0,(animal.bloodReserve||0)-released);
+  if(released>0) emitBlood(animal,Math.min(9,2+Math.ceil(released*45)));
   if(!animal.lootQueue) prepareAnimalLoot(animal);
   const loot=animal.lootQueue[0];
   if(!loot){
@@ -2342,15 +2563,6 @@ function damageAnimal(animal,damage,itemId){
   return true;
 }
 
-function drawBloodPool(animal,x,y,unit){
-  if(animal.status==="alive"||animal.bloodLevel<.18||animal.bloodPoolGrowth<=.01) return;
-  const size=Math.max(2,Math.round(unit*(.9+animal.bloodPoolGrowth*3.1)));
-  ctx.fillStyle="rgba(75,15,17,.66)";
-  ctx.fillRect(Math.round(x-size),Math.round(y-unit*.45),size*2,Math.max(2,Math.round(size*.72)));
-  ctx.fillStyle="rgba(125,28,23,.46)";
-  ctx.fillRect(Math.round(x-size*.45),Math.round(y-unit*.8),Math.max(2,Math.round(size*.9)),Math.max(2,Math.round(size*.34)));
-}
-
 function drawAnimalBloodMarks(c,animal,u){
   const level=animal.bloodLevel;
   if(level<.16) return;
@@ -2368,7 +2580,8 @@ function drawChicken(animal,x,y){
   ctx.translate(Math.round(x),Math.round(y));
   ctx.scale(flip,1);
   if(animal.status==="alive"){
-    const step=Math.sin(animal.gait*4)>.15?1:0;
+    const moving=animal.gaitMode!=="idle";
+    const step=moving?(Math.sin(animal.gait)>.15?1:0):0;
     ctx.fillStyle="rgba(0,0,0,.28)";ctx.fillRect(-5*u,u,10*u,2*u);
     ctx.fillStyle=animal.hitFlash>0?"#f7d6cf":"#e8e1c4";ctx.fillRect(-4*u,-4*u,7*u,5*u);
     ctx.fillStyle="#b8aa88";ctx.fillRect(-2*u,-3*u,4*u,3*u);
@@ -2376,7 +2589,7 @@ function drawChicken(animal,x,y){
     ctx.fillStyle="#d7a73a";ctx.fillRect(5*u,-5*u,2*u,u);
     ctx.fillStyle="#a7352e";ctx.fillRect(2*u,-9*u,u,2*u);ctx.fillRect(3*u,-9*u,u,u);
     ctx.fillStyle="#1b211d";ctx.fillRect(4*u,(blinkClosed(animal)?-5:-6)*u,u,u);
-    ctx.fillStyle="#b78939";ctx.fillRect((-2-step)*u,u,u,3*u);ctx.fillRect((1+step)*u,u,u,3*u);
+    ctx.fillStyle="#b78939";ctx.fillRect((-1-step)*u,u,u,3*u);ctx.fillRect((1+step)*u,u,u,3*u);
     drawAnimalBloodMarks(ctx,animal,u);
   }else{
     // Dead limbs stay on whole pixels. Vector rotation and stroked diagonal
@@ -2524,10 +2737,28 @@ function drawHorse(animal,x,y){
   ctx.restore();
 }
 
+function drawCrow(crow,x,y){
+  const u=2;
+  const flip=crow.dir==="left"?-1:1;
+  const flying=crow.flightState==="flying";
+  const wing=flying?Math.round(Math.sin(crow.gait)*2):0;
+  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.scale(flip,1);
+  ctx.globalAlpha=flying?1:(crow.hiddenFactor||.55);
+  if(flying){ctx.fillStyle="rgba(5,10,12,.18)";ctx.fillRect(-4*u,5*u,8*u,u);}
+  ctx.fillStyle="#11171a";ctx.fillRect(-2*u,-2*u,5*u,3*u);ctx.fillRect(2*u,-3*u,2*u,2*u);
+  ctx.fillStyle="#252e32";ctx.fillRect(-u,-2*u,2*u,u);
+  ctx.fillStyle="#0a0d0f";
+  if(flying){ctx.fillRect((-5-wing)*u,(-2-wing)*u,4*u,2*u);ctx.fillRect(2*u,(-2+wing)*u,(4+wing)*u,2*u);}
+  else{ctx.fillRect(-2*u,u,u,2*u);ctx.fillRect(u,u,u,2*u);}
+  ctx.fillStyle="#ad9a62";ctx.fillRect(4*u,-2*u,u,u);
+  ctx.restore();
+}
+
 function drawAnimal(animal,camX,camY){
   const x=(animal.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(animal.y-camY)*VIEW_SCALE+canvas.height/2;
-  if(animal.species==="horse") drawHorse(animal,x,y);
+  if(animal.species==="crow") drawCrow(animal,x,y);
+  else if(animal.species==="horse") drawHorse(animal,x,y);
   else if(animal.species==="boar") drawBoar(animal,x,y);
   else drawChicken(animal,x,y);
 }
@@ -2591,9 +2822,7 @@ function drawMountedPair(horse,player,x,y,local=false){
 }
 
 function drawAnimalGround(animal,camX,camY){
-  const x=(animal.x-camX)*VIEW_SCALE+canvas.width/2;
-  const y=(animal.y-camY)*VIEW_SCALE+canvas.height/2;
-  if(animal.species!=="horse") drawBloodPool(animal,x,y,animal.species==="boar"?3:2);
+  // Fixed blood pools are world effects, never a child of the moving corpse.
 }
 
 function drawDragTether(camX,camY){
@@ -2708,6 +2937,15 @@ function drawLandmarkLabel(landmark,camX,camY){
 }
 
 function addEffect(effect){
+  const entry={...effect,id:effect.id||"effect:"+(++state.effectSerial),createdAt:state.elapsed,maxLife:effect.maxLife||effect.life};
+  if(entry.decal){
+    entry.cellKey=Math.floor(entry.x/BLOOD_CELL_METERS)+","+Math.floor(entry.y/BLOOD_CELL_METERS);
+    const sameCell=state.effects.filter((candidate)=>candidate.decal&&candidate.cellKey===entry.cellKey);
+    if(sameCell.length>=BLOOD_DECALS_PER_CELL){
+      const oldest=state.effects.indexOf(sameCell[0]);
+      if(oldest>=0) state.effects.splice(oldest,1);
+    }
+  }
   if(effect.decal){
     let decals=0;
     for(const candidate of state.effects) if(candidate.decal) decals++;
@@ -2716,8 +2954,33 @@ function addEffect(effect){
       if(oldest>=0) state.effects.splice(oldest,1);
     }
   }
-  state.effects.push({...effect,maxLife:effect.life});
+  state.effects.push(entry);
   if(state.effects.length>EFFECT_LIMIT) state.effects.splice(0,state.effects.length-EFFECT_LIMIT);
+  return entry;
+}
+
+function waterBloodProfile(x,y){
+  const terrain=terrainAt(x,y);
+  if(!["river","shallow","water","deepWater"].includes(terrain.biome)) return null;
+  if(terrain.biome==="river"&&terrain.river) return {flowX:terrain.river.dirX,flowY:terrain.river.dirY,speed:5.2,life:9};
+  return {flowX:0,flowY:0,speed:terrain.biome==="shallow"?.35:.18,life:terrain.biome==="deepWater"?5.5:7};
+}
+
+function addBloodWorldEffect(x,y,size,life,color="#641719",options={}){
+  const water=waterBloodProfile(x,y);
+  if(water) return addEffect({
+    type:"bloodCloud",layer:"ground",x,y,size:size*1.2,life:Math.min(life,water.life),
+    vx:water.flowX*water.speed,vy:water.flowY*water.speed,color,water:true,diffusion:water.speed<1?.55:.28,
+    ownerId:options.ownerId||null,sourcePool:!!options.pool
+  });
+  return addEffect({type:options.pool?"bloodPool":"bloodDecal",layer:"ground",decal:true,x,y,size,life,color,pool:!!options.pool,ownerId:options.ownerId||null,growth:options.pool?0:1});
+}
+
+function createCorpseBloodPool(animal){
+  if(animal.bloodPoolEffectId) return state.effects.find((effect)=>effect.id===animal.bloodPoolEffectId)||null;
+  const effect=addBloodWorldEffect(animal.x,animal.y,.9,BLOOD_POOL_LIFE_SECONDS,"#551416",{pool:true,ownerId:animal.id});
+  animal.bloodPoolEffectId=effect?.id||null;
+  return effect;
 }
 
 function emitGroundTrack(x,y,dir,kind="foot"){
@@ -2765,21 +3028,67 @@ function reactToCollision(hit,x,y){
   }
 }
 
+function updateSkyShadows(){
+  if(state.elapsed<state.nextSkyShadowAt) return;
+  state.nextSkyShadowAt=state.elapsed+11+hash2(Math.floor(state.elapsed),state.seed,8670)*18;
+  const active=state.effects.filter((effect)=>effect.type==="skyShadow").length;
+  if(active>=SKY_SHADOW_LIMIT) return;
+  const count=1+Math.floor(hash2(Math.floor(state.elapsed),13,8671)*3);
+  const heading=hash2(Math.floor(state.elapsed),17,8672)*Math.PI*2;
+  for(let index=0;index<count&&active+index<SKY_SHADOW_LIMIT;index++) addEffect({
+    type:"skyShadow",layer:"ground",x:state.player.x-140*Math.cos(heading)+index*7,y:state.player.y-140*Math.sin(heading)+index*5,
+    life:8,size:2.8+index*.25,vx:Math.cos(heading)*38,vy:Math.sin(heading)*38
+  });
+}
+
 function updateWorldReactions(dt){
   updateItemAction(dt);
   updateTreePhysics(dt);
   resolveFallenTreeOverlaps(dt);
   updateAnimals(dt);
+  updatePlayerBleed(dt);
+  updateSkyShadows();
   for(const effect of state.effects){
     effect.life-=dt;
+    if(effect.type==="bloodPool"||effect.sourcePool){
+      const owner=effect.ownerId&&animalStates.get(effect.ownerId);
+      if(owner&&owner.bloodReserve>0){
+        const age=Math.max(0,state.elapsed-(owner.deadAt||state.elapsed));
+        const rate=.014*Math.exp(-age/38)+.002;
+        const spent=Math.min(owner.bloodReserve,rate*dt);
+        owner.bloodReserve-=spent;
+        effect.growth=Math.min(1.65,(effect.growth||0)+spent*1.7);
+      }
+      effect.size=.9+(effect.growth||0)*(effect.sourcePool?1.8:3.2);
+    }
+    if(effect.type==="bloodCloud"){
+      const profile=waterBloodProfile(effect.x,effect.y);
+      if(profile){effect.vx=profile.flowX*profile.speed;effect.vy=profile.flowY*profile.speed;}
+      effect.size+=dt*(effect.diffusion||.4);
+    }
     effect.x+=(effect.vx||0)*dt;
     effect.y+=(effect.vy||0)*dt;
     if(effect.type==="leaf"||effect.type==="woodChip"||effect.type==="blood") effect.vy+=11*dt;
-    if(effect.type==="blood"&&effect.layer==="air"&&effect.life<.18){
-      effect.layer="ground";effect.type="bloodDecal";effect.decal=true;effect.life=22;effect.maxLife=22;effect.vx=0;effect.vy=0;effect.size*=.8;
+    if(effect.type==="blood"&&effect.layer==="air"&&effect.life<.22){
+      const profile=waterBloodProfile(effect.x,effect.y);
+      effect.layer="ground";effect.type=profile?"bloodCloud":"bloodDecal";effect.decal=!profile;
+      effect.cellKey=profile?null:Math.floor(effect.x/BLOOD_CELL_METERS)+","+Math.floor(effect.y/BLOOD_CELL_METERS);
+      effect.life=profile?profile.life:75;effect.maxLife=effect.life;
+      effect.vx=profile?profile.flowX*profile.speed:0;effect.vy=profile?profile.flowY*profile.speed:0;
+      effect.diffusion=profile?.speed<1?.55:.28;effect.size*=profile?1.25:.9;
     }
   }
   state.effects=state.effects.filter((effect)=>effect.life>0);
+  const cellCounts=new Map();
+  const keepDecal=new Set();
+  for(let index=state.effects.length-1;index>=0;index--){
+    const effect=state.effects[index];
+    if(!effect.decal) continue;
+    effect.cellKey=effect.cellKey||Math.floor(effect.x/BLOOD_CELL_METERS)+","+Math.floor(effect.y/BLOOD_CELL_METERS);
+    const count=cellCounts.get(effect.cellKey)||0;
+    if(count<BLOOD_DECALS_PER_CELL){keepDecal.add(index);cellCounts.set(effect.cellKey,count+1);}
+  }
+  state.effects=state.effects.filter((effect,index)=>!effect.decal||keepDecal.has(index));
   let decalOverflow=state.effects.reduce((sum,effect)=>sum+(effect.decal?1:0),0)-GROUND_DECAL_LIMIT;
   if(decalOverflow>0) state.effects=state.effects.filter((effect)=>!effect.decal||decalOverflow--<=0);
   const follow=1-Math.exp(-dt*7.5);
@@ -2815,17 +3124,30 @@ function drawEffects(camX,camY,layer){
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,size);
     }else if(effect.type==="dust"){
-      ctx.fillStyle="#b8a47a";
+      ctx.fillStyle=effect.color||"#b8a47a";
       const size=Math.max(2,Math.round((effect.size+progress)*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,size);
     }else if(effect.type==="woodChip"){
       ctx.fillStyle=effect.color||"#b47c43";
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,Math.max(2,Math.round(size*.55)));
-    }else if(effect.type==="blood"||effect.type==="bloodDecal"){
+    }else if(effect.type==="blood"||effect.type==="bloodDecal"||effect.type==="bloodPool"||effect.type==="bloodCloud"){
       ctx.fillStyle=effect.color||"#731c1a";
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
-      ctx.fillRect(Math.round(x),Math.round(y),size,Math.max(2,Math.round(size*.65)));
+      if(effect.type==="bloodCloud"){
+        ctx.globalAlpha*=.48;
+        ctx.fillRect(Math.round(x-size),Math.round(y-size*.45),size*2,Math.max(2,Math.round(size*.9)));
+        ctx.fillStyle="rgba(138,44,50,.2)";ctx.fillRect(Math.round(x-size*.45),Math.round(y-size*.7),size,Math.max(2,Math.round(size*.45)));
+      }else if(effect.type==="bloodPool"){
+        ctx.fillRect(Math.round(x-size),Math.round(y-size*.38),size*2,Math.max(2,Math.round(size*.76)));
+        ctx.fillStyle="#7f211f";ctx.fillRect(Math.round(x-size*.42),Math.round(y-size*.62),Math.max(2,Math.round(size*.9)),Math.max(2,Math.round(size*.28)));
+      }else ctx.fillRect(Math.round(x-size/2),Math.round(y-size*.32),size,Math.max(2,Math.round(size*.65)));
+    }else if(effect.type==="skyShadow"){
+      ctx.globalAlpha*=.16;
+      ctx.fillStyle="#081015";
+      const flap=Math.sin(state.elapsed*6+effect.id.length)*effect.size*VIEW_SCALE;
+      ctx.fillRect(Math.round(x-effect.size*VIEW_SCALE-flap),Math.round(y),Math.max(2,Math.round(effect.size*VIEW_SCALE)),2);
+      ctx.fillRect(Math.round(x+flap),Math.round(y),Math.max(2,Math.round(effect.size*VIEW_SCALE)),2);
     }else if(effect.type==="bubble"){
       ctx.strokeStyle="rgba(218,245,243,.82)";
       ctx.lineWidth=1;
@@ -3679,6 +4001,10 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   }
 
   if(!portraitMode) drawHeldItem(c,u,dir,p);
+  if(!portraitMode&&p.bleed?.duration>0){
+    c.fillStyle="#8b2422";
+    c.fillRect(3*u,14*u,2*u,u);
+  }
 
   if(local&&!portraitMode){
     c.fillStyle="#f0cd67";
@@ -4044,6 +4370,7 @@ function performAxeImpact(){
     if(physics.splitHits>=TREE_SPLIT_HITS){
       physics.status="split";
       physics.segments=3;
+      createWoodPieces(physics);
       showToast("Der Stamm zerbricht in drei Holzabschnitte.",2200);
     }else{
       showToast("Stamm zerteilen · "+physics.splitHits+" / "+TREE_SPLIT_HITS);
@@ -4067,6 +4394,7 @@ function performAxeImpact(){
   physics.fallDirection={x:dx,y:dy};
   physics.fallProgress=.01;
   physics.angularVelocity=.22;
+  launchTreeCrows(target.tree,"fall");
   showToast("Der Baum fällt!",1500);
 }
 
@@ -4167,6 +4495,7 @@ function resolveFallenTreeOverlaps(dt){
 
 function updateTreePhysics(dt){
   for(const physics of treePhysicsStates.values()){
+    if(physics.status==="split"){updateWoodPieces(physics,dt);continue;}
     if(physics.status!=="falling") continue;
     physics.angularVelocity+=dt*1.45;
     physics.fallProgress=Math.min(1,physics.fallProgress+physics.angularVelocity*dt);
@@ -4356,6 +4685,7 @@ function killPlayer(reason){
   const horse=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
   if(horse) horse.riderId=null;
   state.mountedHorseId=null;
+  state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};
   state.player.moving=false;
   state.keys.clear();
   $("deathReason").textContent=reason;
@@ -4368,6 +4698,7 @@ function respawnPlayer(){
   state.player.stamina=100;
   state.player.swimming=false;
   state.player.drowning=false;
+  state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};
   state.player.x=state.lastSafe.x;
   state.player.y=state.lastSafe.y;
   state.camera.x=state.player.x;
@@ -4456,7 +4787,7 @@ function updateHud(){
   $("staminaFill").style.width=state.player.stamina.toFixed(1)+"%";
   $("healthFill").style.width=state.player.health.toFixed(1)+"%";
   $("healthText").textContent=Math.ceil(state.player.health)+" / 100";
-  $("staminaText").textContent=state.mountedHorseId?"PFERDEAUSDAUER":state.player.drowning?"ERTRINKEN":state.player.swimming?"SCHWIMMEN":"AUSDAUER";
+  $("staminaText").textContent=state.player.bleed?.duration>0?"BLUTUNG "+Math.ceil(state.player.bleed.duration)+"s":state.mountedHorseId?"PFERDEAUSDAUER":state.player.drowning?"ERTRINKEN":state.player.swimming?"SCHWIMMEN":"AUSDAUER";
   const commandHorse=relevantOwnedHorse();
   $("movementStateText").textContent=state.mountedHorseId?"REITET":state.player.drowning?"SINKT":state.player.swimming?"SCHWIMMT":commandHorse?.command==="stay"?"PFERD STAY":"PFERD FOLLOW";
   $("locationText").textContent=near.distance<650?near.landmark.short:biomeNames[terrain.biome];
@@ -4785,6 +5116,7 @@ function startGame(){
   state.player.health=100;
   state.player.swimming=false;
   state.player.drowning=false;
+  state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};
   state.dead=false;
   state.draggingAnimalId=null;
   state.interactionTarget=null;
@@ -4825,6 +5157,7 @@ function publicPlayer(){
     heldItem:p.heldItem,actionType:p.actionType,actionProgress:p.actionProgress,
     skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,
     beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak,
+    bleed:p.bleed?.duration>0?{intensity:p.bleed.intensity,duration:p.bleed.duration}:null,
     mount:horse?{breed:horse.breed,coat:horse.coat,saddled:true,command:horse.command,gait:horse.gait,gaitMode:horse.gaitMode,motionSpeed:horse.motionSpeed}:null
   };
 }
@@ -4842,6 +5175,10 @@ function sanitizePlayer(p){
     gait:Number.isFinite(Number(p.mount.gait))?Number(p.mount.gait):0,
     gaitMode:["idle","walk","gallop"].includes(p.mount.gaitMode)?p.mount.gaitMode:"idle",
     motionSpeed:Number.isFinite(Number(p.mount.motionSpeed))?Math.max(0,Math.min(120,Number(p.mount.motionSpeed))):0
+  }:null;
+  const bleed=p.bleed&&typeof p.bleed==="object"?{
+    intensity:Math.max(0,Math.min(1,Number(p.bleed.intensity)||0)),
+    duration:Math.max(0,Math.min(12,Number(p.bleed.duration)||0))
   }:null;
   return {
     id:String(p.id||"peer").slice(0,64),
@@ -4867,7 +5204,7 @@ function sanitizePlayer(p){
     outfit:outfits.includes(p.outfit)?p.outfit:"traveler",
     shirt:String(p.shirt||"#315d9b").slice(0,16),
     cloak:String(p.cloak||"#684431").slice(0,16),
-    mount
+    mount,bleed
   };
 }
 
@@ -5349,6 +5686,9 @@ window.__ARCHIPELAGO_DEBUG__ = {
   performAxeImpact,
   updateTreePhysics,
   resolveFallenTreeOverlaps,
+  createWoodPieces,
+  updateWoodPieces,
+  snapWoodPiece,
   treePhysicalProfile,
   fallenTreeSegment,
   fallenTreeHitShapes,
@@ -5363,6 +5703,15 @@ window.__ARCHIPELAGO_DEBUG__ = {
   updateAnimalRagdoll,
   advanceAnimalGait,
   animalSpawnAllowed,
+  addBloodWorldEffect,
+  createCorpseBloodPool,
+  waterBloodProfile,
+  applyPlayerBleed,
+  updatePlayerBleed,
+  ensureTreeCrows,
+  launchTreeCrows,
+  updateCrow,
+  updateSkyShadows,
   blinkClosed,
   addEffect,
   emitGroundTrack,

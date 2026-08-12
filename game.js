@@ -1,7 +1,7 @@
 (() => {
 "use strict";
 
-const WORLD_SIZE = 10000;
+const WORLD_SIZE = 20000;
 // One visible world block is eight metres. Terrain, roads, rivers, trees and
 // structures all use this same grid; only tiny ground clutter may use sub-blocks.
 const TILE_METERS = 8;
@@ -14,8 +14,11 @@ const PLAYER_RADIUS = 2.15;
 const NET_SEND_HZ = 12;
 const MAP_SAMPLE = 4;
 const TREE_PLOT_TILES = 4;
-const RIVER_TRACE_STEP = TILE_METERS * 4;
+const RIVER_TRACE_STEP = TILE_METERS * 8;
 const RIVER_INDEX_METERS = TILE_METERS * 8;
+const SWIM_STAMINA_DRAIN = 8;
+const DEEP_SWIM_STAMINA_DRAIN = 14;
+const DROWNING_DAMAGE = 28;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -56,21 +59,26 @@ const state = {
   elapsed: 0,
   seed: 184731,
   previewDirection: 0,
-  camera: {x:5000,y:5000},
+  camera: {x:10000,y:10000},
   effects: [],
   footstepDistance: 0,
   blockedUntil: 0,
   interactionTarget: null,
+  dead: false,
+  lastSafe: {x:9000,y:11200},
+  debug: {enabled:false},
   player: {
     id: "local",
     name: "Abenteurer",
-    x: 5000,
-    y: 5000,
+    x: 10000,
+    y: 10000,
     dir: "down",
     moving: false,
     walkTime: 0,
     health: 100,
     stamina: 100,
+    swimming: false,
+    drowning: false,
     skin: "#f1c27d",
     eyes: "#243b53",
     hair: "#3a2418",
@@ -96,7 +104,12 @@ const palette = {
   water: "#1e526b",
   shallow: "#438091",
   river: "#4b91a5",
+  packIce: "#b9d7d7",
+  glacier: "#d8e8e5",
+  tundra: "#7e927e",
   beach: "#cdb36b",
+  desert: "#c59a50",
+  oasis: "#4f8552",
   plains: "#718c4f",
   forest: "#365f40",
   jungle: "#285237",
@@ -111,7 +124,12 @@ const biomeNames = {
   water: "Offene See",
   shallow: "Flachwasser",
   river: "Flusslauf",
+  packIce: "Nördliches Packeis",
+  glacier: "Polargletscher",
+  tundra: "Frosttundra",
   beach: "Dünenküste",
+  desert: "Sonnenwüste",
+  oasis: "Oasengarten",
   plains: "Grasland",
   forest: "Alter Wald",
   jungle: "Dschungel",
@@ -124,6 +142,8 @@ const biomeNames = {
 // Several overlapping, rotated lobes form bays, peninsulas and broken coastlines.
 // Noise warps the lobes, so the silhouettes never read as simple circles.
 const landforms = [
+  [0.30,0.12,0.27,0.105,-0.10,0.83,71],
+  [0.66,0.115,0.31,0.115,0.08,0.86,72],
   [0.47,0.51,0.20,0.15,-0.18,1.00,11],
   [0.38,0.47,0.12,0.08, 0.28,0.91,12],
   [0.56,0.42,0.13,0.09,-0.45,0.94,13],
@@ -139,19 +159,23 @@ const landforms = [
   [0.18,0.82,0.055,0.07,0.18,0.50,52],
   [0.53,0.17,0.072,0.045,-0.16,0.52,61],
   [0.47,0.84,0.078,0.042,0.26,0.49,62],
-  [0.91,0.49,0.043,0.068,-0.38,0.45,63]
+  [0.91,0.49,0.043,0.068,-0.38,0.45,63],
+  [0.31,0.875,0.27,0.105,0.08,0.86,81],
+  [0.67,0.865,0.30,0.12,-0.11,0.90,82]
 ];
 
 // Anchors only select a mountain catchment. The actual rivers are traced from
 // high ground to the coast and every stored point is lower than the previous
 // one, so a river can no longer run uphill or end in the middle of a field.
 const riverSources = [
-  {name:"Silberlauf",anchor:[0.50,0.48],width:19},
-  {name:"Dornfluss",anchor:[0.57,0.50],width:16},
-  {name:"Nebelaue",anchor:[0.40,0.48],width:14},
-  {name:"Nordstrom",anchor:[0.24,0.26],width:13},
-  {name:"Königsbach",anchor:[0.75,0.27],width:14},
-  {name:"Südader",anchor:[0.76,0.72],width:13}
+  {name:"Silberlauf",anchor:[0.50,0.48],width:24},
+  {name:"Dornfluss",anchor:[0.57,0.50],width:21},
+  {name:"Nebelaue",anchor:[0.40,0.48],width:19},
+  {name:"Nordstrom",anchor:[0.24,0.26],width:18},
+  {name:"Königsbach",anchor:[0.75,0.27],width:19},
+  {name:"Südader",anchor:[0.76,0.72],width:18},
+  {name:"Frostwasser",anchor:[0.40,0.13],width:17},
+  {name:"Sonnenader",anchor:[0.63,0.85],width:16}
 ];
 let rivers = [];
 const riverSegmentIndex = new Map();
@@ -159,17 +183,22 @@ const riverSegmentIndex = new Map();
 const routes = [
   [[0.39,0.53],[0.43,0.56],[0.48,0.58],[0.54,0.56],[0.59,0.52],[0.57,0.45]],
   [[0.48,0.58],[0.47,0.63],[0.44,0.67]],
-  [[0.43,0.56],[0.39,0.50],[0.38,0.46]]
+  [[0.43,0.56],[0.39,0.50],[0.38,0.46]],
+  [[0.24,0.27],[0.31,0.20],[0.405,0.125]],
+  [[0.765,0.727],[0.71,0.78],[0.635,0.845],[0.49,0.875],[0.335,0.865]]
 ];
 
 const landmarks = [
-  {x:snapToGrid(4820),y:snapToGrid(5820),name:"Hafen Dornwacht",short:"Dornwacht",type:"town"},
-  {x:snapToGrid(3890),y:snapToGrid(5050),name:"Moorhain",short:"Moorhain",type:"town"},
-  {x:snapToGrid(5700),y:snapToGrid(4500),name:"Sonnenkliff",short:"Sonnenkliff",type:"town"},
-  {x:snapToGrid(5360),y:snapToGrid(5460),name:"Tempel der Gezeiten",short:"Gezeitentempel",type:"ruin"},
-  {x:snapToGrid(2420),y:snapToGrid(2710),name:"Nordwacht",short:"Nordwacht",type:"town"},
-  {x:snapToGrid(7560),y:snapToGrid(2860),name:"Ruinen von Königsfall",short:"Königsfall",type:"ruin"},
-  {x:snapToGrid(7650),y:snapToGrid(7270),name:"Südmark",short:"Südmark",type:"town"}
+  {x:snapToGrid(WORLD_SIZE*.482),y:snapToGrid(WORLD_SIZE*.582),name:"Hafen Dornwacht",short:"Dornwacht",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.389),y:snapToGrid(WORLD_SIZE*.505),name:"Moorhain",short:"Moorhain",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.570),y:snapToGrid(WORLD_SIZE*.450),name:"Sonnenkliff",short:"Sonnenkliff",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.536),y:snapToGrid(WORLD_SIZE*.546),name:"Tempel der Gezeiten",short:"Gezeitentempel",type:"ruin"},
+  {x:snapToGrid(WORLD_SIZE*.242),y:snapToGrid(WORLD_SIZE*.271),name:"Nordwacht",short:"Nordwacht",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.756),y:snapToGrid(WORLD_SIZE*.286),name:"Ruinen von Königsfall",short:"Königsfall",type:"ruin"},
+  {x:snapToGrid(WORLD_SIZE*.765),y:snapToGrid(WORLD_SIZE*.727),name:"Südmark",short:"Südmark",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.405),y:snapToGrid(WORLD_SIZE*.125),name:"Forscherdorf Eiswacht",short:"Eiswacht",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.635),y:snapToGrid(WORLD_SIZE*.845),name:"Oase von Sahra",short:"Oase Sahra",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.335),y:snapToGrid(WORLD_SIZE*.865),name:"Versunkene Sonnenuhr",short:"Sonnenuhr",type:"ruin"}
 ];
 
 const terrainCache = new Map();
@@ -256,8 +285,8 @@ function findRiverSource(source){
   const centreX=source.anchor[0]*WORLD_SIZE;
   const centreY=source.anchor[1]*WORLD_SIZE;
   let best={x:snapToGrid(centreX),y:snapToGrid(centreY),height:-Infinity};
-  for(let oy=-480;oy<=480;oy+=64){
-    for(let ox=-480;ox<=480;ox+=64){
+  for(let oy=-960;oy<=960;oy+=128){
+    for(let ox=-960;ox<=960;ox+=128){
       const x=snapToGrid(centreX+ox);
       const y=snapToGrid(centreY+oy);
       const height=islandField(x,y);
@@ -296,7 +325,7 @@ function traceRiver(source,index){
   const visited=new Set();
   visited.add(Math.round(current.x/RIVER_TRACE_STEP)+","+Math.round(current.y/RIVER_TRACE_STEP));
 
-  for(let section=0;section<90&&current.height>.125;section++){
+  for(let section=0;section<190&&current.height>.125;section++){
     const outlet=findLowerOutlet(current,previousAngle,visited);
     if(!outlet) break;
     const distance=Math.hypot(outlet.x-current.x,outlet.y-current.y);
@@ -406,14 +435,24 @@ function terrainAt(x,y){
   y=gy*TILE_METERS+TILE_METERS/2;
   const h=islandField(x,y);
   const moisture=fbm(x+1337,y-904,400);
-  const temp=1-Math.abs(y/WORLD_SIZE-0.5)*1.22+(valueNoise(x,y,900,225)-0.5)*0.18;
+  const latitude=y/WORLD_SIZE;
+  const temp=1-Math.abs(latitude-0.5)*1.22+(valueNoise(x,y,900,225)-0.5)*0.18;
   let biome;
 
-  if(h<0.045) biome="deepWater";
-  else if(h<0.09) biome="water";
-  else if(h<0.145) biome="shallow";
-  else if(h<0.195) biome="beach";
-  else if(h>0.68 && temp<0.55) biome="snow";
+  if(latitude<.065) biome="packIce";
+  else if(h<0.045) biome=latitude<.135?"packIce":"deepWater";
+  else if(h<0.09) biome=latitude<.145?"packIce":"water";
+  else if(h<0.145) biome=latitude<.16?"packIce":"shallow";
+  else if(h<0.195) biome=latitude<.19?"tundra":"beach";
+  else if(latitude<.205) biome=h>.57?"glacier":"tundra";
+  else if(latitude>.765){
+    const oasisNoise=valueNoise(x+420,y-180,680,388);
+    const forcedOasis=Math.hypot(x-WORLD_SIZE*.635,y-WORLD_SIZE*.845)<WORLD_SIZE*.024;
+    if(h>.66) biome="mountain";
+    else if(h>.57) biome="rock";
+    else if(forcedOasis||(moisture>.64&&oasisNoise>.56)) biome="oasis";
+    else biome="desert";
+  }else if(h>0.68 && temp<0.55) biome="snow";
   else if(h>0.60) biome="mountain";
   else if(h>0.51) biome="rock";
   else if(moisture>0.69 && temp>0.67) biome="jungle";
@@ -422,8 +461,8 @@ function terrainAt(x,y){
   else biome="plains";
 
   const river=riverAt(x,y,h);
-  if(river && !["deepWater","water","shallow","beach","snow"].includes(biome)) biome="river";
-  const result={height:h,moisture,temp,biome,river,gx,gy};
+  if(river && !["deepWater","water","shallow","packIce","glacier","snow"].includes(biome)) biome="river";
+  const result={height:h,moisture,temp,latitude,biome,river,gx,gy};
   terrainCache.set(key,result);
   return result;
 }
@@ -433,15 +472,23 @@ function isWalkable(x,y){
   return !["deepWater","water","shallow"].includes(biome);
 }
 
+function isSwimmingBiome(biome){
+  return biome==="water"||biome==="deepWater";
+}
+
+function isSafeGroundBiome(biome){
+  return !["deepWater","water","shallow","river"].includes(biome);
+}
+
 function findSpawn(){
-  const candidates=[[4500,5700],[4700,5660],[4450,5550],[3890,5050],[5700,4500]];
-  for(const point of candidates) if(canOccupy(point[0],point[1]).ok) return point;
+  const candidates=[[9000,11400],[9400,11320],[8900,11100],[7780,10100],[11400,9000]];
+  for(const point of candidates) if(isWalkable(point[0],point[1])&&canOccupy(point[0],point[1]).ok) return point;
   for(let r=0;r<350;r++){
-    const x=5000+(hash2(r,1)-0.5)*3000;
-    const y=5200+(hash2(r,2)-0.5)*3000;
-    if(canOccupy(x,y).ok) return [x,y];
+    const x=10000+(hash2(r,1)-0.5)*6000;
+    const y=10400+(hash2(r,2)-0.5)*6000;
+    if(isWalkable(x,y)&&canOccupy(x,y).ok) return [x,y];
   }
-  return [5000,5000];
+  return [10000,10000];
 }
 
 function shade(hex,amount){
@@ -458,11 +505,16 @@ function tileDecoration(x,y,biome){
   const r=hash2(gx,gy,913);
   // These are deliberately small overlays. Large vegetation is generated as
   // multi-block grid objects by drawVisibleTrees().
-  if((biome==="plains"||biome==="forest"||biome==="jungle") && r>0.87) return r>0.95?"flowers":"grass";
+  if((biome==="forest"||biome==="jungle") && r>0.82) return r>.94?"mushrooms":r>.88?"fern":"grass";
+  if(biome==="plains" && r>0.84) return r>0.94?"flowers":"grass";
   if(biome==="swamp" && r>0.82) return "reeds";
   if((biome==="rock"||biome==="mountain") && r>0.70) return "rock";
   if(biome==="beach" && r>0.91) return r>0.97?"driftwood":"shell";
-  if(biome==="river" && r>0.82) return "reeds";
+  if((biome==="river"||biome==="oasis") && r>0.80) return r>.94?"lilies":"reeds";
+  if((biome==="tundra"||biome==="glacier") && r>.82) return r>.95?"iceCrystal":"snowTuft";
+  if(biome==="packIce" && r>.90) return "iceCrack";
+  if(biome==="desert" && r>.82) return r>.96?"bones":"duneGrass";
+  if(biome==="shallow" && r>.94) return "fish";
   return null;
 }
 
@@ -498,6 +550,58 @@ function drawDecoration(kind,px,py,size){
     ctx.fillStyle="#806143";
     ctx.fillRect(px-size*.22,py,size*.44,size*.08);
     ctx.fillRect(px+size*.08,py-size*.08,size*.07,size*.12);
+  }else if(kind==="mushrooms"){
+    ctx.fillStyle="#e7d8bc";
+    ctx.fillRect(px-size*.11,py,size*.04,size*.14);
+    ctx.fillRect(px+size*.08,py+size*.03,size*.04,size*.11);
+    ctx.fillStyle="#a85d4e";
+    ctx.fillRect(px-size*.16,py-size*.05,size*.14,size*.07);
+    ctx.fillStyle="#d1a45d";
+    ctx.fillRect(px+size*.03,py,size*.14,size*.06);
+  }else if(kind==="fern"){
+    ctx.fillStyle="#315f39";
+    ctx.fillRect(px,py-size*.17,size*.035,size*.31);
+    for(let i=-2;i<=2;i++){
+      ctx.fillRect(px-size*.05,py+i*size*.055,size*.13,size*.035);
+      ctx.fillRect(px-size*.15,py+(i+.45)*size*.055,size*.13,size*.035);
+    }
+  }else if(kind==="lilies"){
+    ctx.fillStyle="#47794b";
+    ctx.fillRect(px-size*.19,py-size*.06,size*.18,size*.10);
+    ctx.fillRect(px+size*.04,py+size*.03,size*.17,size*.09);
+    ctx.fillStyle="#f2cbd4";
+    ctx.fillRect(px-size*.03,py-size*.08,size*.07,size*.07);
+  }else if(kind==="iceCrystal"){
+    ctx.fillStyle="#eaf8f4";
+    ctx.fillRect(px-size*.05,py-size*.25,size*.10,size*.36);
+    ctx.fillStyle="#9ecaca";
+    ctx.fillRect(px-size*.14,py-size*.08,size*.09,size*.22);
+    ctx.fillRect(px+size*.06,py-size*.14,size*.08,size*.25);
+  }else if(kind==="snowTuft"){
+    ctx.fillStyle="#d9e6df";
+    ctx.fillRect(px-size*.20,py,size*.42,size*.10);
+    ctx.fillStyle="#f5faf5";
+    ctx.fillRect(px-size*.10,py-size*.08,size*.23,size*.09);
+  }else if(kind==="iceCrack"){
+    ctx.fillStyle="#739eaa";
+    ctx.fillRect(px-size*.22,py,size*.18,size*.035);
+    ctx.fillRect(px-size*.05,py,size*.035,size*.13);
+    ctx.fillRect(px-size*.02,py+size*.10,size*.18,size*.035);
+  }else if(kind==="duneGrass"){
+    ctx.fillStyle="#806b38";
+    ctx.fillRect(px-size*.10,py-size*.08,size*.035,size*.23);
+    ctx.fillRect(px,py-size*.14,size*.035,size*.29);
+    ctx.fillRect(px+size*.10,py-size*.05,size*.035,size*.20);
+  }else if(kind==="bones"){
+    ctx.fillStyle="#e6d7aa";
+    ctx.fillRect(px-size*.20,py,size*.38,size*.055);
+    ctx.fillRect(px-size*.23,py-size*.04,size*.08,size*.12);
+    ctx.fillRect(px+size*.14,py-size*.04,size*.08,size*.12);
+  }else if(kind==="fish"){
+    const swim=(state.elapsed*7+px*.01)%1;
+    ctx.fillStyle="rgba(224,237,218,.48)";
+    ctx.fillRect(px-size*.12+swim*size*.08,py-size*.03,size*.17,size*.06);
+    ctx.fillRect(px-size*.18+swim*size*.08,py-size*.07,size*.07,size*.14);
   }
 }
 
@@ -537,6 +641,7 @@ function treeForPlot(plotX,plotY){
   const cacheKey=plotX+","+plotY;
   if(treePlotCache.has(cacheKey)) return treePlotCache.get(cacheKey);
   const plotSeed=hash2(plotX,plotY,1701);
+  const speciesSeed=hash2(plotX,plotY,1703);
   const gx=plotX*TREE_PLOT_TILES+1+Math.floor(hash2(plotX,plotY,1702)*2);
   const gy=plotY*TREE_PLOT_TILES+2;
   if(nearLandmarkGrid(gx,gy,3)){
@@ -548,16 +653,28 @@ function treeForPlot(plotX,plotY){
   let kind="oak";
   if(terrain.biome==="forest"){
     chance=.88;
-    kind=plotSeed<.34?"oak":plotSeed<.52?"birch":plotSeed<.74?"ancient":"pine";
+    kind=speciesSeed<.34?"oak":speciesSeed<.52?"birch":speciesSeed<.74?"ancient":"pine";
   }else if(terrain.biome==="jungle"){
     chance=.94;
-    kind=plotSeed>.76?"palm":"jungle";
+    kind=speciesSeed>.76?"palm":"jungle";
   }else if(terrain.biome==="swamp"){
     chance=.54;
-    kind=plotSeed>.56?"willow":"dead";
+    kind=speciesSeed>.56?"willow":"dead";
   }else if(terrain.biome==="plains"){
     chance=.11;
-    kind=plotSeed>.72?"birch":"oak";
+    kind=speciesSeed>.72?"birch":"oak";
+  }else if(terrain.biome==="tundra"){
+    chance=.31;
+    kind=speciesSeed>.72?"iceSpire":"frostPine";
+  }else if(terrain.biome==="glacier"){
+    chance=.12;
+    kind="iceSpire";
+  }else if(terrain.biome==="desert"){
+    chance=.18;
+    kind=speciesSeed>.76?"acacia":"cactus";
+  }else if(terrain.biome==="oasis"){
+    chance=.79;
+    kind=speciesSeed>.42?"palm":"acacia";
   }
   if(plotSeed>chance){
     treePlotCache.set(cacheKey,null);
@@ -603,6 +720,16 @@ const treeShapes = {
     [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-2,-1],[0,-1],[2,-1]],
     [[0,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[-2,-1],[1,-1]],
     [[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-1,-2],[0,-2],[1,-2],[-2,-1],[2,-1]]
+  ],
+  frostPine:[
+    [[0,-7],[-1,-6],[0,-6],[1,-6],[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-1,-3],[0,-3],[1,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]],
+    [[0,-6],[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-1,-3],[0,-3],[1,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2],[0,-1]],
+    [[0,-7],[-1,-6],[0,-6],[1,-6],[-1,-5],[0,-5],[1,-5],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[-1,-2],[0,-2],[1,-2],[0,-1]]
+  ],
+  acacia:[
+    [[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[3,-3],[-2,-2],[-1,-2],[0,-2],[1,-2],[2,-2]],
+    [[-3,-4],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[-3,-3],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[3,-3],[-1,-2],[0,-2],[1,-2],[2,-2]],
+    [[-2,-5],[-1,-5],[0,-5],[1,-5],[-3,-4],[-2,-4],[-1,-4],[0,-4],[1,-4],[2,-4],[3,-4],[-2,-3],[-1,-3],[0,-3],[1,-3],[2,-3],[0,-2]]
   ]
 };
 
@@ -612,7 +739,9 @@ const treePalettes = {
   ancient:["#1e432b","#2c5a34","#477443"],
   pine:["#17382c","#23503a","#376748"],
   jungle:["#16402a","#245b32","#3e743d"],
-  willow:["#334d2d","#4e6838","#73834a"]
+  willow:["#334d2d","#4e6838","#73834a"],
+  frostPine:["#315c58","#4f7b72","#8da79a"],
+  acacia:["#4e572d","#6f7134","#9a8d46"]
 };
 
 function drawTreeBlock(gx,gy,camX,camY,colors,seed){
@@ -642,8 +771,30 @@ function drawGridTree(tree,camX,camY){
   const sway=Math.sin(state.elapsed*(reaction?9:1.2)+tree.phase)*(reaction*1.6+.25);
   const revealPlayer=distance<28&&state.player.y<(gy+.8)*TILE_METERS;
   drawGridBlock(gx-1,gy,camX,camY,"rgba(8,18,12,.16)");
+
+  if(kind==="iceSpire"){
+    drawGridBlock(gx,gy,camX,camY,"#8fc5c9","#e7f6f2");
+    drawGridBlock(gx,gy-1,camX,camY,"#aad8d7","#f1fbf7");
+    drawGridBlock(gx-1,gy,camX,camY,"#6da9b4","#bfe3e0");
+    if(tree.variant===2) drawGridBlock(gx+1,gy,camX,camY,"#7fb6bd","#d9efeb");
+    return;
+  }
+
+  if(kind==="cactus"){
+    const cactus=["#386a43","#4e854d","#76a35b"];
+    drawGridBlock(gx,gy,camX,camY,cactus[0],cactus[2]);
+    drawGridBlock(gx,gy-1,camX,camY,cactus[1],cactus[2]);
+    drawGridBlock(gx,gy-2,camX,camY,cactus[1],cactus[2]);
+    const side=tree.variant===1?-1:1;
+    drawGridBlock(gx+side,gy-1,camX,camY,cactus[0],cactus[2]);
+    drawGridBlock(gx+side,gy-2,camX,camY,cactus[1]);
+    if(tree.variant===2) drawGridBlock(gx-1,gy,camX,camY,cactus[0],"#d7ba5e");
+    return;
+  }
+
   const paleTrunk=kind==="birch";
-  drawGridBlock(gx,gy,camX,camY,paleTrunk?"#9d957d":kind==="palm"?"#76512e":"#5b3d29",paleTrunk?"#5e5b54":"#93673a");
+  const frostTrunk=kind==="frostPine";
+  drawGridBlock(gx,gy,camX,camY,paleTrunk?"#9d957d":frostTrunk?"#65706a":kind==="palm"?"#76512e":"#5b3d29",paleTrunk?"#5e5b54":frostTrunk?"#a6b2a8":"#93673a");
 
   if(kind==="dead"){
     drawGridBlock(gx,gy-1,camX,camY,"#514536","#75634b");
@@ -803,8 +954,6 @@ function treeAtGrid(gx,gy){
 
 function collisionAt(x,y){
   if(x<PLAYER_RADIUS||y<PLAYER_RADIUS||x>WORLD_SIZE-PLAYER_RADIUS||y>WORLD_SIZE-PLAYER_RADIUS) return {type:"edge"};
-  const terrain=terrainAt(x,y);
-  if(["deepWater","water","shallow"].includes(terrain.biome)) return {type:"water",terrain};
   const gx=Math.floor(x/TILE_METERS);
   const gy=Math.floor(y/TILE_METERS);
   const tree=treeAtGrid(gx,gy);
@@ -873,7 +1022,7 @@ function addEffect(effect){
 
 function emitFootstep(x,y){
   const terrain=terrainAt(x,y);
-  if(terrain.biome==="river"){
+  if(["river","shallow","water","deepWater"].includes(terrain.biome)){
     addEffect({type:"ripple",layer:"ground",x,y,life:.72,size:1.3});
   }else{
     addEffect({
@@ -888,6 +1037,7 @@ function emitFootstep(x,y){
 function shakeTree(tree,strong=false){
   tree.reactUntil=Math.max(tree.reactUntil,state.elapsed+(strong?1.35:.55));
   const count=strong?8:3;
+  const colors=tree.kind==="iceSpire"?["#d9f0ed","#8fc8ce","#f4fbf7"]:tree.kind==="cactus"?["#4f854d","#76a35b","#d7ba5e"]:["#6f8f42","#4f7738","#9a9a4d"];
   for(let i=0;i<count;i++){
     addEffect({
       type:"leaf",layer:"air",
@@ -895,7 +1045,7 @@ function shakeTree(tree,strong=false){
       y:(tree.gy-1.5)*TILE_METERS+(Math.random()-.5)*10,
       life:.75+Math.random()*.65,size:.65+Math.random()*.45,
       vx:(Math.random()-.5)*7,vy:3+Math.random()*5,
-      color:["#6f8f42","#4f7738","#9a9a4d"][i%3]
+      color:colors[i%colors.length]
     });
   }
 }
@@ -904,7 +1054,6 @@ function reactToCollision(hit,x,y){
   if(!hit||state.elapsed<state.blockedUntil) return;
   state.blockedUntil=state.elapsed+.2;
   if(hit.type==="tree") shakeTree(hit.tree,false);
-  else if(hit.type==="water") addEffect({type:"ripple",layer:"ground",x,y,life:.9,size:1.5});
   else if(hit.type==="structure"){
     for(let i=0;i<3;i++) addEffect({type:"dust",layer:"air",x,y,life:.55,size:.7,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
   }
@@ -951,6 +1100,11 @@ function drawEffects(camX,camY,layer){
       ctx.fillStyle="#b8a47a";
       const size=Math.max(2,Math.round((effect.size+progress)*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,size);
+    }else if(effect.type==="bubble"){
+      ctx.strokeStyle="rgba(218,245,243,.82)";
+      ctx.lineWidth=1;
+      const size=Math.max(2,Math.round((effect.size+progress*.8)*VIEW_SCALE));
+      ctx.strokeRect(Math.round(x-size/2),Math.round(y-size/2),size,size);
     }
     ctx.restore();
   }
@@ -967,7 +1121,8 @@ function nearbyInteraction(){
       const tree=treeAtGrid(gx,gy);
       if(tree){
         const distance=Math.hypot(px-(tree.gx+.5)*TILE_METERS,py-(tree.gy+.5)*TILE_METERS);
-        if(distance<15&&(!best||distance<best.distance)) best={type:"tree",tree,distance,label:"Baum untersuchen"};
+        const label=tree.kind==="iceSpire"?"Eisformation untersuchen":tree.kind==="cactus"?"Kaktus untersuchen":"Baum untersuchen";
+        if(distance<15&&(!best||distance<best.distance)) best={type:"tree",tree,distance,label};
       }
       const structure=structureAtGrid(gx,gy);
       if(structure&&structure.code!=="p"){
@@ -993,12 +1148,57 @@ function interactWithWorld(){
   if(!target) return;
   if(target.type==="tree"){
     shakeTree(target.tree,true);
-    showToast(target.tree.kind==="dead"?"Das morsche Holz knarrt im Wind.":"Blätter rascheln durch die Krone.");
+    if(target.tree.kind==="iceSpire") showToast("Im Eis sind uralte Luftblasen eingeschlossen.");
+    else if(target.tree.kind==="cactus") showToast("Der Kaktus speichert Wasser für die trockene Jahreszeit.");
+    else showToast(target.tree.kind==="dead"?"Das morsche Holz knarrt im Wind.":"Blätter rascheln durch die Krone.");
   }else{
     for(let i=0;i<7;i++) addEffect({type:"dust",layer:"air",x:state.player.x,y:state.player.y,life:.55+Math.random()*.45,size:.6,vx:(Math.random()-.5)*5,vy:-2-Math.random()*4});
     if(target.code==="D") showToast("Die schwere Tür gibt noch nicht nach.");
     else if(target.landmark.type==="ruin") showToast("Verwitterte Zeichen glimmen für einen Augenblick.");
     else showToast(target.landmark.name+" wirkt bewohnt.");
+  }
+}
+
+function drawSwimmingOverlay(x,y,player){
+  const sink=player.drowning?7:0;
+  const wave=Math.sin(state.elapsed*8+player.x*.02)*2;
+  ctx.fillStyle=player.drowning?"rgba(15,55,78,.80)":"rgba(58,126,145,.62)";
+  ctx.fillRect(Math.round(x-14),Math.round(y-11+sink),28,17);
+  ctx.fillStyle="rgba(210,239,238,.72)";
+  ctx.fillRect(Math.round(x-18+wave),Math.round(y-12+sink),14,2);
+  ctx.fillRect(Math.round(x+3-wave),Math.round(y-10+sink),15,2);
+  if(player.drowning){
+    ctx.fillStyle="rgba(220,245,244,.70)";
+    ctx.fillRect(Math.round(x+10),Math.round(y-25-(state.elapsed*13)%12),3,3);
+    ctx.fillRect(Math.round(x+15),Math.round(y-18-(state.elapsed*9)%9),2,2);
+  }
+}
+
+function drawAmbientNature(){
+  const biome=terrainAt(state.player.x,state.player.y).biome;
+  const polar=["packIce","glacier","tundra"].includes(biome);
+  const sandy=biome==="desert";
+  const alive=["forest","jungle","oasis","plains"].includes(biome);
+  if(!polar&&!sandy&&!alive) return;
+  const count=polar?28:sandy?20:10;
+  for(let i=0;i<count;i++){
+    const phase=hash2(i,31,4401);
+    const speed=polar?18:sandy?34:8;
+    let x=(hash2(i,17,4402)*canvas.width+state.elapsed*speed*(sandy?1:-.35))%(canvas.width+40)-20;
+    let y=(hash2(i,23,4403)*canvas.height+state.elapsed*speed*(polar?1:.18))%(canvas.height+30)-15;
+    if(x<0) x+=canvas.width+40;
+    if(polar){
+      ctx.fillStyle="rgba(239,249,245,"+(0.28+phase*.42)+")";
+      const size=phase>.72?3:2;
+      ctx.fillRect(Math.round(x),Math.round(y),size,size);
+    }else if(sandy){
+      ctx.fillStyle="rgba(226,190,112,"+(0.18+phase*.30)+")";
+      ctx.fillRect(Math.round(x),Math.round(y),phase>.75?5:3,1);
+    }else{
+      const flutter=Math.sin(state.elapsed*4+i)*4;
+      ctx.fillStyle=biome==="oasis"?"rgba(245,216,107,.62)":"rgba(218,232,131,.48)";
+      ctx.fillRect(Math.round(x+flutter),Math.round(y),2,2);
+    }
   }
 }
 
@@ -1047,9 +1247,10 @@ function drawWorld(){
     }
     const player=item.player;
     const sx=(player.x-camX)*VIEW_SCALE+w/2;
-    const sy=(player.y-camY)*VIEW_SCALE+h/2;
+    const sy=(player.y-camY)*VIEW_SCALE+h/2+(player.drowning?5:0);
     if(sx>-45&&sx<w+45&&sy>-60&&sy<h+45){
       drawCharacter(ctx,sx,sy,player,item.type==="local"?WORLD_CHARACTER_SCALE:WORLD_CHARACTER_SCALE*.94,item.type==="local");
+      if(player.swimming) drawSwimmingOverlay(sx,sy,player);
     }
   }
   drawEffects(camX,camY,"air");
@@ -1060,6 +1261,7 @@ function drawWorld(){
     ctx.fillStyle="rgba(8,18,38,"+darkness+")";
     ctx.fillRect(0,0,w,h);
   }
+  drawAmbientNature();
 }
 
 function drawHair(c,u,style,hair,dir){
@@ -1297,7 +1499,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
 }
 
 function movePlayer(dt){
-  if(state.paused||state.mapOpen) return;
+  if(state.paused||state.mapOpen||state.dead) return;
   let dx=0;
   let dy=0;
   if(state.keys.has("w")||state.keys.has("arrowup")) dy-=1;
@@ -1306,18 +1508,41 @@ function movePlayer(dt){
   if(state.keys.has("d")||state.keys.has("arrowright")) dx+=1;
   state.player.moving=!!(dx||dy);
 
+  const terrain=terrainAt(state.player.x,state.player.y);
+  const swimming=isSwimmingBiome(terrain.biome);
+  const deep=terrain.biome==="deepWater";
+  state.player.swimming=swimming;
   const wantsSprint=state.keys.has("shift")&&state.player.moving;
   const sprinting=wantsSprint&&state.player.stamina>1;
-  if(sprinting) state.player.stamina=Math.max(0,state.player.stamina-dt*27);
-  else state.player.stamina=Math.min(100,state.player.stamina+dt*(state.player.moving?9:18));
+  if(swimming){
+    const baseDrain=deep?DEEP_SWIM_STAMINA_DRAIN:SWIM_STAMINA_DRAIN;
+    const effort=state.player.moving?1:.62;
+    state.player.stamina=Math.max(0,state.player.stamina-dt*(baseDrain*effort+(sprinting?10:0)));
+  }else if(sprinting){
+    state.player.stamina=Math.max(0,state.player.stamina-dt*27);
+  }else{
+    state.player.stamina=Math.min(100,state.player.stamina+dt*(state.player.moving?9:18));
+  }
+
+  state.player.drowning=deep&&state.player.stamina<=0;
+  if(state.player.drowning){
+    state.player.health=Math.max(0,state.player.health-dt*DROWNING_DAMAGE);
+    if(hash2(Math.floor(state.elapsed*8),17,991)>.60) addEffect({type:"bubble",layer:"air",x:state.player.x+(Math.random()-.5)*3,y:state.player.y,life:.8,size:.7,vy:-5});
+    if(state.player.health<=0){
+      killPlayer("In der Tiefsee ertrunken");
+      return;
+    }
+  }
 
   if(!dx&&!dy) return;
   const len=Math.hypot(dx,dy);
   dx/=len;
   dy/=len;
   let speed=PLAYER_SPEED*(sprinting?SPRINT_MULTIPLIER:1);
-  const terrain=terrainAt(state.player.x,state.player.y);
-  if(terrain.biome==="river") speed*=0.62;
+  if(terrain.biome==="deepWater") speed*=state.player.drowning ? .18 : .40;
+  else if(terrain.biome==="water") speed*=.52;
+  else if(terrain.biome==="shallow") speed*=.72;
+  else if(terrain.biome==="river") speed*=0.62;
   else if(roadAt(state.player.x,state.player.y)) speed*=1.08;
 
   if(Math.abs(dx)>Math.abs(dy)) state.player.dir=dx>0?"right":"left";
@@ -1343,12 +1568,98 @@ function movePlayer(dt){
   }
   const moved=Math.hypot(state.player.x-oldX,state.player.y-oldY);
   state.player.moving=moved>.02;
+  const currentTerrain=terrainAt(state.player.x,state.player.y);
+  state.player.swimming=isSwimmingBiome(currentTerrain.biome);
+  if(isSafeGroundBiome(currentTerrain.biome)){
+    state.lastSafe.x=state.player.x;
+    state.lastSafe.y=state.player.y;
+  }
   state.footstepDistance+=moved;
-  const stepInterval=terrainAt(state.player.x,state.player.y).biome==="river"?4.5:6.5;
+  const stepInterval=["deepWater","water","shallow","river"].includes(currentTerrain.biome)?4.2:6.5;
   if(state.footstepDistance>=stepInterval){
     state.footstepDistance%=stepInterval;
     emitFootstep(state.player.x,state.player.y);
   }
+}
+
+function killPlayer(reason){
+  state.dead=true;
+  state.player.moving=false;
+  state.keys.clear();
+  $("deathReason").textContent=reason;
+  $("deathMenu").classList.remove("hidden");
+}
+
+function respawnPlayer(){
+  state.dead=false;
+  state.player.health=100;
+  state.player.stamina=100;
+  state.player.swimming=false;
+  state.player.drowning=false;
+  state.player.x=state.lastSafe.x;
+  state.player.y=state.lastSafe.y;
+  state.camera.x=state.player.x;
+  state.camera.y=state.player.y;
+  state.effects=[];
+  $("deathMenu").classList.add("hidden");
+  showToast("Du erwachst am letzten sicheren Ufer.",2400);
+}
+
+function findTeleportSpot(x,y){
+  const clampedX=Math.max(PLAYER_RADIUS,Math.min(WORLD_SIZE-PLAYER_RADIUS,x));
+  const clampedY=Math.max(PLAYER_RADIUS,Math.min(WORLD_SIZE-PLAYER_RADIUS,y));
+  if(isSwimmingBiome(terrainAt(clampedX,clampedY).biome)) return [clampedX,clampedY];
+  if(canOccupy(clampedX,clampedY).ok) return [clampedX,clampedY];
+  for(let ring=1;ring<=8;ring++){
+    for(let direction=0;direction<16;direction++){
+      const angle=direction/16*Math.PI*2;
+      const tx=clampedX+Math.cos(angle)*ring*TILE_METERS;
+      const ty=clampedY+Math.sin(angle)*ring*TILE_METERS;
+      if((isSwimmingBiome(terrainAt(tx,ty).biome)||canOccupy(tx,ty).ok)) return [tx,ty];
+    }
+  }
+  return [clampedX,clampedY];
+}
+
+function teleportPlayer(x,y){
+  if(!state.debug.enabled) return false;
+  const [tx,ty]=findTeleportSpot(x,y);
+  if(state.dead){
+    state.dead=false;
+    state.player.health=100;
+    state.player.stamina=100;
+    $("deathMenu").classList.add("hidden");
+  }
+  state.player.x=tx;
+  state.player.y=ty;
+  state.camera.x=tx;
+  state.camera.y=ty;
+  const terrain=terrainAt(tx,ty);
+  state.player.swimming=isSwimmingBiome(terrain.biome);
+  state.player.drowning=false;
+  if(isSafeGroundBiome(terrain.biome)) state.lastSafe={x:tx,y:ty};
+  state.effects=[];
+  drawWorldMap();
+  showToast("Debug-Teleport · "+(tx/1000).toFixed(2)+" / "+(ty/1000).toFixed(2)+" km",2200);
+  return true;
+}
+
+function setDebugMode(enabled){
+  state.debug.enabled=enabled;
+  $("debugBadge").classList.toggle("hidden",!enabled);
+  $("gamePanel").classList.toggle("debug-active",enabled);
+  if(enabled) showToast("Debugmodus aktiv · Karte oder Welt anklicken",2800);
+  else showToast("Debugmodus beendet");
+}
+
+function requestDebugMode(){
+  if(state.debug.enabled){
+    setDebugMode(false);
+    return;
+  }
+  const password=window.prompt("Debug-Passwort eingeben:","");
+  if(password==="1234") setDebugMode(true);
+  else if(password!==null) showToast("Falsches Debug-Passwort");
 }
 
 function nearestLandmark(x,y){
@@ -1370,6 +1681,9 @@ function updateHud(){
   $("hudPlayerName").textContent=state.player.name;
   $("staminaFill").style.width=state.player.stamina.toFixed(1)+"%";
   $("healthFill").style.width=state.player.health.toFixed(1)+"%";
+  $("healthText").textContent=Math.ceil(state.player.health)+" / 100";
+  $("staminaText").textContent=state.player.drowning?"ERTRINKEN":state.player.swimming?"SCHWIMMEN":"AUSDAUER";
+  $("movementStateText").textContent=state.player.drowning?"SINKT":state.player.swimming?"SCHWIMMT":"LV. 1";
   $("locationText").textContent=near.distance<650?near.landmark.short:biomeNames[terrain.biome];
   const dirText={up:"N",right:"O",down:"S",left:"W"};
   $("compassDirection").textContent=dirText[state.player.dir]||"N";
@@ -1478,6 +1792,14 @@ function renderWorldMapBase(){
   mc.imageSmoothingEnabled=false;
   renderMapBase(mc,base.width,base.height,MAP_SAMPLE);
   drawMapPaths(mc,base.width,base.height,true);
+  mc.save();
+  mc.textAlign="center";
+  mc.font="bold 24px Georgia";
+  mc.fillStyle="rgba(238,249,246,.55)";
+  mc.fillText("NORDPOL",base.width/2,35);
+  mc.fillStyle="rgba(82,51,19,.48)";
+  mc.fillText("SONNENWÜSTE",base.width/2,base.height-30);
+  mc.restore();
   mc.strokeStyle="rgba(232,220,177,.12)";
   mc.lineWidth=1;
   for(let i=1;i<5;i++){
@@ -1655,16 +1977,20 @@ function startGame(){
   const spawn=findSpawn();
   state.player.x=spawn[0]+(Math.random()-.5)*28;
   state.player.y=spawn[1]+(Math.random()-.5)*28;
-  if(!canOccupy(state.player.x,state.player.y).ok){
+  if(!isWalkable(state.player.x,state.player.y)||!canOccupy(state.player.x,state.player.y).ok){
     state.player.x=spawn[0];
     state.player.y=spawn[1];
   }
   state.camera.x=state.player.x;
   state.camera.y=state.player.y;
+  state.lastSafe={x:state.player.x,y:state.player.y};
   state.effects=[];
   state.footstepDistance=0;
   state.player.stamina=100;
   state.player.health=100;
+  state.player.swimming=false;
+  state.player.drowning=false;
+  state.dead=false;
   state.player.walkTime=0;
   $("menuScreen").classList.add("hidden");
   $("titleScreen").classList.add("hidden");
@@ -1672,6 +1998,7 @@ function startGame(){
   state.running=true;
   state.paused=false;
   state.mapOpen=false;
+  $("deathMenu").classList.add("hidden");
   state.lastTime=performance.now();
   updatePortrait();
   requestAnimationFrame(loop);
@@ -1683,6 +2010,7 @@ function publicPlayer(){
   const p=state.player;
   return {
     id:p.id,name:p.name,x:p.x,y:p.y,dir:p.dir,moving:p.moving,walkTime:p.walkTime,
+    health:p.health,stamina:p.stamina,swimming:p.swimming,drowning:p.drowning,
     skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,shirt:p.shirt,cloak:p.cloak
   };
 }
@@ -1693,11 +2021,15 @@ function sanitizePlayer(p){
   return {
     id:String(p.id||"peer").slice(0,64),
     name:String(p.name||"Spieler").slice(0,18),
-    x:Math.max(0,Math.min(WORLD_SIZE,Number(p.x)||5000)),
-    y:Math.max(0,Math.min(WORLD_SIZE,Number(p.y)||5000)),
+    x:Math.max(0,Math.min(WORLD_SIZE,Number(p.x)||WORLD_SIZE/2)),
+    y:Math.max(0,Math.min(WORLD_SIZE,Number(p.y)||WORLD_SIZE/2)),
     dir:["up","down","left","right"].includes(p.dir)?p.dir:"down",
     moving:!!p.moving,
     walkTime:Number(p.walkTime)||0,
+    health:Number.isFinite(Number(p.health))?Math.max(0,Math.min(100,Number(p.health))):100,
+    stamina:Number.isFinite(Number(p.stamina))?Math.max(0,Math.min(100,Number(p.stamina))):100,
+    swimming:!!p.swimming,
+    drowning:!!p.drowning,
     skin:String(p.skin||"#f1c27d").slice(0,16),
     eyes:String(p.eyes||"#243b53").slice(0,16),
     hair:String(p.hair||"#3a2418").slice(0,16),
@@ -1917,6 +2249,10 @@ window.addEventListener("keydown",(event)=>{
     toggleMap();
     event.preventDefault();
   }
+  if(key==="#"&&state.running&&!event.repeat){
+    requestDebugMode();
+    event.preventDefault();
+  }
   if(key==="e"&&state.running&&!state.paused&&!state.mapOpen&&!event.repeat){
     interactWithWorld();
     event.preventDefault();
@@ -1972,6 +2308,23 @@ $("leaveBtn").addEventListener("click",()=>{
   showTitle();
 });
 $("closeMapBtn").addEventListener("click",()=>toggleMap(false));
+$("respawnBtn").addEventListener("click",respawnPlayer);
+
+worldMap.addEventListener("click",(event)=>{
+  if(!state.debug.enabled) return;
+  const rect=worldMap.getBoundingClientRect();
+  const x=(event.clientX-rect.left)/rect.width*WORLD_SIZE;
+  const y=(event.clientY-rect.top)/rect.height*WORLD_SIZE;
+  teleportPlayer(x,y);
+});
+
+canvas.addEventListener("click",(event)=>{
+  if(!state.debug.enabled||state.mapOpen||state.paused) return;
+  const rect=canvas.getBoundingClientRect();
+  const px=(event.clientX-rect.left)/rect.width*canvas.width;
+  const py=(event.clientY-rect.top)/rect.height*canvas.height;
+  teleportPlayer(state.camera.x+(px-canvas.width/2)/VIEW_SCALE,state.camera.y+(py-canvas.height/2)/VIEW_SCALE);
+});
 
 renderTitleMap();
 updatePreviewDirection();
@@ -1979,6 +2332,8 @@ updatePortrait();
 requestAnimationFrame(paintPreview);
 
 window.__ARCHIPELAGO_DEBUG__ = {
+  WORLD_SIZE,
+  TILE_METERS,
   terrainAt,
   islandField,
   ensureRivers,
@@ -1993,8 +2348,16 @@ window.__ARCHIPELAGO_DEBUG__ = {
   updateWorldReactions,
   nearbyInteraction,
   interactWithWorld,
+  isSwimmingBiome,
+  isSafeGroundBiome,
+  killPlayer,
+  respawnPlayer,
+  teleportPlayer,
+  setDebugMode,
   drawCharacter,
   drawWorld,
+  drawWorldMap,
+  mapColorAt,
   landmarks,
   rivers,
   routes,

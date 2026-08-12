@@ -22,7 +22,7 @@
         <h1 id="gameTitle"><span>ARCHI</span>PELAGO</h1>
         <p class="subtitle">Echoes of the Shattered Sea</p>
         <div class="title-divider" aria-hidden="true"><i></i><b>✦</b><i></i></div>
-        <p class="title-copy">Erkunde wilde Inseln, uralte Ruinen und die Wege zwischen den Gezeiten.</p>
+        <p class="title-copy">Reise vom ewigen Eis des Nordpols bis durch die Dünen der Sonnenwüste.</p>
 
         <nav class="title-actions" aria-label="Hauptmenü">
           <button id="beginBtn" class="menu-button primary">Neues Abenteuer <span>›</span></button>
@@ -32,8 +32,8 @@
       </div>
 
       <div class="title-footer">
-        <span>10 × 10 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.4</span>
+        <span>20 × 20 km prozedurale Welt</span>
+        <span class="title-version">PROTOTYP · 0.5</span>
       </div>
     </section>
 
@@ -186,9 +186,9 @@
       <aside class="player-hud glass-panel">
         <canvas id="playerPortrait" width="52" height="64" aria-hidden="true"></canvas>
         <div class="player-readout">
-          <div class="player-name-row"><strong id="hudPlayerName">Abenteurer</strong><span>LV. 1</span></div>
-          <div class="meter health"><i id="healthFill"></i><span>100 / 100</span></div>
-          <div class="meter stamina"><i id="staminaFill"></i><span>AUSDAUER</span></div>
+          <div class="player-name-row"><strong id="hudPlayerName">Abenteurer</strong><span id="movementStateText">LV. 1</span></div>
+          <div class="meter health"><i id="healthFill"></i><span id="healthText">100 / 100</span></div>
+          <div class="meter stamina"><i id="staminaFill"></i><span id="staminaText">AUSDAUER</span></div>
         </div>
       </aside>
 
@@ -226,6 +226,7 @@
 
       <div id="interactionHint" class="interaction-hint hidden"><kbd>E</kbd> Untersuchen</div>
       <div id="toast" class="toast hidden"></div>
+      <div id="debugBadge" class="debug-badge hidden">DEBUG · KLICK-TELEPORT · # BEENDEN</div>
 
       <div id="pauseMenu" class="screen-overlay pause hidden">
         <div class="pause-card modal-card">
@@ -243,7 +244,7 @@
             <div>
               <p class="eyebrow">Kartographisches Archiv</p>
               <h2>Die zersplitterte See</h2>
-              <p>10 × 10 km · Flüsse, Wege und bekannte Orte</p>
+              <p>20 × 20 km · Nordpol, Sonnenwüste, Flüsse, Wege und bekannte Orte</p>
             </div>
             <button id="closeMapBtn" class="icon-button" aria-label="Karte schließen">×</button>
           </div>
@@ -256,10 +257,19 @@
               <span><i class="legend-ruin"></i>Ruine</span>
               <span><i class="legend-river"></i>Fluss</span>
               <span><i class="legend-road"></i>Alter Weg</span>
-              <div class="map-scale"><i></i><b>2 km</b></div>
+              <div class="map-scale"><i></i><b>4 km</b></div>
               <p>Die Karte zeigt nur bekannte Hauptorte. Kleinere Geheimnisse findest du beim Erkunden.</p>
             </aside>
           </div>
+        </div>
+      </div>
+
+      <div id="deathMenu" class="screen-overlay death hidden">
+        <div class="death-card modal-card">
+          <p class="eyebrow">Deine Reise endet</p>
+          <h2>Ertrunken</h2>
+          <p id="deathReason">In der Tiefsee ertrunken</p>
+          <button id="respawnBtn" class="primary">Am letzten Ufer erwachen</button>
         </div>
       </div>
     </section>

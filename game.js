@@ -45,7 +45,11 @@ const ANIMAL_CELL_TILES = 18;
 const ANIMAL_CACHE_LIMIT = 32000;
 const ANIMAL_ACTIVE_RADIUS = 520;
 const ANIMAL_HIT_RANGE = TILE_METERS * 2.75;
-const CORPSE_DRAG_RANGE = TILE_METERS * 2.8;
+// A corpse now has to be visibly within reach before it can be grabbed. This
+// is exactly half of the previous 2.8-block interaction tolerance.
+const CORPSE_DRAG_RANGE = TILE_METERS * 1.4;
+const HORSE_MOUNT_RANGE = TILE_METERS * 2;
+const HORSE_FOLLOW_DISTANCE = TILE_METERS * 2.35;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -114,7 +118,30 @@ const animalCatalog = {
     name:"Wildschwein",corpseName:"Wildschweinkadaver",maxHealth:105,radius:3.8,walkSpeed:10,runSpeed:24,
     habitats:["forest","plains","swamp","jungle"],spawnChance:.31,group:[1,2],timidRange:16,
     loot:[{itemId:"rawPork",quantity:2},{itemId:"rawPork",quantity:2},{itemId:"boarHide",quantity:1},{itemId:"tusk",quantity:2},{itemId:"bone",quantity:2}]
+  },
+  horse:{
+    name:"Pferd",corpseName:"Pferd",maxHealth:180,radius:5.2,walkSpeed:13,runSpeed:29,
+    habitats:["plains","forest","oasis","desert","beach","tundra"],spawnChance:.14,group:[1,3],timidRange:42,
+    mountable:true,invulnerable:true,loot:[]
   }
+};
+
+// Breeds change the silhouette and riding speed; coats are kept separate so
+// every breed can appear in every colour without duplicating entity logic.
+const horseBreedCatalog = {
+  warmblood:{name:"Warmblut",bodyLength:1,bodyHeight:1,legLength:1,rideSpeed:59,gallopSpeed:79},
+  arabian:{name:"Araber",bodyLength:.91,bodyHeight:.93,legLength:1.06,rideSpeed:63,gallopSpeed:84},
+  draft:{name:"Kaltblut",bodyLength:1.12,bodyHeight:1.09,legLength:.91,rideSpeed:53,gallopSpeed:72},
+  pony:{name:"Pony",bodyLength:.88,bodyHeight:.82,legLength:.78,rideSpeed:51,gallopSpeed:69}
+};
+
+const horseCoatCatalog = {
+  bay:{name:"Brauner",body:"#8d4f2d",light:"#b86f3e",shadow:"#60311f",mane:"#241b19",marking:"#d9c8ad"},
+  black:{name:"Rappe",body:"#292929",light:"#4a4642",shadow:"#151719",mane:"#0e1112",marking:"#c9c4b8"},
+  chestnut:{name:"Fuchs",body:"#aa5430",light:"#d17b46",shadow:"#71301e",mane:"#6f2c1c",marking:"#eee0c7"},
+  grey:{name:"Schimmel",body:"#b9bab2",light:"#deddd2",shadow:"#777a76",mane:"#54585a",marking:"#f2eddf"},
+  palomino:{name:"Palomino",body:"#c89b55",light:"#e0bd77",shadow:"#8a6338",mane:"#ead9a8",marking:"#f3e4bf"},
+  pinto:{name:"Schecke",body:"#a7683d",light:"#d6c9af",shadow:"#714325",mane:"#3c2921",marking:"#efe6d3",pinto:true}
 };
 
 const equipmentSlotCatalog = {
@@ -160,6 +187,8 @@ const state = {
   inventory:createStartingInventory(),
   inventorySerial:2,
   draggingAnimalId:null,
+  starterHorseId:null,
+  mountedHorseId:null,
   action:{type:null,itemId:null,elapsed:0,duration:0,cooldown:0},
   player: {
     id: "local",
@@ -1797,12 +1826,38 @@ function animalSpawnPoint(species,cellX,cellY,index){
   return null;
 }
 
-function createAnimalState(species,cellX,cellY,index,point){
-  const id=species+":"+cellX+":"+cellY+":"+index;
+function horseVariantFor(cellX,cellY,index){
+  const breeds=Object.keys(horseBreedCatalog);
+  const coats=Object.keys(horseCoatCatalog);
+  return {
+    breed:breeds[Math.floor(hash2(cellX+index*11,cellY,8251)*breeds.length)],
+    coat:coats[Math.floor(hash2(cellX,cellY-index*13,8252)*coats.length)]
+  };
+}
+
+function cacheAnimalState(id,animal){
+  animalStates.set(id,animal);
+  if(animalStates.size<=ANIMAL_CACHE_LIMIT) return animal;
+  const target=Math.max(1,Math.ceil(ANIMAL_CACHE_LIMIT*.12));
+  let removed=0;
+  for(const [candidateId,candidate] of animalStates){
+    const protectedState=candidateId.startsWith("starter-horse:")||candidate.owned||candidateId===state.draggingAnimalId||candidateId===state.mountedHorseId;
+    if(protectedState) continue;
+    animalStates.delete(candidateId);
+    removed++;
+    if(removed>=target) break;
+  }
+  return animal;
+}
+
+function createAnimalState(species,cellX,cellY,index,point,overrides={}){
+  const id=overrides.id||species+":"+cellX+":"+cellY+":"+index;
   const existing=animalStates.get(id);
   if(existing) return existing;
   const meta=animalCatalog[species];
-  const heading=hash2(cellX+index*3,cellY-index*5,species==="boar"?8202:8201)*Math.PI*2;
+  const headingSeeds={chicken:8201,boar:8202,horse:8203};
+  const heading=hash2(cellX+index*3,cellY-index*5,headingSeeds[species]||8201)*Math.PI*2;
+  const horseVariant=species==="horse"?horseVariantFor(cellX,cellY,index):null;
   const animal={
     id,species,originCellX:cellX,originCellY:cellY,
     x:point.x,y:point.y,homeX:point.x,homeY:point.y,
@@ -1811,9 +1866,13 @@ function createAnimalState(species,cellX,cellY,index,point){
     wanderTimer:.8+hash2(cellX,cellY,8211+index)*3.4,idleUntil:0,
     hitFlash:0,fleeUntil:0,aggressionUntil:0,attackCooldown:0,
     bloodLevel:0,corpseDamage:0,harvestCount:0,lootQueue:null,
-    angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2
+    angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,
+    breed:horseVariant?.breed||null,coat:horseVariant?.coat||null,
+    saddled:species==="horse"&&hash2(cellX,index+cellY,8253)<.22,
+    owned:false,riderId:null,mountStamina:100
   };
-  return cacheValue(animalStates,id,animal,ANIMAL_CACHE_LIMIT);
+  Object.assign(animal,overrides);
+  return cacheAnimalState(id,animal);
 }
 
 function animalsForCell(cellX,cellY){
@@ -1821,7 +1880,7 @@ function animalsForCell(cellX,cellY){
   if(animalCellCache.has(key)) return animalCellCache.get(key);
   const animals=[];
   for(const [species,meta] of Object.entries(animalCatalog)){
-    const speciesSeed=species==="boar"?8302:8301;
+    const speciesSeed=species==="boar"?8302:species==="horse"?8303:8301;
     if(hash2(cellX,cellY,speciesSeed)>meta.spawnChance) continue;
     const amount=meta.group[0]+Math.floor(hash2(cellX,cellY,speciesSeed+1)*(meta.group[1]-meta.group[0]+1));
     for(let index=0;index<amount;index++){
@@ -1854,7 +1913,49 @@ function animalsInRect(left,top,right,bottom){
     const dragged=animalStates.get(state.draggingAnimalId);
     if(dragged&&!seen.has(dragged.id)) result.push(dragged);
   }
+  if(state.starterHorseId){
+    const horse=animalStates.get(state.starterHorseId);
+    if(horse&&!seen.has(horse.id)&&horse.x>=left-margin&&horse.x<=right+margin&&horse.y>=top-margin&&horse.y<=bottom+margin){
+      seen.add(horse.id);
+      result.push(horse);
+    }
+  }
   return result;
+}
+
+function findStartingHorsePoint(x,y){
+  const preferred=[[14,2],[-14,2],[2,14],[2,-14],[20,10],[-20,10],[10,-20],[-10,-20]];
+  for(const [ox,oy] of preferred){
+    const px=x+ox;
+    const py=y+oy;
+    if(animalSpawnAllowed("horse",px,py)) return {x:px,y:py};
+  }
+  for(let ring=2;ring<=6;ring++){
+    for(let step=0;step<16;step++){
+      const angle=step/16*Math.PI*2;
+      const px=x+Math.cos(angle)*ring*TILE_METERS;
+      const py=y+Math.sin(angle)*ring*TILE_METERS;
+      if(animalSpawnAllowed("horse",px,py)) return {x:px,y:py};
+    }
+  }
+  return {x:Math.min(WORLD_SIZE-32,x+14),y};
+}
+
+function spawnStartingHorse(){
+  if(state.starterHorseId) animalStates.delete(state.starterHorseId);
+  const point=findStartingHorsePoint(state.player.x,state.player.y);
+  const cellX=Math.floor(point.x/(ANIMAL_CELL_TILES*TILE_METERS));
+  const cellY=Math.floor(point.y/(ANIMAL_CELL_TILES*TILE_METERS));
+  const variant=horseVariantFor(cellX,cellY,91);
+  const horse=createAnimalState("horse",cellX,cellY,91,point,{
+    id:"starter-horse:"+state.player.id,
+    breed:variant.breed,coat:variant.coat,saddled:true,owned:true,
+    heading:Math.atan2(state.player.y-point.y,state.player.x-point.x),
+    homeX:state.player.x,homeY:state.player.y
+  });
+  state.starterHorseId=horse.id;
+  state.mountedHorseId=null;
+  return horse;
 }
 
 function activeAnimalsNear(x,y,radius=ANIMAL_ACTIVE_RADIUS){
@@ -1875,7 +1976,11 @@ function animalCanStand(animal,x,y){
     const px=x+ox;
     const py=y+oy;
     if(px<4||py<4||px>WORLD_SIZE-4||py>WORLD_SIZE-4) return false;
-    if(!meta.habitats.includes(terrainAt(px,py).biome)||collisionAt(px,py)) return false;
+    const terrain=terrainAt(px,py);
+    const landAllowed=animal.species==="horse"&&animal.owned
+      ?(!isSwimmingBiome(terrain.biome)||!!bridgeAt(px,py,terrain))
+      :meta.habitats.includes(terrain.biome);
+    if(!landAllowed||collisionAt(px,py)) return false;
   }
   return true;
 }
@@ -1906,6 +2011,12 @@ function injurePlayerFromBoar(animal){
 
 function updateLivingAnimal(animal,dt){
   const meta=animalCatalog[animal.species];
+  if(animal.species==="horse"&&animal.riderId){
+    animal.hitFlash=0;
+    animal.vx=0;
+    animal.vy=0;
+    return;
+  }
   animal.hitFlash=Math.max(0,animal.hitFlash-dt);
   animal.attackCooldown=Math.max(0,animal.attackCooldown-dt);
   animal.wanderTimer-=dt;
@@ -1914,11 +2025,17 @@ function updateLivingAnimal(animal,dt){
   const distance=Math.hypot(dx,dy)||1;
   let speed=meta.walkSpeed;
 
-  if(animal.species==="boar"&&animal.aggressionUntil>state.elapsed&&distance<190){
+  if(animal.species==="horse"&&animal.owned){
+    if(distance>HORSE_FOLLOW_DISTANCE){
+      animal.heading=Math.atan2(dy,dx);
+      speed=distance>HORSE_FOLLOW_DISTANCE*2.2?meta.runSpeed:meta.walkSpeed;
+    }else speed=0;
+    animal.wanderTimer=1;
+  }else if(animal.species==="boar"&&animal.aggressionUntil>state.elapsed&&distance<190){
     animal.heading=Math.atan2(dy,dx);
     speed=meta.runSpeed;
     if(distance<meta.radius+PLAYER_RADIUS+2) injurePlayerFromBoar(animal);
-  }else if(animal.fleeUntil>state.elapsed||(animal.species==="chicken"&&distance<meta.timidRange)){
+  }else if(animal.fleeUntil>state.elapsed||((animal.species==="chicken"||animal.species==="horse"&&!animal.owned)&&distance<meta.timidRange)){
     animal.heading=Math.atan2(-dy,-dx)+(hash2(Math.floor(state.elapsed*4),animal.originCellY,8420)-.5)*.36;
     speed=meta.runSpeed;
   }else{
@@ -1937,7 +2054,7 @@ function updateLivingAnimal(animal,dt){
     if(animal.idleUntil>state.elapsed) speed=0;
   }
 
-  const response=1-Math.exp(-dt*(animal.species==="chicken"?8:5));
+  const response=1-Math.exp(-dt*(animal.species==="chicken"?8:animal.species==="horse"?4:5));
   animal.vx=lerp(animal.vx,Math.cos(animal.heading)*speed,response);
   animal.vy=lerp(animal.vy,Math.sin(animal.heading)*speed,response);
   moveAnimalBody(animal,dt);
@@ -2035,6 +2152,7 @@ function harvestAnimalCorpse(animal,damage){
 
 function damageAnimal(animal,damage,itemId){
   if(!animal) return false;
+  if(animalCatalog[animal.species]?.invulnerable) return false;
   const definition=itemCatalog[itemId];
   if(animal.status!=="alive") return harvestAnimalCorpse(animal,definition?.corpseDamage||damage);
   animal.health=Math.max(0,animal.health-damage);
@@ -2077,7 +2195,6 @@ function drawChicken(animal,x,y){
   const flip=animalDirection(animal)==="left"?-1:1;
   ctx.save();
   ctx.translate(Math.round(x),Math.round(y));
-  if(animal.status!=="alive") ctx.rotate(animal.angle);
   ctx.scale(flip,1);
   if(animal.status==="alive"){
     const step=Math.sin(animal.gait*4)>.15?1:0;
@@ -2091,11 +2208,14 @@ function drawChicken(animal,x,y){
     ctx.fillStyle="#b78939";ctx.fillRect((-2-step)*u,u,u,3*u);ctx.fillRect((1+step)*u,u,u,3*u);
     drawAnimalBloodMarks(ctx,animal,u);
   }else{
-    const flop=Math.sin(animal.ragdollPhase)*.45;
+    // Dead limbs stay on whole pixels. Vector rotation and stroked diagonal
+    // lines were the remaining source of soft animal edges.
+    const flop=Math.round(Math.sin(animal.ragdollPhase));
     ctx.fillStyle=animal.hitFlash>0?"#f1bbb3":"#d8cfad";ctx.fillRect(-4*u,-3*u,8*u,5*u);
     drawAnimalBloodMarks(ctx,animal,u);
-    ctx.save();ctx.translate(3*u,-2*u);ctx.rotate(.7+flop);ctx.fillStyle="#e1d8b9";ctx.fillRect(0,-2*u,4*u,4*u);ctx.fillStyle="#d7a73a";ctx.fillRect(4*u,-u,2*u,u);ctx.restore();
-    ctx.strokeStyle="#987136";ctx.lineWidth=Math.max(1,u);ctx.beginPath();ctx.moveTo(-2*u,u);ctx.lineTo((-4-flop)*u,4*u);ctx.moveTo(u,u);ctx.lineTo((3+flop)*u,4*u);ctx.stroke();
+    ctx.fillStyle="#e1d8b9";ctx.fillRect((3+flop)*u,-2*u,4*u,4*u);
+    ctx.fillStyle="#d7a73a";ctx.fillRect((7+flop)*u,-u,2*u,u);
+    ctx.fillStyle="#987136";ctx.fillRect((-3-flop)*u,u,u,3*u);ctx.fillRect((2+flop)*u,u,u,3*u);
     if(!animal.lootQueue?.length){ctx.fillStyle="#d7c9aa";ctx.fillRect(-2*u,-3*u,5*u,u);}
   }
   ctx.restore();
@@ -2106,7 +2226,6 @@ function drawBoar(animal,x,y){
   const flip=animalDirection(animal)==="left"?-1:1;
   ctx.save();
   ctx.translate(Math.round(x),Math.round(y));
-  if(animal.status!=="alive") ctx.rotate(animal.angle);
   ctx.scale(flip,1);
   if(animal.status==="alive"){
     const step=Math.sin(animal.gait*3.2)>.1?1:-1;
@@ -2120,13 +2239,107 @@ function drawBoar(animal,x,y){
     ctx.fillStyle="#7a5a42";ctx.fillRect(-7*u,-4*u,u,2*u);
     drawAnimalBloodMarks(ctx,animal,u);
   }else{
-    const flop=Math.sin(animal.ragdollPhase)*.5;
+    const flop=Math.round(Math.sin(animal.ragdollPhase));
     ctx.fillStyle=animal.hitFlash>0?"#9d554c":"#564034";ctx.fillRect(-6*u,-4*u,11*u,6*u);
     drawAnimalBloodMarks(ctx,animal,u);
-    ctx.save();ctx.translate(4*u,-2*u);ctx.rotate(.45+flop*.25);ctx.fillStyle="#453129";ctx.fillRect(0,-3*u,5*u,5*u);ctx.fillStyle="#d5c49a";ctx.fillRect(4*u,u,3*u,u);ctx.restore();
-    ctx.strokeStyle="#34251f";ctx.lineWidth=2*u;
-    for(const [lx,phase] of [[-4,-1],[-1,1],[2,-1],[4,1]]){ctx.beginPath();ctx.moveTo(lx*u,u);ctx.lineTo((lx+phase*flop*2)*u,5*u);ctx.stroke();}
+    ctx.fillStyle="#453129";ctx.fillRect((4+flop)*u,-3*u,5*u,5*u);
+    ctx.fillStyle="#d5c49a";ctx.fillRect((8+flop)*u,u,3*u,u);
+    ctx.fillStyle="#34251f";
+    for(const [lx,phase] of [[-4,-1],[-1,1],[2,-1],[4,1]]) ctx.fillRect((lx+phase*flop)*u,u,2*u,4*u);
     if(!animal.lootQueue?.length){ctx.fillStyle="#c8b996";ctx.fillRect(-3*u,-4*u,6*u,u);ctx.fillRect(-u,-5*u,2*u,3*u);}
+  }
+  ctx.restore();
+}
+
+function drawHorse(animal,x,y){
+  const u=2;
+  const breed=horseBreedCatalog[animal.breed]||horseBreedCatalog.warmblood;
+  const coat=horseCoatCatalog[animal.coat]||horseCoatCatalog.bay;
+  const dir=animal.dir||animalDirection(animal);
+  const side=dir==="left"||dir==="right";
+  const flip=dir==="left"?-1:1;
+  const stride=Math.hypot(animal.vx||0,animal.vy||0)>.8?(Math.sin((animal.gait||0)*3.2)>.05?1:-1):0;
+  const bodyLength=Math.max(11,Math.round(13*breed.bodyLength));
+  const bodyHeight=Math.max(5,Math.round(6*breed.bodyHeight));
+  const legLength=Math.max(5,Math.round(7*breed.legLength));
+  ctx.save();
+  ctx.translate(Math.round(x),Math.round(y));
+  if(side) ctx.scale(flip,1);
+  ctx.fillStyle="rgba(0,0,0,.30)";
+  ctx.fillRect(side?-bodyLength*u/2:-5*u,3*u,side?bodyLength*u:10*u,2*u);
+
+  if(side){
+    const left=-Math.floor(bodyLength*.32);
+    const right=Math.floor(bodyLength*.28);
+    ctx.fillStyle=coat.shadow;
+    ctx.fillRect((left+stride)*u,-u,2*u,legLength*u);
+    ctx.fillRect((right-stride)*u,-u,2*u,legLength*u);
+    ctx.fillStyle=coat.body;
+    ctx.fillRect((left-stride)*u,-u,2*u,legLength*u);
+    ctx.fillRect((right+stride)*u,-u,2*u,legLength*u);
+    ctx.fillStyle="#25211e";
+    ctx.fillRect((left-stride)*u,(legLength-2)*u,3*u,2*u);
+    ctx.fillRect((right+stride)*u,(legLength-2)*u,3*u,2*u);
+
+    ctx.fillStyle=coat.mane;
+    ctx.fillRect((-bodyLength/2-3)*u,-bodyHeight*u,3*u,2*u);
+    ctx.fillRect((-bodyLength/2-5)*u,(-bodyHeight+1)*u,3*u,u);
+    ctx.fillStyle=coat.body;
+    ctx.fillRect(Math.round(-bodyLength/2*u),-bodyHeight*u,bodyLength*u,bodyHeight*u);
+    ctx.fillStyle=coat.light;
+    ctx.fillRect(Math.round((-bodyLength/2+2)*u),-bodyHeight*u,Math.max(4,Math.round((bodyLength-5)*u)),u);
+    ctx.fillStyle=coat.shadow;
+    ctx.fillRect(Math.round((-bodyLength/2+1)*u),-2*u,Math.max(4,Math.round((bodyLength-2)*u)),2*u);
+    if(coat.pinto){
+      ctx.fillStyle=coat.marking;
+      ctx.fillRect(-4*u,-bodyHeight*u,4*u,3*u);
+      ctx.fillRect(3*u,(-bodyHeight+2)*u,3*u,3*u);
+    }
+
+    ctx.fillStyle=coat.body;
+    ctx.fillRect((bodyLength/2-2)*u,(-bodyHeight-5)*u,4*u,7*u);
+    ctx.fillRect((bodyLength/2)*u,(-bodyHeight-7)*u,5*u,4*u);
+    ctx.fillStyle=coat.light;
+    ctx.fillRect((bodyLength/2+1)*u,(-bodyHeight-7)*u,4*u,u);
+    ctx.fillStyle=coat.mane;
+    ctx.fillRect((bodyLength/2-3)*u,(-bodyHeight-6)*u,2*u,6*u);
+    ctx.fillRect((bodyLength/2+1)*u,(-bodyHeight-9)*u,u,2*u);
+    ctx.fillRect((bodyLength/2+4)*u,(-bodyHeight-9)*u,u,2*u);
+    ctx.fillStyle="#111817";
+    ctx.fillRect((bodyLength/2+3)*u,(-bodyHeight-6)*u,u,u);
+    ctx.fillStyle=coat.marking;
+    ctx.fillRect((bodyLength/2+4)*u,(-bodyHeight-4)*u,2*u,u);
+  }else{
+    ctx.fillStyle=coat.shadow;
+    ctx.fillRect(-4*u,-u,2*u,legLength*u);ctx.fillRect(2*u,-u,2*u,legLength*u);
+    ctx.fillStyle=coat.body;
+    ctx.fillRect((-4-stride)*u,-u,2*u,legLength*u);ctx.fillRect((2+stride)*u,-u,2*u,legLength*u);
+    ctx.fillStyle="#25211e";
+    ctx.fillRect((-4-stride)*u,(legLength-2)*u,3*u,2*u);ctx.fillRect((2+stride)*u,(legLength-2)*u,3*u,2*u);
+    ctx.fillStyle=coat.body;
+    ctx.fillRect(-5*u,-bodyHeight*u,10*u,bodyHeight*u);
+    ctx.fillStyle=coat.light;
+    ctx.fillRect(-4*u,-bodyHeight*u,8*u,u);
+    ctx.fillStyle=coat.mane;
+    ctx.fillRect(dir==="up"?-5*u:3*u,(-bodyHeight-5)*u,2*u,6*u);
+    ctx.fillStyle=coat.body;
+    ctx.fillRect(-3*u,(-bodyHeight-7)*u,6*u,5*u);
+    ctx.fillStyle=coat.marking;
+    ctx.fillRect(-u,(-bodyHeight-7)*u,2*u,3*u);
+    ctx.fillStyle="#111817";
+    ctx.fillRect(-2*u,(-bodyHeight-5)*u,u,u);ctx.fillRect(u,(-bodyHeight-5)*u,u,u);
+    ctx.fillStyle=coat.mane;
+    ctx.fillRect(-3*u,(-bodyHeight-9)*u,u,2*u);ctx.fillRect(2*u,(-bodyHeight-9)*u,u,2*u);
+  }
+
+  if(animal.saddled){
+    ctx.fillStyle="#22383c";
+    ctx.fillRect(side?-4*u:-5*u,(-bodyHeight-2)*u,side?8*u:10*u,2*u);
+    ctx.fillStyle="#7a4528";
+    ctx.fillRect(side?-3*u:-4*u,(-bodyHeight-3)*u,side?7*u:8*u,2*u);
+    ctx.fillStyle="#c59b51";
+    ctx.fillRect(side?3*u:2*u,(-bodyHeight-3)*u,u,2*u);
+    if(side){ctx.fillStyle="#49301f";ctx.fillRect(2*u,(-bodyHeight-1)*u,u,5*u);}
   }
   ctx.restore();
 }
@@ -2134,14 +2347,67 @@ function drawBoar(animal,x,y){
 function drawAnimal(animal,camX,camY){
   const x=(animal.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(animal.y-camY)*VIEW_SCALE+canvas.height/2;
-  if(animal.species==="boar") drawBoar(animal,x,y);
+  if(animal.species==="horse") drawHorse(animal,x,y);
+  else if(animal.species==="boar") drawBoar(animal,x,y);
   else drawChicken(animal,x,y);
+}
+
+function drawMountedPair(horse,player,x,y,local=false){
+  const mountSprite={...horse,dir:player.dir||horse.dir,moving:player.moving,gait:Number(player.walkTime)||horse.gait||0};
+  if(player.moving){
+    const facing=directionVector(player.dir||"down");
+    mountSprite.vx=facing.x*10;
+    mountSprite.vy=facing.y*10;
+  }
+  drawHorse(mountSprite,x,y);
+  // One-pixel character units produce a clearly seated silhouette while still
+  // retaining the player's selected hair, clothing and held item. The lower
+  // walking legs are clipped at the saddle instead of covering the horse.
+  ctx.save();
+  ctx.beginPath();
+  const sideView=mountSprite.dir==="left"||mountSprite.dir==="right";
+  const riderY=sideView?y-11:y-16;
+  ctx.rect(Math.round(x-70),Math.round(y-80),140,sideView?67:62);
+  ctx.clip();
+  drawCharacter(ctx,x,riderY,player,1.45,local);
+  ctx.restore();
+  if(mountSprite.saddled){
+    const u=2;
+    const breed=horseBreedCatalog[mountSprite.breed]||horseBreedCatalog.warmblood;
+    const bodyHeight=Math.max(5,Math.round(6*breed.bodyHeight));
+    const side=mountSprite.dir==="left"||mountSprite.dir==="right";
+    ctx.save();
+    ctx.translate(Math.round(x),Math.round(y));
+    if(mountSprite.dir==="left") ctx.scale(-1,1);
+    ctx.fillStyle="#4b2e1e";
+    ctx.fillRect(side?-3*u:-4*u,(-bodyHeight-1)*u,side?7*u:8*u,u);
+    ctx.restore();
+  }
+  if(mountSprite.dir==="down"){
+    const u=2;
+    const breed=horseBreedCatalog[mountSprite.breed]||horseBreedCatalog.warmblood;
+    const coat=horseCoatCatalog[mountSprite.coat]||horseCoatCatalog.bay;
+    const bodyHeight=Math.max(5,Math.round(6*breed.bodyHeight));
+    ctx.save();
+    ctx.translate(Math.round(x),Math.round(y));
+    // The horse's face is in front of a south-facing rider. Repainting only
+    // this small pixel layer prevents the rider torso from hiding the mount.
+    ctx.fillStyle=coat.body;
+    ctx.fillRect(-3*u,(-bodyHeight-7)*u,6*u,5*u);
+    ctx.fillStyle=coat.marking;
+    ctx.fillRect(-u,(-bodyHeight-7)*u,2*u,3*u);
+    ctx.fillStyle="#111817";
+    ctx.fillRect(-2*u,(-bodyHeight-5)*u,u,u);ctx.fillRect(u,(-bodyHeight-5)*u,u,u);
+    ctx.fillStyle=coat.mane;
+    ctx.fillRect(-3*u,(-bodyHeight-9)*u,u,2*u);ctx.fillRect(2*u,(-bodyHeight-9)*u,u,2*u);
+    ctx.restore();
+  }
 }
 
 function drawAnimalGround(animal,camX,camY){
   const x=(animal.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(animal.y-camY)*VIEW_SCALE+canvas.height/2;
-  drawBloodPool(animal,x,y,animal.species==="boar"?3:2);
+  if(animal.species!=="horse") drawBloodPool(animal,x,y,animal.species==="boar"?3:2);
 }
 
 function drawDragTether(camX,camY){
@@ -2368,6 +2634,8 @@ function nearbyInteraction(){
   const playerGX=Math.floor(px/TILE_METERS);
   const playerGY=Math.floor(py/TILE_METERS);
   let best=null;
+  const mounted=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(mounted) return {type:"horse",animal:mounted,distance:-2,label:"Vom Pferd absteigen"};
   const dragged=state.draggingAnimalId&&animalStates.get(state.draggingAnimalId);
   if(dragged) best={type:"animalCorpse",animal:dragged,distance:-1,label:"Kadaver loslassen"};
   for(let gy=playerGY-2;gy<=playerGY+2;gy++){
@@ -2393,6 +2661,20 @@ function nearbyInteraction(){
     }
   }
   if(!dragged){
+    for(const animal of activeAnimalsNear(px,py,HORSE_MOUNT_RANGE+28)){
+      if(animal.species!=="horse"||animal.status!=="alive") continue;
+      const distance=Math.max(0,Math.hypot(px-animal.x,py-animal.y)-animalCatalog.horse.radius);
+      // A player's saddled companion outranks passive scenery inspection, so
+      // the first interaction at spawn reliably offers mounting.
+      const ownedMount=animal.owned&&animal.saddled;
+      if(distance<HORSE_MOUNT_RANGE&&(ownedMount||!best||distance<best.distance)){
+        const breed=horseBreedCatalog[animal.breed]||horseBreedCatalog.warmblood;
+        const coat=horseCoatCatalog[animal.coat]||horseCoatCatalog.bay;
+        best={type:"horse",animal,distance,label:animal.saddled
+          ?coat.name+" · "+breed.name+" besteigen"
+          :coat.name+" · "+breed.name+" ohne Sattel ansehen"};
+      }
+    }
     for(const animal of activeAnimalsNear(px,py,CORPSE_DRAG_RANGE+24)){
       if(animal.status==="alive") continue;
       const distance=Math.hypot(px-animal.x,py-animal.y)-animalCatalog[animal.species].radius;
@@ -2418,6 +2700,8 @@ function updateInteractionHint(){
     const target=state.interactionTarget;
     mobileLabel.textContent=!target?"Aktion":target.type==="animalCorpse"
       ?(state.draggingAnimalId===target.animal.id?"Loslassen":"Ziehen")
+      :target.type==="horse"
+        ?(state.mountedHorseId?"Absteigen":target.animal.saddled?"Reiten":"Ansehen")
       :"Ansehen";
   }
   if(!hint) return;
@@ -2428,7 +2712,11 @@ function updateInteractionHint(){
 function interactWithWorld(){
   const target=state.interactionTarget||nearbyInteraction();
   if(!target) return;
-  if(target.type==="animalCorpse"){
+  if(target.type==="horse"){
+    if(state.mountedHorseId) dismountHorse();
+    else mountHorse(target.animal);
+    state.interactionTarget=null;
+  }else if(target.type==="animalCorpse"){
     const animal=target.animal;
     if(state.draggingAnimalId===animal.id){
       state.draggingAnimalId=null;
@@ -2453,6 +2741,56 @@ function interactWithWorld(){
     else if(target.landmark.type==="ruin") showToast("Verwitterte Zeichen glimmen für einen Augenblick.");
     else showToast(target.landmark.name+" wirkt bewohnt.");
   }
+}
+
+function mountHorse(horse){
+  if(!horse||horse.species!=="horse"||horse.status!=="alive") return false;
+  const breed=horseBreedCatalog[horse.breed]||horseBreedCatalog.warmblood;
+  const coat=horseCoatCatalog[horse.coat]||horseCoatCatalog.bay;
+  if(!horse.saddled){
+    showToast(coat.name+" · "+breed.name+" · Zum Reiten fehlt ein Sattel.",2400);
+    return false;
+  }
+  state.draggingAnimalId=null;
+  horse.riderStamina=state.player.stamina;
+  state.mountedHorseId=horse.id;
+  horse.riderId=state.player.id;
+  horse.owned=true;
+  horse.vx=0;
+  horse.vy=0;
+  state.player.x=horse.x;
+  state.player.y=horse.y;
+  state.player.swimming=false;
+  state.player.drowning=false;
+  showToast(coat.name+" · "+breed.name+" bestiegen · E zum Absteigen",2600);
+  return true;
+}
+
+function dismountHorse(){
+  const horse=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(!horse){state.mountedHorseId=null;return false;}
+  const facing=directionVector(state.player.dir);
+  const side={x:-facing.y,y:facing.x};
+  const distance=animalCatalog.horse.radius+PLAYER_RADIUS+2;
+  const candidates=[
+    [horse.x+side.x*distance,horse.y+side.y*distance],
+    [horse.x-side.x*distance,horse.y-side.y*distance],
+    [horse.x-facing.x*distance,horse.y-facing.y*distance]
+  ];
+  let point=null;
+  for(const [x,y] of candidates){
+    const terrain=terrainAt(x,y);
+    if(!isSwimmingBiome(terrain.biome)&&canOccupy(x,y).ok){point={x,y};break;}
+  }
+  horse.riderId=null;
+  horse.heading=Math.atan2(facing.y,facing.x);
+  horse.homeX=horse.x;
+  horse.homeY=horse.y;
+  state.mountedHorseId=null;
+  state.player.stamina=Number.isFinite(horse.riderStamina)?horse.riderStamina:100;
+  if(point){state.player.x=point.x;state.player.y=point.y;}
+  showToast("Abgestiegen · Das Pferd bleibt in deiner Nähe.",1900);
+  return true;
 }
 
 function drawSwimmingOverlay(x,y,player){
@@ -2548,9 +2886,13 @@ function drawWorld(){
     renderQueue.push({type:"roadDecoration",y:(asset.gy+meta.h-.12)*TILE_METERS,asset});
   }
   for(const structure of structureBlocks) renderQueue.push({...structure,y:(structure.gy+.92)*TILE_METERS});
-  for(const animal of animals) renderQueue.push({type:"animal",y:animal.y+animalCatalog[animal.species].radius*.35,animal});
-  for(const peer of state.peers.values()) renderQueue.push({type:"peer",y:peer.y,player:peer});
-  renderQueue.push({type:"local",y:state.player.y,player:state.player});
+  const localMount=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  for(const animal of animals){
+    if(localMount&&animal.id===localMount.id) continue;
+    renderQueue.push({type:"animal",y:animal.y+animalCatalog[animal.species].radius*.35,animal});
+  }
+  for(const peer of state.peers.values()) renderQueue.push({type:peer.mount?"peerMounted":"peer",y:peer.y,player:peer});
+  renderQueue.push({type:localMount?"localMounted":"local",y:state.player.y,player:state.player,horse:localMount});
   renderQueue.sort((a,b)=>a.y-b.y);
   for(const item of renderQueue){
     if(item.type==="tree"){
@@ -2573,7 +2915,9 @@ function drawWorld(){
     const sx=(player.x-camX)*VIEW_SCALE+w/2;
     const sy=(player.y-camY)*VIEW_SCALE+h/2+(player.drowning?5:0);
     if(sx>-45&&sx<w+45&&sy>-60&&sy<h+45){
-      drawCharacter(ctx,sx,sy,player,item.type==="local"?WORLD_CHARACTER_SCALE:WORLD_CHARACTER_SCALE*.94,item.type==="local");
+      if(item.type==="localMounted") drawMountedPair(item.horse,player,sx,sy,true);
+      else if(item.type==="peerMounted") drawMountedPair({...player.mount,dir:player.dir,vx:0,vy:0},player,sx,sy,false);
+      else drawCharacter(ctx,sx,sy,player,item.type==="local"?WORLD_CHARACTER_SCALE:WORLD_CHARACTER_SCALE*.94,item.type==="local");
       if(player.swimming) drawSwimmingOverlay(sx,sy,player);
     }
   }
@@ -2915,6 +3259,49 @@ function drawHeldItem(c,u,dir,player){
   c.restore();
 }
 
+const pixelFont5x7 = {
+  A:["01110","10001","10001","11111","10001","10001","10001"],B:["11110","10001","10001","11110","10001","10001","11110"],
+  C:["01111","10000","10000","10000","10000","10000","01111"],D:["11110","10001","10001","10001","10001","10001","11110"],
+  E:["11111","10000","10000","11110","10000","10000","11111"],F:["11111","10000","10000","11110","10000","10000","10000"],
+  G:["01111","10000","10000","10111","10001","10001","01111"],H:["10001","10001","10001","11111","10001","10001","10001"],
+  I:["11111","00100","00100","00100","00100","00100","11111"],J:["00111","00010","00010","00010","10010","10010","01100"],
+  K:["10001","10010","10100","11000","10100","10010","10001"],L:["10000","10000","10000","10000","10000","10000","11111"],
+  M:["10001","11011","10101","10101","10001","10001","10001"],N:["10001","11001","10101","10011","10001","10001","10001"],
+  O:["01110","10001","10001","10001","10001","10001","01110"],P:["11110","10001","10001","11110","10000","10000","10000"],
+  Q:["01110","10001","10001","10001","10101","10010","01101"],R:["11110","10001","10001","11110","10100","10010","10001"],
+  S:["01111","10000","10000","01110","00001","00001","11110"],T:["11111","00100","00100","00100","00100","00100","00100"],
+  U:["10001","10001","10001","10001","10001","10001","01110"],V:["10001","10001","10001","10001","10001","01010","00100"],
+  W:["10001","10001","10001","10101","10101","10101","01010"],X:["10001","10001","01010","00100","01010","10001","10001"],
+  Y:["10001","10001","01010","00100","00100","00100","00100"],Z:["11111","00001","00010","00100","01000","10000","11111"],
+  0:["01110","10001","10011","10101","11001","10001","01110"],1:["00100","01100","00100","00100","00100","00100","01110"],
+  2:["01110","10001","00001","00010","00100","01000","11111"],3:["11110","00001","00001","01110","00001","00001","11110"],
+  4:["00010","00110","01010","10010","11111","00010","00010"],5:["11111","10000","10000","11110","00001","00001","11110"],
+  6:["01110","10000","10000","11110","10001","10001","01110"],7:["11111","00001","00010","00100","01000","01000","01000"],
+  8:["01110","10001","10001","01110","10001","10001","01110"],9:["01110","10001","10001","01111","00001","00001","01110"],
+  "-":["00000","00000","00000","11111","00000","00000","00000"],"_":["00000","00000","00000","00000","00000","00000","11111"],
+  ".":["00000","00000","00000","00000","00000","00110","00110"],"?":["01110","10001","00001","00010","00100","00000","00100"]
+};
+
+function drawPixelName(c,text,x,y,color){
+  const clean=String(text).toUpperCase().replace(/ß/g,"SS").normalize("NFD").replace(/[\u0300-\u036f]/g,"").slice(0,18);
+  const width=Math.max(0,clean.length*6-1);
+  const startX=Math.round(x-width/2);
+  const startY=Math.round(y);
+  const paint=(fill,offsetX,offsetY)=>{
+    c.fillStyle=fill;
+    for(let index=0;index<clean.length;index++){
+      const char=clean[index];
+      if(char===" ") continue;
+      const glyph=pixelFont5x7[char]||pixelFont5x7["?"];
+      for(let row=0;row<7;row++) for(let column=0;column<5;column++){
+        if(glyph[row][column]==="1") c.fillRect(startX+index*6+column+offsetX,startY+row+offsetY,1,1);
+      }
+    }
+  };
+  paint("#071014",1,1);
+  paint(color,0,0);
+}
+
 function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   // Integer sprite units keep every limb and clothing layer on the pixel
   // grid. Fractional units were the main source of the soft, smeared player.
@@ -3064,13 +3451,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   c.restore();
 
   if(p.name&&!portraitMode){
-    c.font="bold 11px Georgia";
-    c.textAlign="center";
-    c.fillStyle="#071014";
-    const nameY=y-22*u-4;
-    c.fillText(p.name,x+1,nameY+1);
-    c.fillStyle=local?"#f3d47c":"#f0ead8";
-    c.fillText(p.name,x,nameY);
+    drawPixelName(c,p.name,x,y-22*u-12,local?"#f3d47c":"#f0ead8");
   }
 }
 
@@ -3387,6 +3768,7 @@ function findAnimalTarget(range=ANIMAL_HIT_RANGE){
   const facing=directionVector(state.player.dir);
   let best=null;
   for(const animal of activeAnimalsNear(px,py,range+32)){
+    if(animalCatalog[animal.species]?.invulnerable) continue;
     const dx=animal.x-px;
     const dy=animal.y-py;
     const centreDistance=Math.hypot(dx,dy);
@@ -3507,6 +3889,80 @@ function updateTreePhysics(dt){
   }
 }
 
+function horseCanOccupy(horse,x,y){
+  const radius=animalCatalog.horse.radius*.78;
+  const samples=[[0,0],[-1,0],[1,0],[0,-1],[0,1],[-.7,-.7],[.7,-.7],[-.7,.7],[.7,.7]];
+  for(const [sx,sy] of samples){
+    const px=x+sx*radius;
+    const py=y+sy*radius;
+    if(px<radius||py<radius||px>WORLD_SIZE-radius||py>WORLD_SIZE-radius) return false;
+    const terrain=terrainAt(px,py);
+    if(isSwimmingBiome(terrain.biome)&&!bridgeAt(px,py,terrain)) return false;
+    if(collisionAt(px,py)) return false;
+  }
+  return true;
+}
+
+function moveMountedPlayer(dt,horse,dx,dy){
+  const moving=!!(dx||dy);
+  const wantsGallop=state.keys.has("shift")&&moving;
+  const galloping=wantsGallop&&horse.mountStamina>1;
+  const breed=horseBreedCatalog[horse.breed]||horseBreedCatalog.warmblood;
+  if(galloping) horse.mountStamina=Math.max(0,horse.mountStamina-dt*19);
+  else horse.mountStamina=Math.min(100,horse.mountStamina+dt*(moving?7:15));
+  // The existing stamina bar becomes the current mount's endurance while the
+  // player is in the saddle, so desktop and mobile need no second HUD.
+  state.player.stamina=horse.mountStamina;
+  state.player.swimming=false;
+  state.player.drowning=false;
+  state.player.moving=moving;
+  if(!moving){
+    horse.vx=lerp(horse.vx,0,1-Math.exp(-dt*10));
+    horse.vy=lerp(horse.vy,0,1-Math.exp(-dt*10));
+    state.player.x=horse.x;
+    state.player.y=horse.y;
+    return;
+  }
+  const length=Math.hypot(dx,dy)||1;
+  dx/=length;
+  dy/=length;
+  if(Math.abs(dx)>Math.abs(dy)) state.player.dir=dx>0?"right":"left";
+  else state.player.dir=dy>0?"down":"up";
+  horse.dir=state.player.dir;
+  horse.heading=Math.atan2(dy,dx);
+  let speed=galloping?breed.gallopSpeed:breed.rideSpeed;
+  if(roadAt(horse.x,horse.y)) speed*=1.08;
+  const oldX=horse.x;
+  const oldY=horse.y;
+  const distance=speed*dt;
+  const steps=Math.max(1,Math.ceil(distance/(TILE_METERS*.18)));
+  const stepX=dx*distance/steps;
+  const stepY=dy*distance/steps;
+  for(let step=0;step<steps;step++){
+    const nextX=Math.max(animalCatalog.horse.radius,Math.min(WORLD_SIZE-animalCatalog.horse.radius,horse.x+stepX));
+    if(horseCanOccupy(horse,nextX,horse.y)) horse.x=nextX;
+    const nextY=Math.max(animalCatalog.horse.radius,Math.min(WORLD_SIZE-animalCatalog.horse.radius,horse.y+stepY));
+    if(horseCanOccupy(horse,horse.x,nextY)) horse.y=nextY;
+  }
+  const moved=Math.hypot(horse.x-oldX,horse.y-oldY);
+  horse.vx=dt?(horse.x-oldX)/dt:0;
+  horse.vy=dt?(horse.y-oldY)/dt:0;
+  horse.gait+=moved*(galloping?.92:.62);
+  state.player.x=horse.x;
+  state.player.y=horse.y;
+  state.player.moving=moved>.02;
+  state.player.walkTime+=dt*(galloping?2.2:1.45);
+  if(isSafeGroundBiome(terrainAt(horse.x,horse.y).biome)) state.lastSafe={x:horse.x,y:horse.y};
+  state.footstepDistance+=moved;
+  if(state.footstepDistance>=8.5){
+    state.footstepDistance%=8.5;
+    for(let index=0;index<(galloping?3:2);index++) addEffect({
+      type:"dust",layer:"ground",x:horse.x-dx*4+(Math.random()-.5)*3,y:horse.y-dy*4+(Math.random()-.5)*3,
+      life:.45+Math.random()*.35,size:.55+Math.random()*.35,vx:-dx*4+(Math.random()-.5)*3,vy:-dy*4+(Math.random()-.5)*3
+    });
+  }
+}
+
 function movePlayer(dt){
   if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
   let dx=0;
@@ -3516,6 +3972,13 @@ function movePlayer(dt){
   if(state.keys.has("a")||state.keys.has("arrowleft")) dx-=1;
   if(state.keys.has("d")||state.keys.has("arrowright")) dx+=1;
   state.player.moving=!!(dx||dy);
+
+  const mounted=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(mounted){
+    moveMountedPlayer(dt,mounted,dx,dy);
+    return;
+  }
+  if(state.mountedHorseId) state.mountedHorseId=null;
 
   const terrain=terrainAt(state.player.x,state.player.y);
   const swimming=isSwimmingBiome(terrain.biome);
@@ -3596,6 +4059,9 @@ function movePlayer(dt){
 function killPlayer(reason){
   state.dead=true;
   state.draggingAnimalId=null;
+  const horse=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(horse) horse.riderId=null;
+  state.mountedHorseId=null;
   state.player.moving=false;
   state.keys.clear();
   $("deathReason").textContent=reason;
@@ -3644,6 +4110,8 @@ function teleportPlayer(x,y){
   }
   state.player.x=tx;
   state.player.y=ty;
+  const mounted=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(mounted){mounted.x=tx;mounted.y=ty;mounted.homeX=tx;mounted.homeY=ty;}
   state.camera.x=tx;
   state.camera.y=ty;
   const terrain=terrainAt(tx,ty);
@@ -3694,8 +4162,8 @@ function updateHud(){
   $("staminaFill").style.width=state.player.stamina.toFixed(1)+"%";
   $("healthFill").style.width=state.player.health.toFixed(1)+"%";
   $("healthText").textContent=Math.ceil(state.player.health)+" / 100";
-  $("staminaText").textContent=state.player.drowning?"ERTRINKEN":state.player.swimming?"SCHWIMMEN":"AUSDAUER";
-  $("movementStateText").textContent=state.player.drowning?"SINKT":state.player.swimming?"SCHWIMMT":"LV. 1";
+  $("staminaText").textContent=state.mountedHorseId?"PFERDEAUSDAUER":state.player.drowning?"ERTRINKEN":state.player.swimming?"SCHWIMMEN":"AUSDAUER";
+  $("movementStateText").textContent=state.mountedHorseId?"REITET":state.player.drowning?"SINKT":state.player.swimming?"SCHWIMMT":"LV. 1";
   $("locationText").textContent=near.distance<650?near.landmark.short:biomeNames[terrain.biome];
   const dirText={up:"N",right:"O",down:"S",left:"W"};
   $("compassDirection").textContent=dirText[state.player.dir]||"N";
@@ -4023,6 +4491,11 @@ function startGame(){
   state.player.drowning=false;
   state.dead=false;
   state.draggingAnimalId=null;
+  state.interactionTarget=null;
+  const previousMount=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(previousMount) previousMount.riderId=null;
+  state.mountedHorseId=null;
+  const startingHorse=spawnStartingHorse();
   releaseAllMobileControls();
   state.player.walkTime=0;
   syncHeldItem();
@@ -4042,17 +4515,21 @@ function startGame(){
   updateMobileControlState();
   requestAnimationFrame(loop);
   broadcast({type:"hello",player:publicPlayer()});
-  showToast("Willkommen in der zersplitterten See");
+  const breed=horseBreedCatalog[startingHorse.breed]||horseBreedCatalog.warmblood;
+  const coat=horseCoatCatalog[startingHorse.coat]||horseCoatCatalog.bay;
+  showToast("Willkommen · Dein gesattelter "+coat.name+" ("+breed.name+") wartet neben dir.",3600);
 }
 
 function publicPlayer(){
   const p=state.player;
+  const horse=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
   return {
     id:p.id,name:p.name,x:p.x,y:p.y,dir:p.dir,moving:p.moving,walkTime:p.walkTime,
     health:p.health,stamina:p.stamina,swimming:p.swimming,drowning:p.drowning,
     heldItem:p.heldItem,actionType:p.actionType,actionProgress:p.actionProgress,
     skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,
-    beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak
+    beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak,
+    mount:horse?{breed:horse.breed,coat:horse.coat,saddled:true}:null
   };
 }
 
@@ -4061,6 +4538,11 @@ function sanitizePlayer(p){
   const styles=["tousled","bob","braid","mohawk","long","curls","undercut","ponytail","bun","hood"];
   const beardStyles=["none","stubble","moustache","goatee","full","braided"];
   const outfits=["traveler","ranger","raider","scholar","north","desert"];
+  const mount=p.mount&&typeof p.mount==="object"?{
+    breed:Object.hasOwn(horseBreedCatalog,p.mount.breed)?p.mount.breed:"warmblood",
+    coat:Object.hasOwn(horseCoatCatalog,p.mount.coat)?p.mount.coat:"bay",
+    saddled:true
+  }:null;
   return {
     id:String(p.id||"peer").slice(0,64),
     name:String(p.name||"Spieler").slice(0,18),
@@ -4084,7 +4566,8 @@ function sanitizePlayer(p){
     beardStyle:beardStyles.includes(p.beardStyle)?p.beardStyle:"none",
     outfit:outfits.includes(p.outfit)?p.outfit:"traveler",
     shirt:String(p.shirt||"#315d9b").slice(0,16),
-    cloak:String(p.cloak||"#684431").slice(0,16)
+    cloak:String(p.cloak||"#684431").slice(0,16),
+    mount
   };
 }
 
@@ -4386,6 +4869,9 @@ $("resumeBtn").addEventListener("click",()=>togglePause(false));
 $("openMapBtn").addEventListener("click",()=>{togglePause(false);toggleMap(true);});
 $("leaveBtn").addEventListener("click",()=>{
   state.running=false;
+  const horse=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
+  if(horse) horse.riderId=null;
+  state.mountedHorseId=null;
   cleanupNetwork();
   togglePause(false);
   toggleMap(false);
@@ -4513,6 +4999,7 @@ requestAnimationFrame(paintPreview);
 window.__ARCHIPELAGO_DEBUG__ = {
   WORLD_SIZE,
   TILE_METERS,
+  CORPSE_DRAG_RANGE,
   palette,
   terrainAt,
   tileDecoration,
@@ -4538,9 +5025,12 @@ window.__ARCHIPELAGO_DEBUG__ = {
   movePlayer,
   updateWorldReactions,
   nearbyInteraction,
+  updateInteractionHint,
   interactWithWorld,
   itemCatalog,
   animalCatalog,
+  horseBreedCatalog,
+  horseCoatCatalog,
   equipmentSlotCatalog,
   inventoryItemSize,
   canPlaceInventoryItem,
@@ -4565,13 +5055,22 @@ window.__ARCHIPELAGO_DEBUG__ = {
   findAnimalTarget,
   damageAnimal,
   updateAnimals,
+  spawnStartingHorse,
+  mountHorse,
+  dismountHorse,
+  horseCanOccupy,
   isSwimmingBiome,
   isSafeGroundBiome,
   killPlayer,
   respawnPlayer,
+  startGame,
   teleportPlayer,
   setDebugMode,
   drawCharacter,
+  drawHorse,
+  drawMountedPair,
+  drawPixelName,
+  publicPlayer,
   sanitizePlayer,
   drawWorld,
   drawWorldMap,

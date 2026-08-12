@@ -2,7 +2,7 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.9)
+## Aktueller Stand (0.10)
 
 - richtiger Titelscreen mit animierter Weltkulisse
 - erweiterter Charaktereditor mit zehn Frisuren, sechs Bartstilen, sechs Kleidungsformen sowie zusätzlichen Haar-, Stoff- und Mantelfarben
@@ -10,7 +10,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - richtungsabhängige Figuren-Layer: lange Haare, Zöpfe und Pferdeschwänze liegen hinter Kopf/Körper und vor dem Rückenmantel; Gebäude, Bäume und Straßendeko werden gemeinsam mit Figuren tiefensortiert
 - neues Ingame-HUD mit Lebensenergie, Ausdauer, Kompass, Uhrzeit, Region und Ortsanzeige
 - kleinerer, zur 8-m-Welt passender Spielermaßstab mit weich nachlaufender Kamera
-- pixelklarer Spieler-Renderpfad mit ganzzahligen Sprite-Pixeln und einer Canvas-Auflösung, die der tatsächlichen Fenstergröße entspricht
+- pixelklarer Spieler-Renderpfad mit ganzzahligen Sprite-Pixeln und einer Canvas-Auflösung, die der tatsächlichen Fenstergröße entspricht; Spielernamen werden ohne geglättete Browser-Schrift als eigenes 5×7-Pixelalphabet gezeichnet
 - funktionales Sprint- und Schwimmsystem mit Strömungs-, Flachwasser- und Tiefseegeschwindigkeiten
 - Tiefseeschwimmen verbraucht Ausdauer; erschöpfte Figuren sinken, ertrinken und erwachen am letzten sicheren Ufer
 - 20 × 20 km große Welt mit Nordpol, Packeis, Tundra, Gletschern, südlicher Sonnenwüste und Oasen
@@ -31,8 +31,13 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Eisenschwert als 1×3-Gegenstand mit einzelnem Hieb und sichtbarem Pixel-Trail sowie Holzfälleraxt als 2×3-Gegenstand
 - persistente Baumzustände mit Trefferpunkten, beschleunigter Fallphysik und anschließendem Zerlegen in drei Holzabschnitte; Länge, Drehpunkt, Stamm- und Kronenhitbox des gefällten Baums werden direkt aus seiner sichtbaren Blockform berechnet
 - frei umherlaufende Hühnergruppen und Wildschweine mit Lebenspunkten, Fluchtverhalten sowie verwundeten Keilern, die den Spieler angreifen
+- frei umherlaufende Pferde in vier Rassen (Warmblut, Araber, Kaltblut und Pony) und sechs Fellvarianten (Brauner, Rappe, Fuchs, Schimmel, Palomino und Schecke); Körperlänge, Körperhöhe, Beinlänge und Reitgeschwindigkeit unterscheiden sich je nach Rasse
+- gesattelte und ungesattelte Pferde als echte Tierzustände; ein ungesatteltes Pferd kann angesehen, aber noch nicht geritten werden
+- bei jedem Spielstart erscheint ein gesatteltes, dem Spieler zugeordnetes Pferd direkt neben der Figur und folgt ihr nach dem Absteigen mit Abstand
+- Aufsitzen und Absteigen über `E` oder die mobile Aktionstaste, richtungsabhängige Reitdarstellung, rassenspezifische Reise- und Galoppgeschwindigkeit, Pferdeausdauer, Hufstaub sowie blockierte Tiefseewege
 - progressive Verletzungsdarstellung: Mit jedem Treffer werden Tier und späterer Kadaver blutiger, ohne Blut- oder Bodeneffekte über Figuren zu zeichnen
-- physische Tierkadaver mit nachschwingenden Körperteilen; über `E` lassen sie sich aufnehmen, hinter dem Spieler herziehen und wieder loslassen
+- physische Tierkadaver mit nachschwingenden Körperteilen; über `E` lassen sie sich aus einer bewusst knappen Reichweite von 1,4 Weltblöcken aufnehmen, hinter dem Spieler herziehen und wieder loslassen
+- Tiere und Kadaver bleiben durch ganzzahlige Pixelkörper, gefüllte Gliedmaßen und ohne weich geglättete Vektorrotationen auch während ihrer Bewegung klar gerastert
 - artspezifische Kadaververwertung durch weitere Waffentreffer mit rohem Hühner-/Wildfleisch, Federn, Haut, Hauern und Knochen als echten Raster- und Stapelitems
 - datengetriebene Tierarten, Verhaltenszustände, Trefferwerte, Loottabellen, Itemkatalog, Equipment-Regeln und Aktions-Handler als Basis für weitere Tiere, Waffen, Rüstung, Ressourcen, Behälter und Beute
 - getrennte Terrain-Ebene mit blockweise verschobenem Bildcache, begrenzte Welt-/Partikel-Caches und gedrosselte HUD-/Kartenupdates für deutlich stabilere Bildraten
@@ -44,18 +49,18 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 
 | Taste | Aktion |
 | --- | --- |
-| WASD / Pfeiltasten | Laufen |
-| Shift | Sprinten |
+| WASD / Pfeiltasten | Laufen / Pferd lenken |
+| Shift | Sprinten / auf dem Pferd galoppieren |
 | I | Inventar öffnen / schließen |
 | 1 / 2 | Schwert / Axt ausrüsten |
 | Linksklick | Ausgerüsteten Gegenstand benutzen |
 | R | Ausgewählten Gegenstand im Inventar drehen |
-| E | Weltobjekt untersuchen / Tierkadaver ziehen oder loslassen |
+| E | Weltobjekt untersuchen / Tierkadaver ziehen oder loslassen / Pferd besteigen oder absteigen |
 | M | Weltkarte |
 | # | Debugmodus öffnen (Passwort `1234`) |
 | Esc | Pause / Overlay schließen |
 
-Auf Smartphones und Tablets erscheint automatisch eine eigene Touch-Oberfläche. Links liegt das D-Pad, rechts befinden sich Sprint, Interaktion und der große Werkzeug-/Angriffsknopf. Inventar, Karte und Pause sind oben rechts erreichbar. Die Steuerung unterstützt mehrere gleichzeitig gehaltene Finger, beispielsweise Laufen plus Sprint und Angriff.
+Auf Smartphones und Tablets erscheint automatisch eine eigene Touch-Oberfläche. Links liegt das D-Pad, rechts befinden sich Sprint beziehungsweise Galopp, eine kontextabhängige Aktionstaste mit den Zuständen `Reiten`, `Absteigen`, `Ziehen` und `Loslassen` sowie der große Werkzeug-/Angriffsknopf. Inventar, Karte und Pause sind oben rechts erreichbar. Die Steuerung unterstützt mehrere gleichzeitig gehaltene Finger, beispielsweise Lenken plus Galopp und Angriff.
 
 Im Debugmodus teleportiert ein Klick auf die Weltkarte an jede gewünschte Position. Ein Klick direkt in die Spielwelt versetzt die Figur innerhalb des sichtbaren Ausschnitts.
 
@@ -70,4 +75,6 @@ Die Website bleibt vollständig statisch. PeerJS wird über ein CDN geladen und 
 
 ## Welttechnik
 
-Die Karte wird nicht als riesige Tilemap gespeichert. Terrain, Flüsse, Wege und Biome werden deterministisch aus Weltkoordinaten berechnet und anschließend auf ein gemeinsames 8-m-Blockraster gelegt. Jeder sichtbare Weltblock erhält darin eine pixelklare 8×8-Textur; Biomgrenzen mischen benachbarte Paletten über eine kurze Ditherzone. Flüsse suchen sich vom Hochland aus einen stetig sinkenden Weg bis zur Küste; kreuzt dort ein Weg, entsteht automatisch eine ausgerichtete Brücke. Große Weltobjekte wie Bäume, Kakteen, Eisformationen, Straßendeko, Häuser und Ruinen bestehen aus mehreren vollständigen Blöcken; nur kleine Bodendetails dürfen innerhalb eines Blocks liegen. Kollision, Schwimmen, Tiefensortierung und Oberflächeneffekte binden die Figuren sichtbar an diese Welt. Interaktive Bäume besitzen getrennte Simulationszustände. Tiere werden zellenweise nur um den sichtbaren Bereich erzeugt und aktualisiert; Artkatalog, KI-Zustände, Ragdollzustand und Loottabelle bleiben getrennt. Items werden über Katalogdaten, Rastermaße, Stapelgrenzen, Equipment-Slots und Aktions-Handler erweitert. Dadurch bleibt die 20-km-Welt performant, obwohl gefällte Bäume und berührte Tiere ihren Zustand behalten.
+Die Karte wird nicht als riesige Tilemap gespeichert. Terrain, Flüsse, Wege und Biome werden deterministisch aus Weltkoordinaten berechnet und anschließend auf ein gemeinsames 8-m-Blockraster gelegt. Jeder sichtbare Weltblock erhält darin eine pixelklare 8×8-Textur; Biomgrenzen mischen benachbarte Paletten über eine kurze Ditherzone. Flüsse suchen sich vom Hochland aus einen stetig sinkenden Weg bis zur Küste; kreuzt dort ein Weg, entsteht automatisch eine ausgerichtete Brücke. Große Weltobjekte wie Bäume, Kakteen, Eisformationen, Straßendeko, Häuser und Ruinen bestehen aus mehreren vollständigen Blöcken; nur kleine Bodendetails dürfen innerhalb eines Blocks liegen. Kollision, Schwimmen, Tiefensortierung und Oberflächeneffekte binden die Figuren sichtbar an diese Welt. Interaktive Bäume besitzen getrennte Simulationszustände. Tiere werden zellenweise nur um den sichtbaren Bereich erzeugt und aktualisiert; Artkatalog, KI-Zustände, Ragdollzustand und Loottabelle bleiben getrennt.
+
+Pferde nutzen denselben persistenten Tierzustand, ergänzen ihn aber um Rasse, Fell, Sattel, Besitzer, Reiter und eigene Ausdauer. Rasse und Fell werden bei wilden Pferden deterministisch aus der Weltzelle gewählt. Das Startpferd wird als persistentes Begleittier außerhalb der normalen Zellerzeugung geführt, damit es beim Spieler bleibt und nicht durch einen Cachewechsel verschwindet. Beim Reiten werden Pferdeposition und Spielerposition in jedem Simulationsschritt synchronisiert; die Kollision prüft einen größeren Pferdekörper und verweigert tiefe Wasserflächen, erlaubt aber Brücken. Für Multiplayer wird die aktuell gerittene Variante als kleine Mount-Beschreibung zusammen mit dem öffentlichen Spielerzustand übertragen, sodass andere Teilnehmer Pferd und Reiter gemeinsam sehen. Items werden weiterhin über Katalogdaten, Rastermaße, Stapelgrenzen, Equipment-Slots und Aktions-Handler erweitert. Dadurch bleibt die 20-km-Welt performant, obwohl gefällte Bäume, berührte Tiere und das persönliche Startpferd ihren Zustand behalten.

@@ -9,12 +9,15 @@ const VIEW_SCALE = 2.35;
 const PLAYER_SPEED = 44;
 const SPRINT_MULTIPLIER = 1.55;
 // The in-world sprite is roughly two world blocks tall, matching the grid scale.
-const WORLD_CHARACTER_SCALE = 1.65;
+const WORLD_CHARACTER_SCALE = 2;
 const PLAYER_RADIUS = 2.15;
 const NET_SEND_HZ = 12;
 const MAP_SAMPLE = 4;
 const TREE_PLOT_TILES = 4;
-const ROAD_DECOR_PLOT_TILES = 12;
+// Roadside scenes should feel discovered, not form an obstacle course. A
+// larger placement cell plus a low deterministic chance leaves long quiet
+// stretches between landmarks.
+const ROAD_DECOR_PLOT_TILES = 20;
 const BLOCK_TEXTURE_PIXELS = 8;
 const RIVER_TRACE_STEP = TILE_METERS * 8;
 const RIVER_INDEX_METERS = TILE_METERS * 8;
@@ -34,6 +37,10 @@ const ROAD_DECOR_CACHE_LIMIT = 24000;
 const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
 const EFFECT_LIMIT = 56;
 const UI_UPDATE_MS = 100;
+const INVENTORY_COLUMNS = 10;
+const INVENTORY_ROWS = 6;
+const TREE_HIT_RANGE = TILE_METERS * 2.8;
+const TREE_SPLIT_HITS = 3;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -69,10 +76,46 @@ titleCtx.imageSmoothingEnabled = false;
 const directions = ["down", "left", "up", "right"];
 const directionLabels = {down:"Vorne", left:"Links", up:"Hinten", right:"Rechts"};
 
+// Items are data-first: adding another weapon, tool, armour piece or resource
+// only requires a catalog entry and (for new behaviours) an action handler.
+const itemCatalog = {
+  ironSword:{
+    name:"Eisenschwert",short:"Schwert",category:"weapon",equipSlot:"mainHand",
+    width:1,height:3,action:"swordSwing",cooldown:.42,description:"Eine verlässliche Klinge. Linksklick führt genau einen Hieb aus."
+  },
+  woodsmanAxe:{
+    name:"Holzfälleraxt",short:"Axt",category:"tool",equipSlot:"mainHand",
+    width:2,height:3,action:"axeSwing",cooldown:.58,treeDamage:38,
+    description:"Fällt Bäume und zerlegt liegende Stämme in handliche Abschnitte."
+  }
+};
+
+const equipmentSlotCatalog = {
+  head:{label:"Kopf",accepts:["helmet"]},
+  body:{label:"Körper",accepts:["armor"]},
+  legs:{label:"Beine",accepts:["legs"]},
+  feet:{label:"Stiefel",accepts:["boots"]},
+  mainHand:{label:"Haupthand",accepts:["weapon","tool"]}
+};
+
+function createStartingInventory(){
+  return {
+    columns:INVENTORY_COLUMNS,
+    rows:INVENTORY_ROWS,
+    selectedId:"sword-1",
+    items:[
+      {id:"sword-1",itemId:"ironSword",x:null,y:null,rotated:false},
+      {id:"axe-1",itemId:"woodsmanAxe",x:1,y:1,rotated:false}
+    ],
+    equipment:{head:null,body:null,legs:null,feet:null,mainHand:"sword-1"}
+  };
+}
+
 const state = {
   running: false,
   paused: false,
   mapOpen: false,
+  inventoryOpen: false,
   lastTime: 0,
   lastNetSend: 0,
   lastUiUpdate: 0,
@@ -87,6 +130,8 @@ const state = {
   dead: false,
   lastSafe: {x:9000,y:11200},
   debug: {enabled:false},
+  inventory:createStartingInventory(),
+  action:{type:null,itemId:null,elapsed:0,duration:0,cooldown:0},
   player: {
     id: "local",
     name: "Abenteurer",
@@ -99,6 +144,9 @@ const state = {
     stamina: 100,
     swimming: false,
     drowning: false,
+    heldItem:"ironSword",
+    actionType:null,
+    actionProgress:0,
     skin: "#f1c27d",
     eyes: "#243b53",
     hair: "#3a2418",
@@ -227,6 +275,9 @@ const landmarks = [
 const terrainCache = new Map();
 const visualTileCache = new Map();
 const treePlotCache = new Map();
+// Only touched trees enter this map, so procedural forests stay cheap while
+// chopped trees keep persistent health and physics state during exploration.
+const treePhysicsStates = new Map();
 const roadDecorPlotCache = new Map();
 const roadDecorCellCache = new Map();
 const terrainFrameCache = {canvas:null,scratch:null,anchorX:NaN,anchorY:NaN,width:0,height:0,columns:0,rows:0,displayRevision:-1};
@@ -563,6 +614,43 @@ function shade(hex,amount){
   return "#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
 }
 
+function colorChannels(hex){
+  const value=parseInt(hex.slice(1),16);
+  return [(value>>16)&255,(value>>8)&255,value&255];
+}
+
+function colorFromChannels(r,g,b){
+  return "#"+((1<<24)+(Math.round(r)<<16)+(Math.round(g)<<8)+Math.round(b)).toString(16).slice(1);
+}
+
+function softBiomeColor(gx,gy,biome){
+  // Rivers stay crisp enough to read. All other borders borrow colour from a
+  // three-block neighbourhood, creating a transition band without changing
+  // gameplay/collision biomes or adding another full terrain pass.
+  if(biome==="river") return palette.river;
+  const current=colorChannels(palette[biome]);
+  let red=current[0]*6;
+  let green=current[1]*6;
+  let blue=current[2]*6;
+  let total=6;
+  const offsets=[[-3,0,1],[3,0,1],[0,-3,1],[0,3,1],[-2,-2,.72],[2,-2,.72],[-2,2,.72],[2,2,.72]];
+  const currentWater=["deepWater","water","shallow","packIce"].includes(biome);
+  for(const [dx,dy,baseWeight] of offsets){
+    const sample=terrainAt((gx+dx+.5)*TILE_METERS,(gy+dy+.5)*TILE_METERS);
+    if(sample.biome==="river") continue;
+    const sampleWater=["deepWater","water","shallow","packIce"].includes(sample.biome);
+    // Coastlines get a subtler blend than land-to-land climate borders so the
+    // shoreline remains obvious while losing the single-tile colour cliff.
+    const weight=currentWater===sampleWater?baseWeight:baseWeight*.48;
+    const channels=colorChannels(palette[sample.biome]);
+    red+=channels[0]*weight;
+    green+=channels[1]*weight;
+    blue+=channels[2]*weight;
+    total+=weight;
+  }
+  return colorFromChannels(red/total,green/total,blue/total);
+}
+
 function tileDecoration(x,y,biome){
   const gx=Math.floor(x/TILE_METERS);
   const gy=Math.floor(y/TILE_METERS);
@@ -721,6 +809,26 @@ function drawRoadTexture(target,sx,sy,size,roadColor,n){
     p:"#746247",
     w:"#6d7c78"
   },sx,sy,size);
+}
+
+function drawBiomeTransitionDither(target,sx,sy,size,gx,gy,transitions){
+  if(!transitions?.length) return;
+  const pixel=size/BLOCK_TEXTURE_PIXELS;
+  for(const transition of transitions){
+    target.fillStyle=transition.color;
+    for(let along=0;along<BLOCK_TEXTURE_PIXELS;along++){
+      const depth=hash2(gx*8+along,gy*8+transition.seed,6121)>.58?2:1;
+      for(let step=0;step<depth;step++){
+        if(hash2(gx*13+along,gy*17+step,transition.seed)<.42) continue;
+        const column=transition.edge==="left"?step:transition.edge==="right"?7-step:along;
+        const row=transition.edge==="top"?step:transition.edge==="bottom"?7-step:along;
+        target.fillRect(
+          Math.floor(sx+column*pixel),Math.floor(sy+row*pixel),
+          Math.max(1,Math.ceil(pixel)),Math.max(1,Math.ceil(pixel))
+        );
+      }
+    }
+  }
 }
 
 function bridgeNeighbor(gx,gy,axis){
@@ -946,6 +1054,11 @@ function drawTreeBlock(gx,gy,camX,camY,colors,seed){
 }
 
 function drawGridTree(tree,camX,camY){
+  const physics=treePhysicsStates.get(treeKey(tree));
+  if(physics&&physics.status!=="standing"){
+    drawPhysicalTree(tree,physics,camX,camY);
+    return;
+  }
   const {gx,gy,kind}=tree;
   const distance=Math.hypot(state.player.x-(gx+.5)*TILE_METERS,state.player.y-(gy+.5)*TILE_METERS);
   const reaction=tree.reactUntil>state.elapsed?1:Math.max(0,1-distance/24);
@@ -1056,7 +1169,7 @@ function roadDecorationForPlot(plotX,plotY){
   const cacheKey=plotX+","+plotY;
   if(roadDecorPlotCache.has(cacheKey)) return roadDecorPlotCache.get(cacheKey);
   const density=hash2(plotX,plotY,5201);
-  if(density<.36) return cacheValue(roadDecorPlotCache,cacheKey,null,ROAD_DECOR_CACHE_LIMIT);
+  if(density<.78) return cacheValue(roadDecorPlotCache,cacheKey,null,ROAD_DECOR_CACHE_LIMIT);
 
   const roadTiles=[];
   const startGX=plotX*ROAD_DECOR_PLOT_TILES;
@@ -1227,17 +1340,30 @@ function drawTile(target,wx,wy,sx,sy,size,terrain){
       && !["deepWater","water","shallow","river"].includes(terrain.biome);
     const deco=!road&&!bridge&&!nearLandmarkGrid(gx,gy,2)?tileDecoration(wx,wy,terrain.biome):null;
     const variation=Math.round((n-.5)*10);
+    const transitions=[];
+    if(terrain.biome!=="river"){
+      const neighbours=[
+        {edge:"left",dx:-1,dy:0,seed:1},{edge:"right",dx:1,dy:0,seed:2},
+        {edge:"top",dx:0,dy:-1,seed:3},{edge:"bottom",dx:0,dy:1,seed:4}
+      ];
+      for(const neighbour of neighbours){
+        const other=terrainAt((gx+neighbour.dx+.5)*TILE_METERS,(gy+neighbour.dy+.5)*TILE_METERS);
+        if(other.biome===terrain.biome||other.biome==="river") continue;
+        transitions.push({...neighbour,color:shade(palette[other.biome],variation)});
+      }
+    }
     visual={
-      n,road,bridge,deco,
-      baseColor:shade(palette[terrain.biome],variation),
+      n,road,bridge,deco,transitions,
+      baseColor:shade(softBiomeColor(gx,gy,terrain.biome),variation),
       roadColor:road?shade("#9b8255",Math.round((n-.5)*14)):null,
       waterLike:["water","deepWater","shallow","river"].includes(terrain.biome)
     };
     cacheValue(visualTileCache,cacheKey,visual,VISUAL_CACHE_LIMIT);
   }
-  const {n,road,bridge,deco}=visual;
+  const {n,road,bridge,deco,transitions}=visual;
   ctx.fillStyle=visual.baseColor;
   ctx.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size)+1,Math.ceil(size)+1);
+  if(!road&&!bridge) drawBiomeTransitionDither(ctx,sx,sy,size,gx,gy,transitions);
   if(bridge) drawBridgeTexture(ctx,sx,sy,size,gx,gy,bridge);
   else if(road) drawRoadTexture(ctx,sx,sy,size,visual.roadColor,n);
 
@@ -1396,12 +1522,121 @@ function treeAtGrid(gx,gy){
   return null;
 }
 
+function treeKey(tree){
+  return tree.gx+","+tree.gy;
+}
+
+function isChoppableTree(tree){
+  return !!tree&&!['iceSpire','cactus'].includes(tree.kind);
+}
+
+function treeLengthMeters(tree){
+  if(["pine","frostPine","ancient"].includes(tree.kind)) return TILE_METERS*6;
+  if(tree.kind==="palm") return TILE_METERS*5;
+  if(tree.kind==="dead") return TILE_METERS*3.4;
+  return TILE_METERS*4.6;
+}
+
+function getTreePhysics(tree,create=false){
+  const key=treeKey(tree);
+  let physics=treePhysicsStates.get(key);
+  if(!physics&&create){
+    const maxHealth=tree.kind==="ancient"?150:["pine","frostPine"].includes(tree.kind)?120:100;
+    physics={
+      key,tree,status:"standing",health:maxHealth,maxHealth,
+      fallDirection:{x:0,y:1},fallProgress:0,angularVelocity:0,
+      splitHits:0,segments:1
+    };
+    treePhysicsStates.set(key,physics);
+  }
+  return physics;
+}
+
+function pointSegmentDistance(px,py,ax,ay,bx,by){
+  const hit=segmentDistance(px,py,ax,ay,bx,by);
+  return hit.distance;
+}
+
+function fallenTreeSegment(physics){
+  const tree=physics.tree;
+  const baseX=(tree.gx+.5)*TILE_METERS;
+  const baseY=(tree.gy+.75)*TILE_METERS;
+  const progress=physics.status==="falling"?physics.fallProgress:1;
+  const length=treeLengthMeters(tree)*progress;
+  return {
+    ax:baseX,ay:baseY,
+    bx:baseX+physics.fallDirection.x*length,
+    by:baseY+physics.fallDirection.y*length
+  };
+}
+
+function fallenTreeCollisionAt(x,y){
+  for(const physics of treePhysicsStates.values()){
+    if(!["falling","fallen"].includes(physics.status)) continue;
+    const segment=fallenTreeSegment(physics);
+    if(pointSegmentDistance(x,y,segment.ax,segment.ay,segment.bx,segment.by)<PLAYER_RADIUS+1.4){
+      return {type:"fallenTree",tree:physics.tree,physics};
+    }
+  }
+  return null;
+}
+
+function drawPhysicalTree(tree,physics,camX,camY){
+  const block=TILE_METERS*VIEW_SCALE;
+  const baseX=Math.round(((tree.gx+.5)*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
+  const baseY=Math.round(((tree.gy+1)*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2);
+  const lengthTiles=treeLengthMeters(tree)/TILE_METERS;
+  const targetAngle=Math.atan2(physics.fallDirection.y,physics.fallDirection.x)+Math.PI/2;
+  const eased=physics.status==="falling"?1-Math.pow(1-physics.fallProgress,2.4):1;
+  const colors=treePalettes[tree.kind]||treePalettes.oak;
+  const trunk=tree.kind==="birch"?"#9d957d":tree.kind==="frostPine"?"#65706a":tree.kind==="palm"?"#76512e":"#5b3d29";
+
+  ctx.save();
+  ctx.translate(baseX,baseY);
+  ctx.rotate(targetAngle*eased);
+  ctx.imageSmoothingEnabled=false;
+
+  if(physics.status==="split"){
+    const segmentLength=lengthTiles*block/3;
+    for(let section=0;section<3;section++){
+      const offset=section*(segmentLength+block*.14);
+      ctx.fillStyle="rgba(4,10,8,.24)";
+      ctx.fillRect(Math.round(-block*.28),Math.round(-offset-segmentLength+block*.12),Math.round(block*.72),Math.round(segmentLength));
+      ctx.fillStyle=section%2?shade(trunk,8):trunk;
+      ctx.fillRect(Math.round(-block*.23),Math.round(-offset-segmentLength),Math.round(block*.58),Math.round(segmentLength-block*.12));
+      ctx.fillStyle="#b88a55";
+      ctx.fillRect(Math.round(-block*.18),Math.round(-offset-segmentLength),Math.round(block*.48),Math.max(2,Math.round(block*.12)));
+    }
+    ctx.restore();
+    return;
+  }
+
+  ctx.fillStyle="rgba(3,10,7,.24)";
+  ctx.fillRect(Math.round(-block*.34),Math.round(-lengthTiles*block+block*.25),Math.round(block*.86),Math.round(lengthTiles*block));
+  ctx.fillStyle=trunk;
+  ctx.fillRect(Math.round(-block*.24),Math.round(-lengthTiles*block),Math.round(block*.55),Math.round(lengthTiles*block));
+  ctx.fillStyle=shade(trunk,22);
+  ctx.fillRect(Math.round(-block*.18),Math.round(-lengthTiles*block),Math.round(block*.15),Math.round(lengthTiles*block));
+
+  const crownY=-lengthTiles*block;
+  for(const [dx,dy,tone] of [[-1.2,-.4,0],[-.4,-.9,1],[.4,-.75,2],[1,-.25,1],[-.65,.05,2],[.25,.15,0]]){
+    ctx.fillStyle=colors[tone];
+    ctx.fillRect(Math.round(dx*block),Math.round(crownY+dy*block),Math.ceil(block*1.15),Math.ceil(block*.95));
+  }
+  ctx.restore();
+}
+
 function collisionAt(x,y){
   if(x<PLAYER_RADIUS||y<PLAYER_RADIUS||x>WORLD_SIZE-PLAYER_RADIUS||y>WORLD_SIZE-PLAYER_RADIUS) return {type:"edge"};
   const gx=Math.floor(x/TILE_METERS);
   const gy=Math.floor(y/TILE_METERS);
   const tree=treeAtGrid(gx,gy);
-  if(tree) return {type:"tree",tree,gx,gy};
+  if(tree){
+    const physics=treePhysicsStates.get(treeKey(tree));
+    if(!physics||physics.status==="standing") return {type:"tree",tree,gx,gy};
+  }
+  const fallenTree=fallenTreeCollisionAt(x,y);
+  if(fallenTree) return fallenTree;
   const structure=structureAtGrid(gx,gy);
   if(structure&&structure.code!=="p") return structure;
   const roadDecoration=roadDecorationAtGrid(gx,gy);
@@ -1503,7 +1738,7 @@ function emitFootstep(x,y){
       dir:state.player.dir,
       color:bridge?bridge.material==="wood"?"#4f3422":"#555954":terrain.biome==="beach"?"#806b45":roadAt(x,y)?"#665238":"#31452f"
     });
-    if(roadAt(x,y)&&!bridge) addEffect({type:"dust",layer:"air",x,y,life:.5,size:.7,vx:(Math.random()-.5)*2,vy:-2-Math.random()*2});
+    if(roadAt(x,y)&&!bridge) addEffect({type:"dust",layer:"ground",x,y,life:.5,size:.7,vx:(Math.random()-.5)*2,vy:-2-Math.random()*2});
   }
 }
 
@@ -1513,7 +1748,7 @@ function shakeTree(tree,strong=false){
   const colors=tree.kind==="iceSpire"?["#d9f0ed","#8fc8ce","#f4fbf7"]:tree.kind==="cactus"?["#4f854d","#76a35b","#d7ba5e"]:["#6f8f42","#4f7738","#9a9a4d"];
   for(let i=0;i<count;i++){
     addEffect({
-      type:"leaf",layer:"air",
+      type:"leaf",layer:"ground",
       x:(tree.gx+.5)*TILE_METERS+(Math.random()-.5)*12,
       y:(tree.gy-1.5)*TILE_METERS+(Math.random()-.5)*10,
       life:.75+Math.random()*.65,size:.65+Math.random()*.45,
@@ -1528,16 +1763,18 @@ function reactToCollision(hit,x,y){
   state.blockedUntil=state.elapsed+.2;
   if(hit.type==="tree") shakeTree(hit.tree,false);
   else if(hit.type==="structure"||hit.type==="roadDecoration"){
-    for(let i=0;i<3;i++) addEffect({type:"dust",layer:"air",x,y,life:.55,size:.7,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
+    for(let i=0;i<3;i++) addEffect({type:"dust",layer:"ground",x,y,life:.55,size:.7,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
   }
 }
 
 function updateWorldReactions(dt){
+  updateItemAction(dt);
+  updateTreePhysics(dt);
   for(const effect of state.effects){
     effect.life-=dt;
     effect.x+=(effect.vx||0)*dt;
     effect.y+=(effect.vy||0)*dt;
-    if(effect.type==="leaf") effect.vy+=5*dt;
+    if(effect.type==="leaf"||effect.type==="woodChip") effect.vy+=5*dt;
   }
   state.effects=state.effects.filter((effect)=>effect.life>0);
   const follow=1-Math.exp(-dt*7.5);
@@ -1573,6 +1810,10 @@ function drawEffects(camX,camY,layer){
       ctx.fillStyle="#b8a47a";
       const size=Math.max(2,Math.round((effect.size+progress)*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,size);
+    }else if(effect.type==="woodChip"){
+      ctx.fillStyle=effect.color||"#b47c43";
+      const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
+      ctx.fillRect(Math.round(x),Math.round(y),size,Math.max(2,Math.round(size*.55)));
     }else if(effect.type==="bubble"){
       ctx.strokeStyle="rgba(218,245,243,.82)";
       ctx.lineWidth=1;
@@ -1632,10 +1873,10 @@ function interactWithWorld(){
     else showToast(target.tree.kind==="dead"?"Das morsche Holz knarrt im Wind.":"Blätter rascheln durch die Krone.");
   }else if(target.type==="roadDecoration"){
     const meta=roadAssetCatalog[target.asset.kind];
-    for(let i=0;i<4;i++) addEffect({type:"dust",layer:"air",x:state.player.x,y:state.player.y,life:.45+Math.random()*.35,size:.55,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
+    for(let i=0;i<4;i++) addEffect({type:"dust",layer:"ground",x:state.player.x,y:state.player.y,life:.45+Math.random()*.35,size:.55,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3});
     showToast(meta.message,2600);
   }else{
-    for(let i=0;i<7;i++) addEffect({type:"dust",layer:"air",x:state.player.x,y:state.player.y,life:.55+Math.random()*.45,size:.6,vx:(Math.random()-.5)*5,vy:-2-Math.random()*4});
+    for(let i=0;i<7;i++) addEffect({type:"dust",layer:"ground",x:state.player.x,y:state.player.y,life:.55+Math.random()*.45,size:.6,vx:(Math.random()-.5)*5,vy:-2-Math.random()*4});
     if(target.code==="D") showToast("Die schwere Tür gibt noch nicht nach.");
     else if(target.landmark.type==="ruin") showToast("Verwitterte Zeichen glimmen für einen Augenblick.");
     else showToast(target.landmark.name+" wirkt bewohnt.");
@@ -1704,6 +1945,9 @@ function drawWorld(){
   const sourceY=(viewTop-startY)/TILE_METERS*TERRAIN_TILE_PIXELS;
   syncTerrainLayer(terrainFrame,sourceX,sourceY,w,h);
 
+  // Ambient motes and physical debris belong behind actors. Only explicit
+  // overlay effects (currently drowning bubbles) are allowed above them.
+  drawAmbientNature();
   drawEffects(camX,camY,"ground");
   const trees=visibleTrees(
     Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
@@ -1719,7 +1963,11 @@ function drawWorld(){
   );
   for(const landmark of landmarks) drawLandmarkGround(landmark,camX,camY);
 
-  const renderQueue=trees.map((tree)=>({type:"tree",y:(tree.gy+.8)*TILE_METERS,tree}));
+  const renderQueue=trees.map((tree)=>{
+    const physics=treePhysicsStates.get(treeKey(tree));
+    const segment=physics&&physics.status!=="standing"?fallenTreeSegment(physics):null;
+    return {type:"tree",y:segment?Math.max(segment.ay,segment.by):(tree.gy+.8)*TILE_METERS,tree};
+  });
   for(const asset of roadDecorations){
     const meta=roadAssetCatalog[asset.kind];
     renderQueue.push({type:"roadDecoration",y:(asset.gy+meta.h-.12)*TILE_METERS,asset});
@@ -1758,7 +2006,6 @@ function drawWorld(){
     ctx.fillStyle="rgba(8,18,38,"+darkness+")";
     ctx.fillRect(0,0,w,h);
   }
-  drawAmbientNature();
 }
 
 function drawBackHair(c,u,style,hair,dir){
@@ -1996,7 +2243,7 @@ function drawOutfitDetails(c,u,style,dir,shirt){
   const back=dir==="up";
   if(style==="ranger"){
     c.fillStyle="#755438";
-    if(side) for(let i=0;i<5;i++) c.fillRect((7+i*.7)*u,(10+i)*u,2*u,1*u);
+    if(side) for(let i=0;i<5;i++) c.fillRect((7+Math.floor(i*.7))*u,(10+i)*u,2*u,1*u);
     else for(let i=0;i<6;i++) c.fillRect((5+i)*u,(10+i)*u,2*u,1*u);
   }else if(style==="raider"){
     c.fillStyle="#a99d86";
@@ -2023,8 +2270,75 @@ function drawOutfitDetails(c,u,style,dir,shirt){
   }
 }
 
+function drawHeldItem(c,u,dir,player){
+  const itemId=player.heldItem;
+  if(!itemCatalog[itemId]) return;
+  const progress=Math.max(0,Math.min(1,Number(player.actionProgress)||0));
+  const active=!!player.actionType&&progress>0&&progress<1;
+  const side=dir==="left"||dir==="right";
+  const hand=side?[11,12]:dir==="down"?[13,12]:[3,11];
+  const baseAngle=side?-.30:dir==="down"?.78:-2.25;
+  const swing=active?lerp(-1.12,1.05,smooth(progress)):0;
+
+  c.save();
+  c.translate(hand[0]*u,hand[1]*u);
+  c.rotate(baseAngle+swing);
+
+  if(itemId==="ironSword"&&active&&progress>.12&&progress<.88){
+    // The trail is deliberately part of the character draw, so it can never
+    // leak into the generic particle layer above the sprite.
+    c.save();
+    c.globalAlpha=.42*(1-Math.abs(progress-.5)*1.35);
+    c.strokeStyle="#d9f5ed";
+    c.lineWidth=Math.max(2,u*1.35);
+    c.beginPath();
+    c.arc(0,0,8*u,-1.18,.35);
+    c.stroke();
+    c.globalAlpha=.28;
+    c.strokeStyle="#6dc8d2";
+    c.lineWidth=Math.max(1,u*.65);
+    c.beginPath();
+    c.arc(0,0,10*u,-1.12,.42);
+    c.stroke();
+    c.restore();
+    for(const [offset,alpha,length] of [[-.72,.16,7],[-.48,.25,8],[-.24,.36,9]]){
+      c.save();
+      c.rotate(offset);
+      c.globalAlpha=alpha;
+      c.fillStyle=offset<-.5?"#5eb5c2":"#d7f1e9";
+      c.fillRect(3*u,-u,length*u,Math.max(2,u));
+      c.restore();
+    }
+  }
+
+  if(itemId==="ironSword"){
+    c.fillStyle="#553b25";
+    c.fillRect(-2*u,-u,4*u,2*u);
+    c.fillStyle="#d5c487";
+    c.fillRect(1*u,-2*u,2*u,4*u);
+    c.fillStyle="#6d7777";
+    c.fillRect(3*u,-u,7*u,2*u);
+    c.fillStyle="#c9d2cb";
+    c.fillRect(4*u,-u,5*u,u);
+    c.fillRect(9*u,0,2*u,u);
+  }else if(itemId==="woodsmanAxe"){
+    c.fillStyle="#6e492b";
+    c.fillRect(-u,-u,10*u,2*u);
+    c.fillStyle="#a87945";
+    c.fillRect(0,-u,7*u,u);
+    c.fillStyle="#454d4e";
+    c.fillRect(6*u,-3*u,4*u,6*u);
+    c.fillStyle="#929995";
+    c.fillRect(7*u,-3*u,4*u,2*u);
+    c.fillRect(9*u,-2*u,2*u,4*u);
+  }
+  c.restore();
+}
+
 function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
-  const u=scale;
+  // Integer sprite units keep every limb and clothing layer on the pixel
+  // grid. Fractional units were the main source of the soft, smeared player.
+  const u=Math.max(1,Math.round(scale));
   const moving=!!p.moving;
   const clock=Number(p.walkTime)||0;
   const frames=[0,1,0,-1];
@@ -2084,7 +2398,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle="#8e6d37";
     c.fillRect(6*u,15*u,6*u,1*u);
     c.fillStyle=skin;
-    c.fillRect((10+step*.45)*u,10*u,2*u,5*u);
+    c.fillRect((10+step*.5)*u,10*u,2*u,5*u);
     c.fillRect(6*u,3*u,6*u,7*u);
     drawHair(c,u,hairStyle,hair,"side");
     c.fillStyle=eyes;
@@ -2119,8 +2433,8 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle="#8e6d37";
     c.fillRect(4*u,15*u,8*u,1*u);
     c.fillStyle=skin;
-    c.fillRect(2*u,(10+step*.45)*u,2*u,5*u);
-    c.fillRect(12*u,(10-step*.45)*u,2*u,5*u);
+    c.fillRect(2*u,(10+step*.5)*u,2*u,5*u);
+    c.fillRect(12*u,(10-step*.5)*u,2*u,5*u);
     c.fillRect(4*u,3*u,8*u,7*u);
     drawHair(c,u,hairStyle,hair,"down");
     c.fillStyle=eyes;
@@ -2154,11 +2468,13 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle=shade(cloak,-18);
     c.fillRect(4*u,17*u,8*u,1*u);
     c.fillStyle=skin;
-    c.fillRect(2*u,(10+step*.45)*u,2*u,5*u);
-    c.fillRect(12*u,(10-step*.45)*u,2*u,5*u);
+    c.fillRect(2*u,(10+step*.5)*u,2*u,5*u);
+    c.fillRect(12*u,(10-step*.5)*u,2*u,5*u);
     c.fillRect(4*u,3*u,8*u,7*u);
     drawHair(c,u,hairStyle,hair,"up");
   }
+
+  if(!portraitMode) drawHeldItem(c,u,dir,p);
 
   if(local&&!portraitMode){
     c.fillStyle="#f0cd67";
@@ -2178,8 +2494,363 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   }
 }
 
+function inventoryItemById(id){
+  return state.inventory.items.find((item)=>item.id===id)||null;
+}
+
+function equippedSlotForItem(id){
+  for(const [slot,itemId] of Object.entries(state.inventory.equipment)) if(itemId===id) return slot;
+  return null;
+}
+
+function inventoryItemSize(item){
+  const definition=itemCatalog[item.itemId];
+  return item.rotated?{width:definition.height,height:definition.width}:{width:definition.width,height:definition.height};
+}
+
+function canPlaceInventoryItem(item,x,y,ignoreId=item.id){
+  const size=inventoryItemSize(item);
+  if(x<0||y<0||x+size.width>state.inventory.columns||y+size.height>state.inventory.rows) return false;
+  for(const other of state.inventory.items){
+    if(other.id===ignoreId||equippedSlotForItem(other.id)||other.x==null||other.y==null) continue;
+    const otherSize=inventoryItemSize(other);
+    const overlaps=x<other.x+otherSize.width&&x+size.width>other.x&&y<other.y+otherSize.height&&y+size.height>other.y;
+    if(overlaps) return false;
+  }
+  return true;
+}
+
+function firstInventorySpace(item){
+  const size=inventoryItemSize(item);
+  for(let y=0;y<=state.inventory.rows-size.height;y++){
+    for(let x=0;x<=state.inventory.columns-size.width;x++) if(canPlaceInventoryItem(item,x,y)) return {x,y};
+  }
+  return null;
+}
+
+function syncHeldItem(){
+  const handId=state.inventory.equipment.mainHand;
+  const item=inventoryItemById(handId);
+  state.player.heldItem=item?item.itemId:null;
+  updateQuickbar();
+}
+
+function equipInventoryItem(id){
+  const item=inventoryItemById(id);
+  if(!item) return false;
+  const definition=itemCatalog[item.itemId];
+  const slot=definition.equipSlot;
+  if(!slot||!equipmentSlotCatalog[slot]?.accepts.includes(definition.category)) return false;
+  if(state.inventory.equipment[slot]===id) return true;
+  const currentId=state.inventory.equipment[slot];
+  if(currentId){
+    const current=inventoryItemById(currentId);
+    const space=firstInventorySpace(current);
+    if(!space){showToast("Im Rucksack ist kein Platz zum Wechseln.");return false;}
+    current.x=space.x;
+    current.y=space.y;
+  }
+  const previousSlot=equippedSlotForItem(id);
+  if(previousSlot) state.inventory.equipment[previousSlot]=null;
+  item.x=null;
+  item.y=null;
+  state.inventory.equipment[slot]=id;
+  state.inventory.selectedId=id;
+  syncHeldItem();
+  renderInventory();
+  showToast(definition.name+" ausgerüstet");
+  return true;
+}
+
+function unequipInventoryItem(id){
+  const item=inventoryItemById(id);
+  const slot=equippedSlotForItem(id);
+  if(!item||!slot) return false;
+  const space=firstInventorySpace(item);
+  if(!space){showToast("Der Rucksack ist voll.");return false;}
+  state.inventory.equipment[slot]=null;
+  item.x=space.x;
+  item.y=space.y;
+  syncHeldItem();
+  renderInventory();
+  return true;
+}
+
+function moveSelectedInventoryItem(x,y){
+  const item=inventoryItemById(state.inventory.selectedId);
+  if(!item) return;
+  const previousSlot=equippedSlotForItem(item.id);
+  if(!canPlaceInventoryItem(item,x,y)){
+    showToast("Dort ist nicht genug Platz.");
+    return;
+  }
+  if(previousSlot) state.inventory.equipment[previousSlot]=null;
+  item.x=x;
+  item.y=y;
+  syncHeldItem();
+  renderInventory();
+}
+
+function rotateSelectedInventoryItem(){
+  const item=inventoryItemById(state.inventory.selectedId);
+  if(!item||equippedSlotForItem(item.id)) return;
+  item.rotated=!item.rotated;
+  if(!canPlaceInventoryItem(item,item.x,item.y)){
+    item.rotated=!item.rotated;
+    showToast("Zum Drehen fehlt Platz.");
+  }
+  renderInventory();
+}
+
+function drawInventoryItemIcon(canvas,itemId){
+  const c=canvas.getContext("2d");
+  c.imageSmoothingEnabled=false;
+  c.clearRect(0,0,canvas.width,canvas.height);
+  const unit=Math.max(2,Math.floor(Math.min(canvas.width/16,canvas.height/18)));
+  const cx=Math.floor(canvas.width/2);
+  const cy=Math.floor(canvas.height/2);
+  c.save();
+  c.translate(cx,cy);
+  c.rotate(itemId==="woodsmanAxe"?-.55:-.72);
+  if(itemId==="ironSword"){
+    c.fillStyle="#563b23";c.fillRect(-2*unit,5*unit,4*unit,2*unit);
+    c.fillStyle="#d1b866";c.fillRect(-3*unit,3*unit,6*unit,2*unit);
+    c.fillStyle="#8c9693";c.fillRect(-unit,-6*unit,2*unit,10*unit);
+    c.fillStyle="#d6ded7";c.fillRect(-unit,-6*unit,unit,8*unit);
+    c.fillRect(0,-7*unit,unit,2*unit);
+  }else{
+    c.fillStyle="#79502e";c.fillRect(-unit,-6*unit,2*unit,13*unit);
+    c.fillStyle="#aa7442";c.fillRect(-unit,-5*unit,unit,10*unit);
+    c.fillStyle="#4a5352";c.fillRect(-4*unit,-7*unit,8*unit,4*unit);
+    c.fillStyle="#a8afaa";c.fillRect(-4*unit,-7*unit,6*unit,unit);
+  }
+  c.restore();
+}
+
+function renderInventory(){
+  const grid=$("inventoryGrid");
+  if(!grid) return;
+  grid.replaceChildren();
+  for(let y=0;y<state.inventory.rows;y++){
+    for(let x=0;x<state.inventory.columns;x++){
+      const cell=document.createElement("button");
+      cell.type="button";
+      cell.className="inventory-cell";
+      cell.style.gridColumn=String(x+1);
+      cell.style.gridRow=String(y+1);
+      cell.setAttribute("aria-label","Feld "+(x+1)+", "+(y+1));
+      cell.addEventListener("click",()=>moveSelectedInventoryItem(x,y));
+      grid.appendChild(cell);
+    }
+  }
+  for(const item of state.inventory.items){
+    if(equippedSlotForItem(item.id)||item.x==null||item.y==null) continue;
+    const definition=itemCatalog[item.itemId];
+    const size=inventoryItemSize(item);
+    const button=document.createElement("button");
+    button.type="button";
+    button.className="inventory-item"+(state.inventory.selectedId===item.id?" selected":"");
+    button.style.gridColumn=(item.x+1)+" / span "+size.width;
+    button.style.gridRow=(item.y+1)+" / span "+size.height;
+    button.title=definition.name;
+    const icon=document.createElement("canvas");
+    icon.width=Math.max(32,size.width*32);
+    icon.height=Math.max(48,size.height*30);
+    button.appendChild(icon);
+    const label=document.createElement("span");
+    label.textContent=definition.short;
+    button.appendChild(label);
+    button.addEventListener("click",(event)=>{
+      event.stopPropagation();
+      state.inventory.selectedId=item.id;
+      renderInventory();
+    });
+    button.addEventListener("dblclick",()=>equipInventoryItem(item.id));
+    grid.appendChild(button);
+    drawInventoryItemIcon(icon,item.itemId);
+  }
+
+  for(const element of document.querySelectorAll("[data-equipment-slot]")){
+    const slot=element.dataset.equipmentSlot;
+    const item=inventoryItemById(state.inventory.equipment[slot]);
+    const meta=equipmentSlotCatalog[slot];
+    element.classList.toggle("occupied",!!item);
+    element.classList.toggle("selected",!!item&&state.inventory.selectedId===item.id);
+    element.innerHTML='<small>'+meta.label+'</small><strong>'+(item?itemCatalog[item.itemId].short:"Leer")+'</strong>';
+  }
+
+  const selected=inventoryItemById(state.inventory.selectedId);
+  const definition=selected?itemCatalog[selected.itemId]:null;
+  $("inventoryItemName").textContent=definition?definition.name:"Kein Gegenstand";
+  $("inventoryItemSize").textContent=selected?(inventoryItemSize(selected).width+" × "+inventoryItemSize(selected).height+" Felder"):"–";
+  $("inventoryItemDescription").textContent=definition?definition.description:"Wähle einen Gegenstand oder Ausrüstungsslot.";
+  const equipped=selected?equippedSlotForItem(selected.id):null;
+  $("inventoryEquipBtn").disabled=!definition;
+  $("inventoryEquipBtn").textContent=equipped?"In Rucksack":"Ausrüsten";
+  $("inventoryRotateBtn").disabled=!selected||!!equipped;
+  updateQuickbar();
+}
+
+function updateQuickbar(){
+  if(!$("quickbar")) return;
+  const equippedId=state.inventory.equipment.mainHand;
+  for(const button of document.querySelectorAll("[data-quick-item]")){
+    const item=state.inventory.items.find((entry)=>entry.itemId===button.dataset.quickItem);
+    button.classList.toggle("active",!!item&&item.id===equippedId);
+    button.classList.toggle("stored",!!item&&item.id!==equippedId);
+  }
+}
+
+function toggleInventory(force){
+  state.inventoryOpen=force??!state.inventoryOpen;
+  if(state.inventoryOpen){
+    state.mapOpen=false;
+    $("mapOverlay").classList.add("hidden");
+    state.keys.clear();
+    renderInventory();
+  }
+  $("inventoryOverlay").classList.toggle("hidden",!state.inventoryOpen);
+}
+
+function directionVector(direction){
+  return direction==="up"?{x:0,y:-1}:direction==="down"?{x:0,y:1}:direction==="left"?{x:-1,y:0}:{x:1,y:0};
+}
+
+function closestPointOnSegment(px,py,ax,ay,bx,by){
+  const dx=bx-ax;
+  const dy=by-ay;
+  const length=dx*dx+dy*dy;
+  const t=length?Math.max(0,Math.min(1,((px-ax)*dx+(py-ay)*dy)/length)):0;
+  return {x:ax+dx*t,y:ay+dy*t,t};
+}
+
+function findTreeToolTarget(range=TREE_HIT_RANGE){
+  const px=state.player.x;
+  const py=state.player.y;
+  const facing=directionVector(state.player.dir);
+  const gx=Math.floor(px/TILE_METERS);
+  const gy=Math.floor(py/TILE_METERS);
+  const candidates=visibleTrees(gx-5,gx+5,gy-5,gy+5);
+  let best=null;
+  for(const tree of candidates){
+    if(!isChoppableTree(tree)) continue;
+    const physics=treePhysicsStates.get(treeKey(tree));
+    if(physics?.status==="falling"||physics?.status==="split") continue;
+    let point={x:(tree.gx+.5)*TILE_METERS,y:(tree.gy+.5)*TILE_METERS};
+    if(physics?.status==="fallen"){
+      const segment=fallenTreeSegment(physics);
+      point=closestPointOnSegment(px,py,segment.ax,segment.ay,segment.bx,segment.by);
+    }
+    const dx=point.x-px;
+    const dy=point.y-py;
+    const distance=Math.hypot(dx,dy);
+    if(distance>range) continue;
+    const facingDot=distance?(dx*facing.x+dy*facing.y)/distance:1;
+    if(facingDot<-.12) continue;
+    const score=distance+(1-facingDot)*5;
+    if(!best||score<best.score) best={tree,physics,point,distance,score};
+  }
+  return best;
+}
+
+function emitWoodChips(x,y,count=6){
+  for(let index=0;index<count;index++) addEffect({
+    type:"woodChip",layer:"ground",x:x+(Math.random()-.5)*2,y:y+(Math.random()-.5)*2,
+    life:.55+Math.random()*.5,size:.7+Math.random()*.45,
+    vx:(Math.random()-.5)*8,vy:-3-Math.random()*6,
+    color:index%2?"#8c5e35":"#c08a4f"
+  });
+}
+
+function performAxeImpact(){
+  const target=findTreeToolTarget();
+  if(!target) return;
+  const physics=target.physics||getTreePhysics(target.tree,true);
+  emitWoodChips(target.point.x,target.point.y,7);
+  if(physics.status==="fallen"){
+    physics.splitHits++;
+    if(physics.splitHits>=TREE_SPLIT_HITS){
+      physics.status="split";
+      physics.segments=3;
+      showToast("Der Stamm zerbricht in drei Holzabschnitte.",2200);
+    }else{
+      showToast("Stamm zerteilen · "+physics.splitHits+" / "+TREE_SPLIT_HITS);
+    }
+    return;
+  }
+  shakeTree(target.tree,true);
+  physics.health=Math.max(0,physics.health-itemCatalog.woodsmanAxe.treeDamage);
+  if(physics.health>0){
+    showToast("Baumstabilität · "+Math.ceil(physics.health/physics.maxHealth*100)+" %",1100);
+    return;
+  }
+  const baseX=(target.tree.gx+.5)*TILE_METERS;
+  const baseY=(target.tree.gy+.5)*TILE_METERS;
+  let dx=baseX-state.player.x;
+  let dy=baseY-state.player.y;
+  const length=Math.hypot(dx,dy);
+  if(length<.01){const facing=directionVector(state.player.dir);dx=facing.x;dy=facing.y;}
+  else {dx/=length;dy/=length;}
+  physics.status="falling";
+  physics.fallDirection={x:dx,y:dy};
+  physics.fallProgress=.01;
+  physics.angularVelocity=.22;
+  showToast("Der Baum fällt!",1500);
+}
+
+function performSwordImpact(){
+  const target=findTreeToolTarget(TILE_METERS*2.1);
+  if(target&&(!target.physics||target.physics.status==="standing")) shakeTree(target.tree,false);
+}
+
+function useEquippedItem(){
+  if(!state.running||state.paused||state.mapOpen||state.inventoryOpen||state.dead||state.action.cooldown>0) return false;
+  const item=inventoryItemById(state.inventory.equipment.mainHand);
+  if(!item) return false;
+  const definition=itemCatalog[item.itemId];
+  state.action.type=definition.action;
+  state.action.itemId=item.itemId;
+  state.action.elapsed=0;
+  state.action.duration=definition.action==="swordSwing"?.34:.48;
+  state.action.cooldown=definition.cooldown;
+  state.player.actionType=definition.action;
+  state.player.actionProgress=.001;
+  if(definition.action==="axeSwing") performAxeImpact();
+  else if(definition.action==="swordSwing") performSwordImpact();
+  return true;
+}
+
+function updateItemAction(dt){
+  state.action.cooldown=Math.max(0,state.action.cooldown-dt);
+  if(!state.action.type) return;
+  state.action.elapsed+=dt;
+  state.player.actionProgress=Math.min(1,state.action.elapsed/state.action.duration);
+  if(state.action.elapsed>=state.action.duration){
+    state.action.type=null;
+    state.action.itemId=null;
+    state.player.actionType=null;
+    state.player.actionProgress=0;
+  }
+}
+
+function updateTreePhysics(dt){
+  for(const physics of treePhysicsStates.values()){
+    if(physics.status!=="falling") continue;
+    physics.angularVelocity+=dt*1.45;
+    physics.fallProgress=Math.min(1,physics.fallProgress+physics.angularVelocity*dt);
+    if(physics.fallProgress<1) continue;
+    physics.status="fallen";
+    const segment=fallenTreeSegment(physics);
+    for(let i=0;i<10;i++) addEffect({
+      type:"dust",layer:"ground",x:segment.bx+(Math.random()-.5)*8,y:segment.by+(Math.random()-.5)*8,
+      life:.7+Math.random()*.4,size:.8,vx:(Math.random()-.5)*5,vy:-2-Math.random()*3
+    });
+    showToast("Der Stamm liegt. Mit der Axt kannst du ihn weiter zerteilen.",2600);
+  }
+}
+
 function movePlayer(dt){
-  if(state.paused||state.mapOpen||state.dead) return;
+  if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
   let dx=0;
   let dy=0;
   if(state.keys.has("w")||state.keys.has("arrowup")) dy-=1;
@@ -2578,6 +3249,19 @@ function renderTitleMap(){
   }
 }
 
+function resizeGameCanvas(){
+  const panel=$("gamePanel");
+  const width=Math.max(320,Math.floor(panel?.clientWidth||window.innerWidth||1280));
+  const height=Math.max(240,Math.floor(panel?.clientHeight||window.innerHeight||720));
+  if(canvas.width===width&&canvas.height===height) return;
+  canvas.width=width;
+  canvas.height=height;
+  ctx.imageSmoothingEnabled=false;
+  // Force one terrain-layer resync after a viewport change; subsequent frames
+  // return to cheap row/column shifts.
+  terrainFrameCache.displayRevision=-1;
+}
+
 function loop(ts){
   if(!state.running) return;
   const dt=Math.min(.04,(ts-state.lastTime)/1000||0);
@@ -2585,7 +3269,7 @@ function loop(ts){
   state.elapsed+=dt;
   movePlayer(dt);
   updateWorldReactions(dt);
-  if(!state.paused&&!state.mapOpen) drawWorld();
+  if(!state.paused&&!state.mapOpen&&!state.inventoryOpen) drawWorld();
   if(ts-state.lastUiUpdate>=UI_UPDATE_MS){
     state.lastUiUpdate=ts;
     drawMinimap();
@@ -2680,12 +3364,16 @@ function startGame(){
   state.player.drowning=false;
   state.dead=false;
   state.player.walkTime=0;
+  syncHeldItem();
   $("menuScreen").classList.add("hidden");
   $("titleScreen").classList.add("hidden");
   $("gamePanel").classList.remove("hidden");
+  resizeGameCanvas();
   state.running=true;
   state.paused=false;
   state.mapOpen=false;
+  state.inventoryOpen=false;
+  $("inventoryOverlay").classList.add("hidden");
   $("deathMenu").classList.add("hidden");
   state.lastTime=performance.now();
   state.lastUiUpdate=0;
@@ -2700,6 +3388,7 @@ function publicPlayer(){
   return {
     id:p.id,name:p.name,x:p.x,y:p.y,dir:p.dir,moving:p.moving,walkTime:p.walkTime,
     health:p.health,stamina:p.stamina,swimming:p.swimming,drowning:p.drowning,
+    heldItem:p.heldItem,actionType:p.actionType,actionProgress:p.actionProgress,
     skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,
     beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak
   };
@@ -2722,6 +3411,9 @@ function sanitizePlayer(p){
     stamina:Number.isFinite(Number(p.stamina))?Math.max(0,Math.min(100,Number(p.stamina))):100,
     swimming:!!p.swimming,
     drowning:!!p.drowning,
+    heldItem:["ironSword","woodsmanAxe"].includes(p.heldItem)?p.heldItem:null,
+    actionType:["swordSwing","axeSwing"].includes(p.actionType)?p.actionType:null,
+    actionProgress:Number.isFinite(Number(p.actionProgress))?Math.max(0,Math.min(1,Number(p.actionProgress))):0,
     skin:String(p.skin||"#f1c27d").slice(0,16),
     eyes:String(p.eyes||"#243b53").slice(0,16),
     hair:String(p.hair||"#3a2418").slice(0,16),
@@ -2920,11 +3612,16 @@ function maybeSendNetwork(ts){
 
 function togglePause(force){
   state.paused=force??!state.paused;
+  if(state.paused&&state.inventoryOpen) toggleInventory(false);
   $("pauseMenu").classList.toggle("hidden",!state.paused);
 }
 
 function toggleMap(force){
   state.mapOpen=force??!state.mapOpen;
+  if(state.mapOpen&&state.inventoryOpen){
+    state.inventoryOpen=false;
+    $("inventoryOverlay").classList.add("hidden");
+  }
   $("mapOverlay").classList.toggle("hidden",!state.mapOpen);
   if(state.mapOpen) drawWorldMap();
 }
@@ -2936,8 +3633,24 @@ window.addEventListener("keydown",(event)=>{
     event.preventDefault();
   }
   if(key==="escape"&&state.running){
-    if(state.mapOpen) toggleMap(false);
+    if(state.inventoryOpen) toggleInventory(false);
+    else if(state.mapOpen) toggleMap(false);
     else togglePause();
+    event.preventDefault();
+  }
+  if(key==="i"&&state.running&&!event.repeat){
+    if(state.paused) togglePause(false);
+    toggleInventory();
+    event.preventDefault();
+  }
+  if(key==="r"&&state.inventoryOpen&&!event.repeat){
+    rotateSelectedInventoryItem();
+    event.preventDefault();
+  }
+  if((key==="1"||key==="2")&&state.running&&!event.repeat){
+    const itemId=key==="1"?"ironSword":"woodsmanAxe";
+    const item=state.inventory.items.find((entry)=>entry.itemId===itemId);
+    if(item) equipInventoryItem(item.id);
     event.preventDefault();
   }
   if(key==="m"&&state.running&&!event.repeat){
@@ -2948,7 +3661,7 @@ window.addEventListener("keydown",(event)=>{
     requestDebugMode();
     event.preventDefault();
   }
-  if(key==="e"&&state.running&&!state.paused&&!state.mapOpen&&!event.repeat){
+  if(key==="e"&&state.running&&!state.paused&&!state.mapOpen&&!state.inventoryOpen&&!event.repeat){
     interactWithWorld();
     event.preventDefault();
   }
@@ -3004,6 +3717,26 @@ $("leaveBtn").addEventListener("click",()=>{
 });
 $("closeMapBtn").addEventListener("click",()=>toggleMap(false));
 $("respawnBtn").addEventListener("click",respawnPlayer);
+$("closeInventoryBtn").addEventListener("click",()=>toggleInventory(false));
+$("inventoryEquipBtn").addEventListener("click",()=>{
+  const selected=inventoryItemById(state.inventory.selectedId);
+  if(!selected) return;
+  if(equippedSlotForItem(selected.id)) unequipInventoryItem(selected.id);
+  else equipInventoryItem(selected.id);
+});
+$("inventoryRotateBtn").addEventListener("click",rotateSelectedInventoryItem);
+for(const slot of document.querySelectorAll("[data-equipment-slot]")){
+  slot.addEventListener("click",()=>{
+    const itemId=state.inventory.equipment[slot.dataset.equipmentSlot];
+    if(itemId){state.inventory.selectedId=itemId;renderInventory();}
+  });
+}
+for(const button of document.querySelectorAll("[data-quick-item]")){
+  button.addEventListener("click",()=>{
+    const item=state.inventory.items.find((entry)=>entry.itemId===button.dataset.quickItem);
+    if(item) equipInventoryItem(item.id);
+  });
+}
 
 worldMap.addEventListener("click",(event)=>{
   if(!state.debug.enabled) return;
@@ -3014,21 +3747,31 @@ worldMap.addEventListener("click",(event)=>{
 });
 
 canvas.addEventListener("click",(event)=>{
-  if(!state.debug.enabled||state.mapOpen||state.paused) return;
-  const rect=canvas.getBoundingClientRect();
-  const px=(event.clientX-rect.left)/rect.width*canvas.width;
-  const py=(event.clientY-rect.top)/rect.height*canvas.height;
-  teleportPlayer(state.camera.x+(px-canvas.width/2)/VIEW_SCALE,state.camera.y+(py-canvas.height/2)/VIEW_SCALE);
+  if(event.button!==0||state.mapOpen||state.paused||state.inventoryOpen) return;
+  if(state.debug.enabled){
+    const rect=canvas.getBoundingClientRect();
+    const px=(event.clientX-rect.left)/rect.width*canvas.width;
+    const py=(event.clientY-rect.top)/rect.height*canvas.height;
+    teleportPlayer(state.camera.x+(px-canvas.width/2)/VIEW_SCALE,state.camera.y+(py-canvas.height/2)/VIEW_SCALE);
+  }else{
+    useEquippedItem();
+  }
 });
 
+window.addEventListener("resize",resizeGameCanvas);
+
 renderTitleMap();
+resizeGameCanvas();
 updatePreviewDirection();
 updatePortrait();
+renderInventory();
+updateQuickbar();
 requestAnimationFrame(paintPreview);
 
 window.__ARCHIPELAGO_DEBUG__ = {
   WORLD_SIZE,
   TILE_METERS,
+  palette,
   terrainAt,
   tileDecoration,
   islandField,
@@ -3045,6 +3788,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   visibleRoadDecorations,
   roadAssetCatalog,
   drawRoadDecoration,
+  softBiomeColor,
   structureAtGrid,
   visibleStructureBlocks,
   collisionAt,
@@ -3053,6 +3797,21 @@ window.__ARCHIPELAGO_DEBUG__ = {
   updateWorldReactions,
   nearbyInteraction,
   interactWithWorld,
+  itemCatalog,
+  equipmentSlotCatalog,
+  inventoryItemSize,
+  canPlaceInventoryItem,
+  equipInventoryItem,
+  unequipInventoryItem,
+  rotateSelectedInventoryItem,
+  useEquippedItem,
+  updateItemAction,
+  getTreePhysics,
+  treePhysicsStates,
+  findTreeToolTarget,
+  performAxeImpact,
+  updateTreePhysics,
+  fallenTreeSegment,
   isSwimmingBiome,
   isSafeGroundBiome,
   killPlayer,

@@ -33,7 +33,7 @@
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.6</span>
+        <span class="title-version">PROTOTYP · 0.8</span>
       </div>
     </section>
 
@@ -263,9 +263,20 @@
       <div class="control-strip glass-panel">
         <span><kbd>WASD</kbd> Bewegen</span>
         <span><kbd>SHIFT</kbd> Sprinten</span>
+        <span><kbd>I</kbd> Inventar</span>
         <span><kbd>E</kbd> Interagieren</span>
+        <span><kbd>LMB</kbd> Benutzen</span>
         <span><kbd>M</kbd> Karte</span>
         <span><kbd>ESC</kbd> Menü</span>
+      </div>
+
+      <div id="quickbar" class="quickbar glass-panel" aria-label="Schnellzugriff">
+        <button type="button" data-quick-item="ironSword" aria-label="Schwert ausrüsten">
+          <kbd>1</kbd><i class="quick-icon sword-icon" aria-hidden="true"></i><small>Schwert</small>
+        </button>
+        <button type="button" data-quick-item="woodsmanAxe" aria-label="Axt ausrüsten">
+          <kbd>2</kbd><i class="quick-icon axe-icon" aria-hidden="true"></i><small>Axt</small>
+        </button>
       </div>
 
       <div id="interactionHint" class="interaction-hint hidden"><kbd>E</kbd> Untersuchen</div>
@@ -305,6 +316,54 @@
               <p>Die Karte zeigt nur bekannte Hauptorte. Kleinere Geheimnisse findest du beim Erkunden.</p>
             </aside>
           </div>
+        </div>
+      </div>
+
+      <div id="inventoryOverlay" class="screen-overlay inventory-overlay hidden">
+        <div class="inventory-card modal-card">
+          <header class="inventory-head">
+            <div>
+              <p class="eyebrow">Ausrüstung &amp; Gepäck</p>
+              <h2>Inventar</h2>
+              <p>Mehrfeld-Raster · Gegenstände können gedreht und verschoben werden</p>
+            </div>
+            <button id="closeInventoryBtn" class="icon-button" aria-label="Inventar schließen">×</button>
+          </header>
+
+          <div class="inventory-layout">
+            <section class="equipment-panel" aria-labelledby="equipmentTitle">
+              <div class="inventory-section-title"><span>01</span><h3 id="equipmentTitle">Charakter</h3></div>
+              <div class="equipment-paperdoll">
+                <button type="button" class="equipment-slot slot-head" data-equipment-slot="head"><small>Kopf</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-body" data-equipment-slot="body"><small>Körper</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-legs" data-equipment-slot="legs"><small>Beine</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-feet" data-equipment-slot="feet"><small>Stiefel</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-hand" data-equipment-slot="mainHand"><small>Haupthand</small><strong>Schwert</strong></button>
+                <div class="paperdoll-silhouette" aria-hidden="true"><i></i><b></b><span></span></div>
+              </div>
+            </section>
+
+            <section class="backpack-panel" aria-labelledby="backpackTitle">
+              <div class="inventory-section-title"><span>02</span><h3 id="backpackTitle">Rucksack</h3><small>10 × 6</small></div>
+              <div id="inventoryGrid" class="inventory-grid" aria-label="Rucksackraster"></div>
+              <p class="inventory-help">Gegenstand wählen, danach ein freies Feld anklicken. Doppelklick rüstet ihn aus.</p>
+            </section>
+
+            <aside class="item-inspector">
+              <div class="inventory-section-title"><span>03</span><h3>Details</h3></div>
+              <p class="item-kicker">AUSGEWÄHLT</p>
+              <h3 id="inventoryItemName">Kein Gegenstand</h3>
+              <strong id="inventoryItemSize">–</strong>
+              <p id="inventoryItemDescription">Wähle einen Gegenstand oder Ausrüstungsslot.</p>
+              <div class="inventory-actions">
+                <button id="inventoryEquipBtn" type="button" class="primary">Ausrüsten</button>
+                <button id="inventoryRotateBtn" type="button">Drehen <kbd>R</kbd></button>
+              </div>
+              <div class="system-note"><span>✦</span><p><strong>Modulares System</strong>Neue Waffen, Rüstung, Ressourcen und Behälter verwenden dasselbe Raster.</p></div>
+            </aside>
+          </div>
+
+          <footer class="inventory-footer"><kbd>I</kbd> schließen <span>·</span> <kbd>1</kbd>/<kbd>2</kbd> Werkzeug wechseln <span>·</span> <kbd>LMB</kbd> benutzen</footer>
         </div>
       </div>
 

@@ -200,3 +200,8 @@ input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d6aa5220
   .minimap-frame{display:none}.quickbar{top:65px}.quickbar button{width:44px;height:44px}
   .interaction-hint,.toast{bottom:calc(max(8px,env(safe-area-inset-bottom)) + 144px)}
 }
+
+@media (hover:none) and (pointer:coarse) and (max-width:370px){
+  .player-hud{left:max(8px,env(safe-area-inset-left));top:calc(max(8px,env(safe-area-inset-top)) + 58px);width:248px}
+  .compass{top:calc(max(8px,env(safe-area-inset-top)) + 118px)}
+}

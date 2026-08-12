@@ -2,7 +2,7 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.8)
+## Aktueller Stand (0.9)
 
 - richtiger Titelscreen mit animierter Weltkulisse
 - erweiterter Charaktereditor mit zehn Frisuren, sechs Bartstilen, sechs Kleidungsformen sowie zusätzlichen Haar-, Stoff- und Mantelfarben
@@ -29,8 +29,12 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - vollständiger Baum-/Kronenabstand zu Wegen sowie Kollisionen und eigene Interaktionen für große Straßendekorationen
 - Mehrfeld-Inventar mit 10×6-Rucksackraster, Verschieben, Drehen, Schnellwechsel und vorbereiteten Slots für Kopf, Körper, Beine, Stiefel und Haupthand
 - Eisenschwert als 1×3-Gegenstand mit einzelnem Hieb und sichtbarem Pixel-Trail sowie Holzfälleraxt als 2×3-Gegenstand
-- persistente Baumzustände mit Trefferpunkten, beschleunigter Fallphysik, liegender Stammkollision und anschließendem Zerlegen in drei Holzabschnitte
-- datengetriebener Itemkatalog, Equipment-Regeln und Aktions-Handler als Basis für weitere Waffen, Rüstung, Ressourcen, Behälter und Beute
+- persistente Baumzustände mit Trefferpunkten, beschleunigter Fallphysik und anschließendem Zerlegen in drei Holzabschnitte; Länge, Drehpunkt, Stamm- und Kronenhitbox des gefällten Baums werden direkt aus seiner sichtbaren Blockform berechnet
+- frei umherlaufende Hühnergruppen und Wildschweine mit Lebenspunkten, Fluchtverhalten sowie verwundeten Keilern, die den Spieler angreifen
+- progressive Verletzungsdarstellung: Mit jedem Treffer werden Tier und späterer Kadaver blutiger, ohne Blut- oder Bodeneffekte über Figuren zu zeichnen
+- physische Tierkadaver mit nachschwingenden Körperteilen; über `E` lassen sie sich aufnehmen, hinter dem Spieler herziehen und wieder loslassen
+- artspezifische Kadaververwertung durch weitere Waffentreffer mit rohem Hühner-/Wildfleisch, Federn, Haut, Hauern und Knochen als echten Raster- und Stapelitems
+- datengetriebene Tierarten, Verhaltenszustände, Trefferwerte, Loottabellen, Itemkatalog, Equipment-Regeln und Aktions-Handler als Basis für weitere Tiere, Waffen, Rüstung, Ressourcen, Behälter und Beute
 - getrennte Terrain-Ebene mit blockweise verschobenem Bildcache, begrenzte Welt-/Partikel-Caches und gedrosselte HUD-/Kartenupdates für deutlich stabilere Bildraten
 - Minimap und große beschriftete Weltkarte mit Legende
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
@@ -45,7 +49,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 | 1 / 2 | Schwert / Axt ausrüsten |
 | Linksklick | Ausgerüsteten Gegenstand benutzen |
 | R | Ausgewählten Gegenstand im Inventar drehen |
-| E | Weltobjekt untersuchen |
+| E | Weltobjekt untersuchen / Tierkadaver ziehen oder loslassen |
 | M | Weltkarte |
 | # | Debugmodus öffnen (Passwort `1234`) |
 | Esc | Pause / Overlay schließen |
@@ -63,4 +67,4 @@ Die Website bleibt vollständig statisch. PeerJS wird über ein CDN geladen und 
 
 ## Welttechnik
 
-Die Karte wird nicht als riesige Tilemap gespeichert. Terrain, Flüsse, Wege und Biome werden deterministisch aus Weltkoordinaten berechnet und anschließend auf ein gemeinsames 8-m-Blockraster gelegt. Jeder sichtbare Weltblock erhält darin eine pixelklare 8×8-Textur; Biomgrenzen mischen benachbarte Paletten über eine kurze Ditherzone. Flüsse suchen sich vom Hochland aus einen stetig sinkenden Weg bis zur Küste; kreuzt dort ein Weg, entsteht automatisch eine ausgerichtete Brücke. Große Weltobjekte wie Bäume, Kakteen, Eisformationen, Straßendeko, Häuser und Ruinen bestehen aus mehreren vollständigen Blöcken; nur kleine Bodendetails dürfen innerhalb eines Blocks liegen. Kollision, Schwimmen, Tiefensortierung und Oberflächeneffekte binden die Figuren sichtbar an diese Welt. Interaktive Bäume besitzen getrennte Simulationszustände, während Items über Katalogdaten, Rastermaße, Equipment-Slots und Aktions-Handler erweitert werden. Dadurch sehen alle verbundenen Spieler dieselbe Welt, während im Spiel nur der sichtbare Ausschnitt gerendert wird.
+Die Karte wird nicht als riesige Tilemap gespeichert. Terrain, Flüsse, Wege und Biome werden deterministisch aus Weltkoordinaten berechnet und anschließend auf ein gemeinsames 8-m-Blockraster gelegt. Jeder sichtbare Weltblock erhält darin eine pixelklare 8×8-Textur; Biomgrenzen mischen benachbarte Paletten über eine kurze Ditherzone. Flüsse suchen sich vom Hochland aus einen stetig sinkenden Weg bis zur Küste; kreuzt dort ein Weg, entsteht automatisch eine ausgerichtete Brücke. Große Weltobjekte wie Bäume, Kakteen, Eisformationen, Straßendeko, Häuser und Ruinen bestehen aus mehreren vollständigen Blöcken; nur kleine Bodendetails dürfen innerhalb eines Blocks liegen. Kollision, Schwimmen, Tiefensortierung und Oberflächeneffekte binden die Figuren sichtbar an diese Welt. Interaktive Bäume besitzen getrennte Simulationszustände. Tiere werden zellenweise nur um den sichtbaren Bereich erzeugt und aktualisiert; Artkatalog, KI-Zustände, Ragdollzustand und Loottabelle bleiben getrennt. Items werden über Katalogdaten, Rastermaße, Stapelgrenzen, Equipment-Slots und Aktions-Handler erweitert. Dadurch bleibt die 20-km-Welt performant, obwohl gefällte Bäume und berührte Tiere ihren Zustand behalten.

@@ -1,6 +1,6 @@
 "use strict";
 
-const ARTIST_ASSET_SCHEMA_VERSION=1;
+const ARTIST_ASSET_SCHEMA_VERSION=2;
 const ARTIST_ASSET_PROJECT_URL="artist-assets.json";
 const ARTIST_ASSET_STORAGE_KEY="archipelago.artist-assets.v1";
 const ARTIST_ASSET_GATE_KEY="archipelago.artist-studio.local-gate.v1";
@@ -8,16 +8,78 @@ const ARTIST_ASSET_MAX_LAYERS=12;
 const ARTIST_ASSET_MAX_FRAMES=24;
 const ARTIST_ASSET_HISTORY_LIMIT=40;
 const ARTIST_SPRITE_CACHE_LIMIT=192;
+const ARTIST_ASSET_MAX_ANIMATIONS=32;
 const $=(id)=>document.getElementById(id);
 const state=window.__ARCHIPELAGO_DEBUG__?.state||{running:false,elapsed:0};
 
-const artistAssetDefinitions={
-  player:{label:"Spieler",width:16,height:24,scale:3,animations:["idle","walk","attack","ride"]},
-  chicken:{label:"Huhn",width:16,height:16,scale:2,animations:["idle","walk","panic","dead"]},
-  boar:{label:"Wildschwein",width:22,height:18,scale:3,animations:["idle","walk","windup","charge","dead"]},
-  horse:{label:"Pferd",width:30,height:28,scale:2,animations:["idle","walk","gallop","dead"]},
-  crow:{label:"Rabe",width:18,height:16,scale:2,animations:["perched","fly"]}
+const artistAssetCategories={
+  characters:"Figuren",animals:"Tiere",variants:"Tier-Varianten",hair:"Frisuren",items:"Waffen & Items",
+  terrain:"Terrain-Blöcke",trees:"Bäume & Natur",structures:"Bau-Blöcke",props:"Weltobjekte"
 };
+const artistAssetDefinitions={};
+function registerArtistDefinitions(category,definitions){
+  for(const definition of definitions) artistAssetDefinitions[definition.id]={category,...definition};
+}
+
+registerArtistDefinitions("characters",[
+  {id:"player",label:"Spieler komplett",width:16,height:24,scale:3,runtime:"player",animations:["idle","walk","attack","ride"]}
+]);
+registerArtistDefinitions("animals",[
+  {id:"chicken",label:"Huhn · Basis",width:16,height:16,scale:2,runtime:"chicken",animations:["idle","walk","panic","dead"]},
+  {id:"boar",label:"Wildschwein · Basis",width:22,height:18,scale:3,runtime:"boar",animations:["idle","walk","windup","charge","recover","dead"]},
+  {id:"horse",label:"Pferd · Basis",width:30,height:28,scale:2,runtime:"horse",animations:["idle","walk","gallop","dead"]},
+  {id:"crow",label:"Rabe · Flug",width:18,height:16,scale:2,runtime:"crow",animations:["fly"]}
+]);
+registerArtistDefinitions("variants",[
+  ...[["white","Weiß"],["brown","Braun"],["black","Schwarz"]].map(([variant,label])=>({id:"chicken_"+variant,label:"Huhn · "+label,width:16,height:16,scale:2,runtime:"chicken",variant,base:"chicken",guide:"chicken",animations:["idle","walk","panic","dead"]})),
+  ...[["forest","Wald"],["dark","Dunkel"],["russet","Rotbraun"]].map(([variant,label])=>({id:"boar_"+variant,label:"Wildschwein · "+label,width:22,height:18,scale:3,runtime:"boar",variant,base:"boar",guide:"boar",animations:["idle","walk","windup","charge","recover","dead"]})),
+  ...[["bay","Brauner"],["black","Rappe"],["chestnut","Fuchs"],["grey","Schimmel"],["palomino","Palomino"],["pinto","Schecke"]].map(([variant,label])=>({id:"horse_"+variant,label:"Pferd · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]})),
+  ...[["warmblood","Warmblut"],["arabian","Araber"],["draft","Kaltblut"],["pony","Pony"]].map(([variant,label])=>({id:"horse_breed_"+variant,label:"Pferderasse · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]}))
+]);
+registerArtistDefinitions("hair",[
+  ["tousled","Zerzaust"],["bob","Bob"],["braid","Zopf"],["mohawk","Irokese"],["long","Lang"],
+  ["curls","Locken"],["undercut","Undercut"],["ponytail","Pferdeschwanz"],["bun","Dutt"],["hood","Kapuze"]
+].map(([style,label])=>({id:"hair_"+style,label:"Haar · "+label,width:16,height:16,scale:3,runtime:"hair",variant:style,guide:"hair",animations:["down","side","up"]})));
+registerArtistDefinitions("items",[
+  {id:"item_ironSword",label:"Eisenschwert",width:16,height:12,scale:2,runtime:"item",variant:"ironSword",guide:"sword",animations:["idle","swing"]},
+  {id:"item_woodsmanAxe",label:"Holzfälleraxt",width:16,height:12,scale:2,runtime:"item",variant:"woodsmanAxe",guide:"axe",animations:["idle","swing"]},
+  ...[["rawChicken","Rohes Huhn","meat"],["rawPork","Rohes Wild","meat"],["feather","Feder","feather"],["boarHide","Tierhaut","hide"],["tusk","Hauer","tusk"],["bone","Knochen","bone"]]
+    .map(([variant,label,guide])=>({id:"item_"+variant,label,width:16,height:16,scale:2,runtime:"item",variant,guide,animations:["idle"]}))
+]);
+
+const artistTerrainPalettes={
+  deepWater:["#12374f","#22526b"],water:["#1e526b","#397b8c"],shallow:["#438091","#75a8ae"],river:["#4b91a5","#9bc5c6"],
+  packIce:["#b9d7d7","#e1eeee"],glacier:["#d8e8e5","#f4fbf8"],tundra:["#7e927e","#aab6a1"],beach:["#cdb36b","#ead18a"],
+  desert:["#c59a50","#e4bd6e"],oasis:["#4f8552","#80aa65"],plains:["#718c4f","#9bae68"],forest:["#365f40","#5e8151"],
+  jungle:["#285237","#4c7649"],swamp:["#53694a","#7b855e"],rock:["#777568","#aaa594"],mountain:["#545b5c","#858b89"],snow:["#d9ded7","#f2f4ef"]
+};
+registerArtistDefinitions("terrain",Object.entries(artistTerrainPalettes).map(([biome,palette])=>({
+  id:"block_"+biome,label:"Block · "+biome,width:8,height:8,scale:2,runtime:"tile",variant:biome,kind:"tile",palette,animations:["idle"]
+})).concat([
+  {id:"bridge_wood",label:"Brücke · Holz",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#76502f","#a87943"],animations:["idle"]},
+  {id:"bridge_stone",label:"Brücke · Stein",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#77786d","#a7a899"],animations:["idle"]}
+]));
+
+registerArtistDefinitions("trees",[
+  ...[["oak","Eiche"],["pine","Kiefer"],["birch","Birke"],["willow","Weide"],["frostPine","Frostkiefer"],["acacia","Akazie"],["palm","Palme"]]
+    .flatMap(([variant,label])=>[
+      {id:"tree_trunk_"+variant,label:label+" · Stamm",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:variant==="birch"?["#5e5b54","#9d957d"]:["#4a301f","#76512e"],animations:["idle"]},
+      {id:"tree_leaf_"+variant,label:label+" · Krone",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#29452f","#628044"],animations:["idle","react"]}
+    ]),
+  {id:"tree_dead",label:"Toter Baum · Block",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#3b332b","#75634b"],animations:["idle"]},
+  {id:"tree_cactus",label:"Kaktus · Block",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#386a43","#76a35b"],animations:["idle"]},
+  {id:"tree_iceSpire",label:"Eisformation · Block",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#6da9b4","#e7f6f2"],animations:["idle"]}
+]);
+
+const structureLabels={p:"Pflaster",R:"Dach",C:"Mauer",H:"Hauswand",W:"Holzwand",B:"Ziegel",D:"Tür",S:"Stein"};
+registerArtistDefinitions("structures",Object.entries(structureLabels).map(([code,label])=>({
+  id:"structure_"+code,label:"Bau-Block · "+label,width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#4b3b34","#a8875c"],variant:code,animations:["idle"]
+})));
+
+const artistPropDefinitions={boulder:[2,2,"Fels"],standingStone:[1,2,"Menhir"],sign:[1,2,"Wegweiser"],milestone:[1,2,"Meilenstein"],wagon:[3,2,"Wagen"],handcart:[2,2,"Handkarren"],supplies:[2,2,"Vorräte"],lantern:[1,2,"Laterne"],shrine:[2,2,"Schrein"],camp:[2,1,"Lager"],log:[3,1,"Baumstamm"],rubble:[2,1,"Trümmer"],notice:[2,2,"Anschlagtafel"]};
+registerArtistDefinitions("props",Object.entries(artistPropDefinitions).map(([variant,[w,h,label]])=>({
+  id:"prop_"+variant,label,width:w*8,height:h*8,scale:2,runtime:"prop",variant,guide:"prop",animations:["idle"]
+})));
 
 function paintArtistRect(frame,x,y,width,height,color){
   for(let py=y;py<y+height;py++) for(let px=x;px<x+width;px++) frame[px+","+py]=color;
@@ -25,6 +87,9 @@ function paintArtistRect(frame,x,y,width,height,color){
 
 function createArtistGuideLayers(id){
   const shadow={};const body={};const details={};
+  const definition=artistAssetDefinitions[id];
+  const guideId=definition?.guide||id;
+  id=guideId;
   if(id==="player"){
     paintArtistRect(shadow,3,22,10,1,"#08101499");
     paintArtistRect(body,2,8,12,10,"#684431");paintArtistRect(body,4,9,8,8,"#315d9b");paintArtistRect(body,4,16,3,6,"#222b31");paintArtistRect(body,9,16,3,6,"#222b31");paintArtistRect(body,4,3,8,7,"#f1c27d");paintArtistRect(body,2,10,2,5,"#f1c27d");paintArtistRect(body,12,10,2,5,"#f1c27d");
@@ -41,10 +106,31 @@ function createArtistGuideLayers(id){
     paintArtistRect(shadow,3,25,24,2,"#08101488");
     paintArtistRect(body,4,8,17,9,"#8d4f2d");paintArtistRect(body,19,5,5,9,"#8d4f2d");paintArtistRect(body,22,3,6,6,"#8d4f2d");paintArtistRect(body,6,16,3,10,"#60311f");paintArtistRect(body,11,16,3,10,"#60311f");paintArtistRect(body,18,16,3,10,"#60311f");paintArtistRect(body,22,16,3,10,"#60311f");
     paintArtistRect(details,4,6,4,4,"#241b19");paintArtistRect(details,2,8,3,8,"#241b19");paintArtistRect(details,24,2,2,3,"#241b19");paintArtistRect(details,26,2,2,3,"#241b19");paintArtistRect(details,26,6,1,1,"#111817");paintArtistRect(details,27,7,2,1,"#d9c8ad");paintArtistRect(details,9,8,9,2,"#b86f3e");
-  }else{
+  }else if(id==="crow"){
     paintArtistRect(shadow,3,13,12,1,"#08101477");
     paintArtistRect(body,4,6,10,6,"#20272a");paintArtistRect(body,10,3,5,5,"#151b1e");paintArtistRect(body,3,7,6,3,"#333a3c");paintArtistRect(body,7,12,1,3,"#352a24");paintArtistRect(body,11,12,1,3,"#352a24");
     paintArtistRect(details,15,5,2,1,"#6d5940");paintArtistRect(details,13,5,1,1,"#d6c688");paintArtistRect(details,5,8,6,1,"#4b5354");
+  }else if(id==="hair"){
+    paintArtistRect(body,3,2,10,4,"#3a2418");paintArtistRect(body,3,5,3,8,"#3a2418");paintArtistRect(body,10,5,3,8,"#3a2418");
+    paintArtistRect(details,5,1,3,3,"#62402a");paintArtistRect(details,9,3,3,2,"#281912");
+  }else if(id==="sword"){
+    paintArtistRect(body,2,8,5,2,"#5b3c24");paintArtistRect(body,6,6,2,6,"#d1b866");paintArtistRect(body,7,5,7,2,"#8c9693");
+    paintArtistRect(details,8,5,5,1,"#d6ded7");paintArtistRect(details,13,4,2,2,"#d6ded7");
+  }else if(id==="axe"){
+    paintArtistRect(body,2,8,11,2,"#79502e");paintArtistRect(body,9,4,5,6,"#4a5352");
+    paintArtistRect(details,3,8,7,1,"#aa7442");paintArtistRect(details,9,4,5,2,"#a8afaa");
+  }else if(definition?.kind==="tile"){
+    const palette=definition.palette||["#4d5b55","#83927d"];
+    paintArtistRect(body,0,0,definition.width,definition.height,palette[0]);
+    for(let py=0;py<definition.height;py+=3) for(let px=(py/3)%2;px<definition.width;px+=3) paintArtistRect(details,px,py,1,1,palette[1]||palette[0]);
+    paintArtistRect(shadow,0,definition.height-1,definition.width,1,"#08101433");
+  }else if(id==="prop"){
+    paintArtistRect(shadow,1,definition.height-2,Math.max(1,definition.width-2),2,"#08101466");
+    paintArtistRect(body,2,Math.max(1,Math.floor(definition.height*.3)),Math.max(2,definition.width-4),Math.max(2,Math.ceil(definition.height*.62)),"#6e4728");
+    paintArtistRect(details,3,Math.max(1,Math.floor(definition.height*.3)+1),Math.max(1,definition.width-6),2,"#a47a48");
+  }else{
+    const colours={meat:["#a84b43","#efb59c"],feather:["#ddd6bd","#8f8877"],hide:["#74513b","#a07a59"],tusk:["#d9ceb0","#f2ead1"],bone:["#d9d0b5","#f1ead3"]}[id]||["#727b72","#b6c0b2"];
+    paintArtistRect(body,3,4,10,9,colours[0]);paintArtistRect(details,5,5,5,3,colours[1]);
   }
   return [{id:"shadow",name:"Schatten",visible:true,opacity:1,frame:shadow},{id:"body",name:"Körper",visible:true,opacity:1,frame:body},{id:"details",name:"Details",visible:true,opacity:1,frame:details}];
 }
@@ -52,9 +138,10 @@ function createArtistGuideLayers(id){
 function prepareArtistGuideFrame(id,layerId,animation,source){
   const frame=cloneArtistData(source);
   if(layerId!=="details"||animation!=="dead") return frame;
-  if(id==="chicken"){delete frame["11,5"];frame["10,6"]="#24201b";frame["11,6"]="#24201b";}
-  else if(id==="boar"){delete frame["16,9"];frame["15,10"]="#211b18";frame["16,10"]="#211b18";}
-  else if(id==="horse"){delete frame["26,6"];frame["25,7"]="#111817";frame["26,7"]="#111817";}
+  const guideId=artistAssetDefinitions[id]?.guide||id;
+  if(guideId==="chicken"){delete frame["11,5"];frame["10,6"]="#24201b";frame["11,6"]="#24201b";}
+  else if(guideId==="boar"){delete frame["16,9"];frame["15,10"]="#211b18";frame["16,10"]="#211b18";}
+  else if(guideId==="horse"){delete frame["26,6"];frame["25,7"]="#111817";frame["26,7"]="#111817";}
   return frame;
 }
 
@@ -83,11 +170,15 @@ let artistAssetPack=createDefaultArtistPack();
 const artistSpriteCanvasCache=new Map();
 const assetEditorState={
   unlocked:false,open:false,assetId:"player",animation:"idle",frameIndex:0,layerIndex:0,tool:"pencil",
-  onion:false,showGrid:true,drawing:false,lastPixel:null,dirty:false,history:[],redo:[],previewStartedAt:performance.now(),saveTimer:null
+  category:"characters",search:"",onion:false,showGrid:true,drawing:false,lastPixel:null,dirty:false,history:[],redo:[],previewStartedAt:performance.now(),saveTimer:null
 };
 
 function cloneArtistData(value){return JSON.parse(JSON.stringify(value));}
-function invalidateArtistSpriteCache(){artistSpriteCanvasCache.clear();}
+function invalidateArtistSpriteCache(){
+  artistSpriteCanvasCache.clear();
+  const terrainCache=window.__ARCHIPELAGO_DEBUG__?.terrainFrameCache;
+  if(terrainCache){terrainCache.anchorX=NaN;terrainCache.anchorY=NaN;terrainCache.displayRevision=-1;}
+}
 function clampArtistNumber(value,min,max,fallback){value=Number(value);return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;}
 function validArtistColor(value){return typeof value==="string"&&/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value);}
 function cleanArtistId(value,fallback){const clean=String(value||"").toLowerCase().replace(/[^a-z0-9_-]/g,"").slice(0,32);return clean||fallback;}
@@ -113,7 +204,7 @@ function normalizeArtistFrame(frame,width,height){
 function normalizeArtistPack(candidate){
   const defaults=createDefaultArtistPack();
   const source=candidate&&typeof candidate==="object"?candidate:{};
-  if(source.schemaVersion!=null&&Number(source.schemaVersion)!==ARTIST_ASSET_SCHEMA_VERSION) throw new Error("Nicht unterstützte Asset-Pack-Version");
+  if(source.schemaVersion!=null&&![1,ARTIST_ASSET_SCHEMA_VERSION].includes(Number(source.schemaVersion))) throw new Error("Nicht unterstützte Asset-Pack-Version");
   const pack={schemaVersion:ARTIST_ASSET_SCHEMA_VERSION,name:String(source.name||defaults.name).slice(0,80),updatedAt:source.updatedAt||null,assets:{}};
   for(const [id,definition] of Object.entries(artistAssetDefinitions)){
     const fallback=defaults.assets[id];
@@ -122,10 +213,16 @@ function normalizeArtistPack(candidate){
       id,enabled:input.enabled===true,width:definition.width,height:definition.height,
       scale:clampArtistNumber(input.scale,1,6,definition.scale),animations:{},layers:[]
     };
-    for(const animation of definition.animations){
+    const customAnimations=Object.keys(input.animations||{})
+      .map((name)=>cleanArtistId(name,""))
+      .filter((name,index,list)=>name&&!definition.animations.includes(name)&&list.indexOf(name)===index)
+      .slice(0,Math.max(0,ARTIST_ASSET_MAX_ANIMATIONS-definition.animations.length));
+    const animationNames=definition.animations.concat(customAnimations);
+    for(const animation of animationNames){
       const track=input.animations?.[animation]||{};
+      const fallbackTrack=fallback.animations[animation]||fallback.animations[definition.animations[0]];
       asset.animations[animation]={
-        fps:Math.round(clampArtistNumber(track.fps,1,24,fallback.animations[animation].fps)),
+        fps:Math.round(clampArtistNumber(track.fps,1,24,fallbackTrack.fps)),
         frames:Math.round(clampArtistNumber(track.frames,1,ARTIST_ASSET_MAX_FRAMES,1))
       };
     }
@@ -136,14 +233,18 @@ function normalizeArtistPack(candidate){
         id:cleanArtistId(inputLayer.id,"layer"+(index+1)),name:String(inputLayer.name||"Ebene "+(index+1)).slice(0,24),
         visible:inputLayer.visible!==false,opacity:clampArtistNumber(inputLayer.opacity,0,1,1),frames:{}
       };
-      for(const animation of definition.animations){
+      for(const animation of animationNames){
         const frameCount=asset.animations[animation].frames;
         const sourceFrames=Array.isArray(inputLayer.frames?.[animation])?inputLayer.frames[animation]:[];
         layer.frames[animation]=Array.from({length:frameCount},(_,frameIndex)=>normalizeArtistFrame(sourceFrames[frameIndex],definition.width,definition.height));
       }
       asset.layers.push(layer);
     }
-    if(!asset.layers.length) asset.layers=fallback.layers;
+    if(!asset.layers.length) asset.layers=cloneArtistData(fallback.layers);
+    for(const layer of asset.layers) for(const animation of animationNames){
+      if(layer.frames[animation]) continue;
+      layer.frames[animation]=Array.from({length:asset.animations[animation].frames},()=>({}));
+    }
     const usedIds=new Set();
     for(const layer of asset.layers){
       let unique=layer.id;
@@ -181,8 +282,8 @@ function currentArtistFrame(){return currentArtistLayer().frames[assetEditorStat
 function ensureArtistSelection(){
   if(!artistAssetDefinitions[assetEditorState.assetId]) assetEditorState.assetId="player";
   const definition=artistAssetDefinitions[assetEditorState.assetId];
-  if(!definition.animations.includes(assetEditorState.animation)) assetEditorState.animation=definition.animations[0];
   const asset=currentArtistAsset();
+  if(!asset.animations[assetEditorState.animation]) assetEditorState.animation=definition.animations[0]||Object.keys(asset.animations)[0];
   assetEditorState.layerIndex=Math.max(0,Math.min(asset.layers.length-1,assetEditorState.layerIndex));
   assetEditorState.frameIndex=Math.max(0,Math.min(asset.animations[assetEditorState.animation].frames-1,assetEditorState.frameIndex));
 }
@@ -253,19 +354,35 @@ function artistFrameHasPixels(asset,animation,frameIndex){
 }
 
 function artistAnimationForEntity(assetId,entity){
-  if(assetId==="player"){
+  const runtime=artistAssetDefinitions[assetId]?.runtime||assetId;
+  if(runtime==="player"){
     if(entity.riding) return "ride";
     if(entity.actionType) return "attack";
     return entity.moving?"walk":"idle";
   }
-  if(assetId==="crow") return entity.flightState==="flying"?"fly":"perched";
+  if(runtime==="crow") return "fly";
   if(entity.status&&entity.status!=="alive") return "dead";
-  if(assetId==="boar"&&entity.attackPhase==="windup") return "windup";
-  if(assetId==="boar"&&entity.attackPhase==="charge") return "charge";
-  if(assetId==="chicken"&&entity.fleeUntil>state.elapsed) return "panic";
-  if(assetId==="horse"&&entity.gaitMode==="gallop") return "gallop";
+  if(runtime==="boar"&&entity.attackPhase==="windup") return "windup";
+  if(runtime==="boar"&&entity.attackPhase==="charge") return "charge";
+  if(runtime==="boar"&&entity.attackPhase==="recover") return "recover";
+  if(runtime==="chicken"&&entity.fleeUntil>state.elapsed) return "panic";
+  if(runtime==="horse"&&entity.gaitMode==="gallop") return "gallop";
   return entity.gaitMode&&entity.gaitMode!=="idle"?"walk":"idle";
 }
+
+function artistVariantAssetId(assetId,entity){
+  if(assetId==="horse"){
+    const breedCandidate=entity?.breed?"horse_breed_"+entity.breed:null;
+    const coatCandidate=entity?.coat?"horse_"+entity.coat:null;
+    if(breedCandidate&&artistAssetPack.assets[breedCandidate]?.enabled) return breedCandidate;
+    if(coatCandidate&&artistAssetPack.assets[coatCandidate]?.enabled) return coatCandidate;
+    return assetId;
+  }
+  const candidate=entity?.variant?assetId+"_"+entity.variant:null;
+  return candidate&&artistAssetPack.assets[candidate]?.enabled?candidate:assetId;
+}
+
+function artistAssetEnabled(assetId){return artistAssetPack.assets[assetId]?.enabled===true;}
 
 function artistFrameForEntity(asset,animation,entity){
   const track=asset.animations[animation];
@@ -323,6 +440,7 @@ function drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,fl
 }
 
 function drawArtistSpriteOverride(assetId,entity,target,x,y,options={}){
+  assetId=artistVariantAssetId(assetId,entity);
   const asset=artistAssetPack.assets[assetId];
   if(!asset?.enabled) return false;
   let animation=artistAnimationForEntity(assetId,entity);
@@ -334,10 +452,54 @@ function drawArtistSpriteOverride(assetId,entity,target,x,y,options={}){
   }
   const direction=entity.dir||(typeof animalDirection==="function"&&entity.species?animalDirection(entity):"down");
   const requestedScale=Number(options.scale);
-  const pixelSize=assetId==="player"&&options.portraitMode?Math.max(1,Math.round(asset.scale*.72))
-    :assetId==="player"&&Number.isFinite(requestedScale)?Math.max(1,Math.round(asset.scale*requestedScale/3))
+  const runtime=artistAssetDefinitions[assetId]?.runtime||assetId;
+  const pixelSize=runtime==="player"&&options.portraitMode?Math.max(1,Math.round(asset.scale*.72))
+    :runtime==="player"&&Number.isFinite(requestedScale)?Math.max(1,Math.round(asset.scale*requestedScale/3))
       :Math.max(1,Math.round(asset.scale));
   return drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,direction==="left");
+}
+
+function artistStaticFrame(asset,animation,progress=null){
+  const track=asset.animations[animation]||asset.animations[Object.keys(asset.animations)[0]];
+  if(!track||track.frames<=1) return 0;
+  if(Number.isFinite(progress)) return Math.min(track.frames-1,Math.floor(Math.max(0,Math.min(.9999,progress))*track.frames));
+  return Math.floor(state.elapsed*track.fps)%track.frames;
+}
+
+function drawArtistStaticOverride(assetId,target,x,y,options={}){
+  const asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  const animation=asset.animations[options.animation]?options.animation:Object.keys(asset.animations)[0];
+  const frameIndex=artistStaticFrame(asset,animation,options.progress);
+  const pixelSize=Math.max(.25,Number(options.pixelSize)||asset.scale||1);
+  return drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,!!options.flip,options.alpha??1);
+}
+
+function drawArtistTileOverride(assetId,target,x,y,size,options={}){
+  const asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  const animation=asset.animations[options.animation]?options.animation:Object.keys(asset.animations)[0];
+  const frameIndex=artistStaticFrame(asset,animation,options.progress);
+  const compiled=compiledArtistFrame(asset,animation,frameIndex);
+  if(!compiled.painted) return false;
+  target.save();target.imageSmoothingEnabled=false;target.globalAlpha*=options.alpha??1;
+  target.drawImage(compiled.surface,0,0,asset.width,asset.height,Math.floor(x),Math.floor(y),Math.ceil(size),Math.ceil(size));
+  target.restore();
+  return true;
+}
+
+function drawArtistSizedOverride(assetId,target,x,y,width,height,options={}){
+  const asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  const animation=asset.animations[options.animation]?options.animation:Object.keys(asset.animations)[0];
+  const frameIndex=artistStaticFrame(asset,animation,options.progress);
+  const compiled=compiledArtistFrame(asset,animation,frameIndex);
+  if(!compiled.painted) return false;
+  target.save();target.imageSmoothingEnabled=false;target.globalAlpha*=options.alpha??1;
+  if(options.flip){target.translate(Math.floor(x+width),0);target.scale(-1,1);x=0;}
+  target.drawImage(compiled.surface,0,0,asset.width,asset.height,Math.floor(x),Math.floor(y),Math.ceil(width),Math.ceil(height));
+  target.restore();
+  return true;
 }
 
 function artistGridMetrics(canvasElement,asset=currentArtistAsset()){
@@ -405,14 +567,20 @@ function drawArtistPreview(timestamp=performance.now()){
 function renderArtistAssetButtons(){
   const container=$("assetEditorAssetList");
   container.replaceChildren();
+  const search=assetEditorState.search.trim().toLocaleLowerCase("de-DE");
+  let visible=0;
   for(const [id,definition] of Object.entries(artistAssetDefinitions)){
+    if(definition.category!==assetEditorState.category) continue;
+    if(search&&!definition.label.toLocaleLowerCase("de-DE").includes(search)&&!id.toLowerCase().includes(search)) continue;
+    visible++;
     const button=document.createElement("button");button.type="button";button.classList.toggle("active",id===assetEditorState.assetId);
-    button.innerHTML="<span>"+definition.label+"</span><small>"+definition.width+"×"+definition.height+"</small>";
+    button.innerHTML="<span>"+definition.label+"</span><small>"+definition.width+"×"+definition.height+(artistAssetPack.assets[id]?.enabled?" · AKTIV":"")+"</small>";
     button.addEventListener("click",()=>{
-      assetEditorState.assetId=id;assetEditorState.animation=definition.animations[0];assetEditorState.frameIndex=0;assetEditorState.layerIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();
+      assetEditorState.assetId=id;assetEditorState.category=definition.category;assetEditorState.animation=Object.keys(artistAssetPack.assets[id].animations)[0];assetEditorState.frameIndex=0;assetEditorState.layerIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();
     });
     container.appendChild(button);
   }
+  if(!visible){const empty=document.createElement("p");empty.className="asset-editor-asset-meta";empty.textContent="Keine Assets in diesem Filter.";container.appendChild(empty);}
 }
 
 function renderArtistLayerList(){
@@ -436,10 +604,18 @@ function renderAssetEditor(){
   const asset=currentArtistAsset();
   const track=currentArtistTrack();
   const layer=currentArtistLayer();
+  const categorySelect=$("assetEditorCategory");
+  if(!categorySelect.options.length) for(const [value,label] of Object.entries(artistAssetCategories)){
+    const option=document.createElement("option");option.value=value;option.textContent=label;categorySelect.appendChild(option);
+  }
+  categorySelect.value=assetEditorState.category;
+  $("assetEditorSearch").value=assetEditorState.search;
+  const variantText=definition.base?"Variante von „"+artistAssetDefinitions[definition.base].label+"“":definition.variant?"Variante: "+definition.variant:"Basis-Asset";
+  $("assetEditorAssetMeta").textContent=artistAssetCategories[definition.category]+" · "+variantText+" · "+Object.keys(asset.animations).length+" Clips";
   renderArtistAssetButtons();
   const animationSelect=$("assetEditorAnimation");
   animationSelect.replaceChildren();
-  for(const animation of definition.animations){const option=document.createElement("option");option.value=animation;option.textContent=animation.toUpperCase();animationSelect.appendChild(option);}
+  for(const animation of Object.keys(asset.animations)){const option=document.createElement("option");option.value=animation;option.textContent=animation.toUpperCase()+(definition.animations.includes(animation)?" · GAME":" · CUSTOM");animationSelect.appendChild(option);}
   animationSelect.value=assetEditorState.animation;
   $("assetEditorEnabled").checked=asset.enabled;
   $("assetEditorScale").value=String(asset.scale);
@@ -447,6 +623,9 @@ function renderAssetEditor(){
   $("assetEditorFps").value=String(track.fps);
   $("assetEditorFrameLabel").textContent=(assetEditorState.frameIndex+1)+" / "+track.frames;
   $("assetEditorDeleteFrame").disabled=track.frames<=1;
+  $("assetEditorAddAnimation").disabled=Object.keys(asset.animations).length>=ARTIST_ASSET_MAX_ANIMATIONS;
+  $("assetEditorDeleteAnimation").disabled=definition.animations.includes(assetEditorState.animation)||Object.keys(asset.animations).length<=1;
+  $("assetEditorRenameAnimation").disabled=definition.animations.includes(assetEditorState.animation);
   $("assetEditorUndo").disabled=!assetEditorState.history.length;
   $("assetEditorRedo").disabled=!assetEditorState.redo.length;
   $("assetEditorOnion").checked=assetEditorState.onion;
@@ -540,12 +719,51 @@ function deleteArtistFrame(){
   track.frames--;assetEditorState.frameIndex=Math.min(assetEditorState.frameIndex,track.frames-1);scheduleArtistDraftSave();renderAssetEditor();
 }
 
+function requestedArtistAnimationName(initial="custom"){
+  const raw=window.prompt("Clipname (a–z, 0–9, _ oder -):",initial);
+  if(raw==null) return null;
+  const name=cleanArtistId(raw,"");
+  if(!name){setAssetEditorStatus("Der Clipname ist ungültig.",true);return null;}
+  return name;
+}
+
+function addArtistAnimation(duplicate=false){
+  const asset=currentArtistAsset();
+  if(Object.keys(asset.animations).length>=ARTIST_ASSET_MAX_ANIMATIONS){setAssetEditorStatus("Maximal "+ARTIST_ASSET_MAX_ANIMATIONS+" Clips pro Asset.",true);return;}
+  const sourceName=assetEditorState.animation;
+  const name=requestedArtistAnimationName(duplicate?sourceName+"_copy":"custom");
+  if(!name) return;
+  if(asset.animations[name]){setAssetEditorStatus("Ein Clip mit diesem Namen existiert bereits.",true);return;}
+  captureArtistHistory();
+  const source=asset.animations[sourceName];
+  asset.animations[name]=duplicate?cloneArtistData(source):{fps:6,frames:1};
+  for(const layer of asset.layers) layer.frames[name]=duplicate?cloneArtistData(layer.frames[sourceName]):[{}];
+  assetEditorState.animation=name;assetEditorState.frameIndex=0;assetEditorState.previewStartedAt=performance.now();scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function renameArtistAnimation(){
+  const asset=currentArtistAsset();const definition=artistAssetDefinitions[assetEditorState.assetId];const oldName=assetEditorState.animation;
+  if(definition.animations.includes(oldName)){setAssetEditorStatus("GAME-Clips behalten ihren Namen, damit die Spiellogik sie sicher findet.",true);return;}
+  const name=requestedArtistAnimationName(oldName);if(!name||name===oldName) return;
+  if(asset.animations[name]){setAssetEditorStatus("Ein Clip mit diesem Namen existiert bereits.",true);return;}
+  captureArtistHistory();asset.animations[name]=asset.animations[oldName];delete asset.animations[oldName];
+  for(const layer of asset.layers){layer.frames[name]=layer.frames[oldName];delete layer.frames[oldName];}
+  assetEditorState.animation=name;scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function deleteArtistAnimation(){
+  const asset=currentArtistAsset();const definition=artistAssetDefinitions[assetEditorState.assetId];const name=assetEditorState.animation;
+  if(definition.animations.includes(name)||Object.keys(asset.animations).length<=1) return;
+  captureArtistHistory();delete asset.animations[name];for(const layer of asset.layers) delete layer.frames[name];
+  assetEditorState.animation=definition.animations[0]||Object.keys(asset.animations)[0];assetEditorState.frameIndex=0;scheduleArtistDraftSave();renderAssetEditor();
+}
+
 function addArtistLayer(duplicate=false){
   const asset=currentArtistAsset();if(asset.layers.length>=ARTIST_ASSET_MAX_LAYERS){setAssetEditorStatus("Maximal "+ARTIST_ASSET_MAX_LAYERS+" Ebenen pro Asset.",true);return;}
   captureArtistHistory();
   const source=currentArtistLayer();
   const frames={};
-  for(const animation of artistAssetDefinitions[assetEditorState.assetId].animations){
+  for(const animation of Object.keys(asset.animations)){
     const count=asset.animations[animation].frames;
     frames[animation]=duplicate?cloneArtistData(source.frames[animation]):Array.from({length:count},()=>({}));
   }
@@ -653,6 +871,13 @@ function bindAssetEditor(){
   $("assetEditorPassword").addEventListener("keydown",(event)=>{if(event.key==="Enter") unlockAssetEditor();});
   $("assetEditorClose").addEventListener("click",closeAssetEditor);
   $("assetEditorUndo").addEventListener("click",undoArtistEdit);$("assetEditorRedo").addEventListener("click",redoArtistEdit);
+  $("assetEditorCategory").addEventListener("change",(event)=>{
+    assetEditorState.category=event.target.value;assetEditorState.search="";
+    const first=Object.entries(artistAssetDefinitions).find(([,definition])=>definition.category===assetEditorState.category);
+    if(first){assetEditorState.assetId=first[0];assetEditorState.animation=Object.keys(artistAssetPack.assets[first[0]].animations)[0];assetEditorState.frameIndex=0;assetEditorState.layerIndex=0;}
+    renderAssetEditor();
+  });
+  $("assetEditorSearch").addEventListener("input",(event)=>{assetEditorState.search=event.target.value;renderArtistAssetButtons();});
   $("assetEditorAnimation").addEventListener("change",(event)=>{assetEditorState.animation=event.target.value;assetEditorState.frameIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();});
   $("assetEditorFps").addEventListener("change",(event)=>{captureArtistHistory();currentArtistTrack().fps=Math.round(clampArtistNumber(event.target.value,1,24,6));assetEditorState.previewStartedAt=performance.now();scheduleArtistDraftSave();renderAssetEditor();});
   $("assetEditorEnabled").addEventListener("change",(event)=>{captureArtistHistory();currentArtistAsset().enabled=event.target.checked;scheduleArtistDraftSave();renderAssetEditor();});
@@ -661,6 +886,8 @@ function bindAssetEditor(){
   $("assetEditorPrevFrame").addEventListener("click",()=>{const count=currentArtistTrack().frames;assetEditorState.frameIndex=(assetEditorState.frameIndex+count-1)%count;renderAssetEditor();});
   $("assetEditorNextFrame").addEventListener("click",()=>{assetEditorState.frameIndex=(assetEditorState.frameIndex+1)%currentArtistTrack().frames;renderAssetEditor();});
   $("assetEditorAddFrame").addEventListener("click",()=>addArtistFrame(false));$("assetEditorDuplicateFrame").addEventListener("click",()=>addArtistFrame(true));$("assetEditorDeleteFrame").addEventListener("click",deleteArtistFrame);
+  $("assetEditorAddAnimation").addEventListener("click",()=>addArtistAnimation(false));$("assetEditorDuplicateAnimation").addEventListener("click",()=>addArtistAnimation(true));
+  $("assetEditorRenameAnimation").addEventListener("click",renameArtistAnimation);$("assetEditorDeleteAnimation").addEventListener("click",deleteArtistAnimation);
   $("assetEditorAddLayer").addEventListener("click",()=>addArtistLayer(false));$("assetEditorDuplicateLayer").addEventListener("click",()=>addArtistLayer(true));$("assetEditorDeleteLayer").addEventListener("click",deleteArtistLayer);
   $("assetEditorLayerUp").addEventListener("click",()=>moveArtistLayer(1));$("assetEditorLayerDown").addEventListener("click",()=>moveArtistLayer(-1));
   $("assetEditorLayerName").addEventListener("change",(event)=>{captureArtistHistory();currentArtistLayer().name=String(event.target.value||"Ebene").slice(0,24);scheduleArtistDraftSave();renderAssetEditor();});
@@ -707,6 +934,7 @@ loadArtistAssetPack();
 requestAnimationFrame(assetEditorPreviewLoop);
 
 window.__ARCHIPELAGO_ASSET_EDITOR__={
-  definitions:artistAssetDefinitions,get pack(){return artistAssetPack;},normalizeArtistPack,createDefaultArtistPack,
-  drawArtistSpriteOverride,openAssetEditor,closeAssetEditor,saveArtistDraft,loadArtistAssetPack
+  definitions:artistAssetDefinitions,categories:artistAssetCategories,get pack(){return artistAssetPack;},normalizeArtistPack,createDefaultArtistPack,
+  drawArtistSpriteOverride,drawArtistStaticOverride,drawArtistTileOverride,drawArtistSizedOverride,artistAssetEnabled,
+  openAssetEditor,closeAssetEditor,saveArtistDraft,loadArtistAssetPack
 };

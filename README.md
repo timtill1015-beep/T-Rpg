@@ -2,7 +2,7 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.13)
+## Aktueller Stand (0.14)
 
 - richtiger Titelscreen mit animierter Weltkulisse
 - erweiterter Charaktereditor mit zehn Frisuren, sechs Bartstilen, sechs Kleidungsformen sowie zusätzlichen Haar-, Stoff- und Mantelfarben
@@ -31,15 +31,15 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Eisenschwert als 1×3-Gegenstand mit einzelnem Hieb und sichtbarem Pixel-Trail sowie Holzfälleraxt als 2×3-Gegenstand
 - persistente Baumzustände mit Trefferpunkten, erhaltener Block-/Rindentextur, mindestens einem vollen Weltblock Stammdicke, beschleunigter Fallphysik, kontinuierlichem sicherem Push-out und anschließend drei physikalischen Holzabschnitten, die auf nahe freie 8-m-Rasterzellen einrasten
 - frei umherlaufende Hühnergruppen mit geschwindigkeitsgekoppeltem, ruhigerem Laufzyklus sowie Wildschweine mit ausweichbarem Telegraph, festgelegtem Dash, einmaligem Trefferfenster und Erholungsphase
-- lebende Tiere besitzen eine begrenzte räumliche Körpertrennung mit gedämpfter Impulsauflösung; feststeckende Gruppen werden ohne Teleport getrennt und ein stabiler Render-Tiebreaker verhindert Flimmern bei gleicher Tiefenposition
-- deterministische kleine Rabengruppen sitzen teilweise verdeckt in passenden Bäumen, fliegen bei Annäherung oder Baumfall gemeinsam auf und verlassen anschließend den aktiven Simulationsbereich; subtile, begrenzte Himmelsschatten ergänzen weit entfernte Vögel
+- Gruppenspawns reservieren artspezifische Körperabstände bereits während der deterministischen Kandidatensuche; die Laufzeit-Separation löst Restüberlappungen in stabiler Reihenfolge und mit einem Render-Tiebreaker, ohne sichtbares Pendeln oder Teleportieren
+- deterministische kleine Rabengruppen sitzen vollständig in passenden Baumkronen verborgen, fliegen bei Annäherung oder Baumfall gemeinsam auf und verlassen anschließend den aktiven Simulationsbereich; deutlich größere, weiterhin begrenzte Himmelsschatten ergänzen weit entfernte Vögel
 - frei umherlaufende Pferde in vier Rassen (Warmblut, Araber, Kaltblut und Pony) und sechs Fellvarianten (Brauner, Rappe, Fuchs, Schimmel, Palomino und Schecke); Körperlänge, Körperhöhe, Beinlänge und Reitgeschwindigkeit unterscheiden sich je nach Rasse
 - gesattelte und ungesattelte Pferde als echte Tierzustände; ein ungesatteltes Pferd kann angesehen, aber noch nicht geritten werden
 - bei jedem Spielstart erscheint ein gesatteltes, dem Spieler zugeordnetes Pferd direkt neben der Figur; `H` beziehungsweise der mobile Pferdebutton schaltet deterministisch zwischen `FOLLOW` und `STAY`
 - Aufsitzen und Absteigen über `E` oder die mobile Aktionstaste, unverkleinerte Sitzpose ohne Laufbeine, richtungsabhängige Reitdarstellung, distanzgekoppelte Schritt-/Galoppzyklen, natürlicher Schweif, Pferdeausdauer, Hufspuren sowie blockierte Tiefseewege
 - alle lebenden Figuren und Tiere mit Augen blinzeln in deterministisch versetzten Intervallen; tote Tiere behalten dauerhaft sichtbar geschlossene Augen
 - progressive Verletzungsdarstellung mit impulsabhängigen Blutspritzern, ortsfesten und langlebigen Welt-Blutdecals sowie einem gemeinsamen endlichen Blutvorrat für ruhende Lache und Ziehspur
-- deutlich kräftigere Blutspritzer, größere und länger sichtbare Schleifflecken sowie unregelmäßige, bis zu acht Minuten sichtbare Blutlachen; globale und zellenweise Caps recyceln weiterhin alte Effekte
+- deutlich kräftigere Blutspritzer, größere und länger sichtbare Schleifflecken sowie unregelmäßige, bis zu 15 Minuten sichtbare Blutlachen; die Abgabe ist anfangs stark, fällt anhand Alter und Restmenge stetig ab und speist Ziehspur wie Ruhepool aus derselben artspezifischen Reserve
 - Blut verdünnt sich in Meer- und Flachwasser zu kurzlebigen Wolken; in Flüssen folgt es der tatsächlich berechneten Strömungsrichtung
 - physische Tierkadaver mit passiver Schleifpose; über `E` lassen sie sich aus einer bewusst knappen Reichweite von 1,4 Weltblöcken aufnehmen, per gedämpfter Constraint nah hinter dem Spieler ziehen und wieder loslassen; frische Kadaver erzeugen größere, mit der Zeit seltener werdende Blutspuren
 - Wildschwein-Dashes können eine begrenzte Spielerblutung auslösen: kleiner periodischer Schaden, endliches Blutvolumen, bewegungsabhängige Spur, Wasserverdünnung, HUD-Restzeit und sicherer Reset bei Tod/Respawn
@@ -51,7 +51,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Minimap und große beschriftete Weltkarte mit Legende
 - mobile Touch-Steuerung mit Mehrfinger-D-Pad, gedrückt gehaltenem Sprint, großen Aktions-/Interaktionstasten sowie direkten Buttons für Inventar, Karte und Pause; HUD und Overlays berücksichtigen Hochformat, Querformat und Display-Safe-Areas
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
-- integriertes Asset Studio für Nicht-Programmierer: Pixel-Stift, Radierer, Füllen, Pipette, Spiegeln, Onion Skin, Animationsframes/FPS, Live-Vorschau, bis zu zwölf frei sortierbare Ebenen, Deckkraft, Undo/Redo sowie validierter JSON-Import und -Export
+- integriertes Asset Studio für Nicht-Programmierer mit neun übersichtlichen Kategorien und dem vollständigen aktuellen Renderkatalog: Figuren, Tierbasen, Huhn-/Wildschwein-/Pferdevarianten, zehn Frisuren, alle Waffen/Items, sämtliche Terrain- und Bau-Blöcke, Baumteile sowie 13 Weltobjekte; Pixelwerkzeuge, frei verwaltbare Animationsclips/Frames/FPS, Live-Vorschau, bis zu zwölf sortierbare Ebenen, Deckkraft, Undo/Redo und validierter JSON-Transfer bleiben enthalten
 
 ## Steuerung
 
@@ -76,16 +76,16 @@ Im Debugmodus teleportiert ein Klick auf die Weltkarte an jede gewünschte Posit
 
 ## Asset Studio
 
-Das Asset Studio wird im Titel- oder Charaktermenü mit `#` geöffnet. Es enthält vorbereitete, aber zunächst deaktivierte Pixelvorlagen für Spieler, Huhn, Wildschwein, Pferd und Rabe. Pro Asset lassen sich die vorgesehenen Zustände wie `IDLE`, `WALK`, `PANIC`, `WINDUP`, `CHARGE`, `GALLOP`, `DEAD` oder `FLY` als einzelne Frames bearbeiten. Ebenen werden von hinten nach vorn gerendert; Sichtbarkeit, Name, Reihenfolge und Deckkraft sind Teil des Packs. Aktivierte Assets ersetzen nur dann die prozedurale Standardgrafik, wenn der gewählte Clip tatsächlich Pixel enthält. Dadurch bleibt ein unvollständiger Pack spielbar.
+Das Asset Studio wird im Titel- oder Charaktermenü mit `#` geöffnet. Kategorie und Suche erschließen den vollständigen derzeit renderbaren Katalog: Spieler, Tierbasen und artspezifische Varianten, alle zehn Frisuren, Schwert/Axt und Lootitems, alle Terrain-/Brücken-/Gebäudeblöcke, Baumstämme/-kronen sowie jede Straßendekoration. Neben den fest benannten `GAME`-Clips wie `IDLE`, `WALK`, `PANIC`, `WINDUP`, `CHARGE`, `GALLOP`, `DEAD` und `FLY` können Artists eigene Clips hinzufügen, duplizieren, umbenennen und löschen. Die fest benannten Clips behalten absichtlich ihren Namen, damit die Spiellogik sie weiterhin sicher aufrufen kann. Ebenen werden von hinten nach vorn gerendert; Sichtbarkeit, Name, Reihenfolge und Deckkraft sind Teil des Packs. Aktivierte Assets ersetzen nur dann die prozedurale Standardgrafik, wenn der gewählte Clip tatsächlich Pixel enthält. Dadurch bleibt auch ein unvollständiger Pack spielbar.
 
 `Entwurf speichern` legt den aktuellen Stand sofort im Browser (`localStorage`) ab und das Spiel verwendet ihn auf diesem Gerät. `JSON exportieren` erzeugt eine transportierbare Datei für andere Artists. `Projektdatei speichern` schreibt – sofern der Browser den Dateidialog unterstützt – eine validierte `artist-assets.json`; andernfalls wird genau diese Datei heruntergeladen. Liegt sie neben `index.html`, lädt das Spiel sie bei jedem Start automatisch. Damit eine Änderung für alle Spieler dauerhaft wird, muss diese Projektdatei anschließend wie die anderen Spieldateien committed und deployed werden. Da das Spiel statisch gehostet wird, kann ein Browser-Editor ohne Backend nicht selbstständig in das öffentliche GitHub-Repository schreiben. Das Studio-Passwort wird deshalb nur lokal im jeweiligen Browser gesetzt; im öffentlichen Code liegt kein gemeinsames Passwort und kein fester Passwort-Hash.
 
-## Netlify-Deployment
+## GitHub-Pages-Deployment
 
-1. `index.html`, `style.css`, `game.js`, `asset-editor.js` und `artist-assets.json` müssen direkt im veröffentlichten Ordner liegen.
-2. Den Ordner über Netlify Drop veröffentlichen.
-3. Die erzeugte HTTPS-Seite öffnen.
-4. Für Multiplayer eine Lobby hosten, den Code teilen und anschließend die Lobby betreten.
+1. `index.html`, `style.css`, `game.js`, `asset-editor.js` und `artist-assets.json` liegen direkt im veröffentlichten Branch.
+2. In GitHub unter **Settings → Pages** den Branch `agent/living-world-ui-pass` und den Ordner `/ (root)` auswählen.
+3. Jeder neue Fast-Forward-Commit auf diesem Branch löst den Pages-Build automatisch aus.
+4. Das Spiel liegt anschließend unter `https://timtill1015-beep.github.io/T-Rpg/`.
 
 Die Website bleibt vollständig statisch. PeerJS wird über ein CDN geladen und nutzt für das Signaling den öffentlichen PeerJS-Dienst. Für ein größeres öffentliches Spiel sollte später ein eigener Signaling- oder Realtime-Dienst verwendet werden.
 

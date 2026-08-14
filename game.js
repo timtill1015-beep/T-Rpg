@@ -35,9 +35,9 @@ const VISUAL_CACHE_LIMIT = 36000;
 const TREE_CACHE_LIMIT = 120000;
 const ROAD_DECOR_CACHE_LIMIT = 24000;
 const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
-const EFFECT_LIMIT = 260;
-const GROUND_DECAL_LIMIT = 176;
-const BLOOD_DECALS_PER_CELL = 24;
+const EFFECT_LIMIT = 360;
+const GROUND_DECAL_LIMIT = 228;
+const BLOOD_DECALS_PER_CELL = 32;
 const CROW_ACTIVE_LIMIT = 72;
 const SKY_SHADOW_LIMIT = 10;
 const UI_UPDATE_MS = 100;
@@ -56,9 +56,17 @@ const ANIMAL_CROWD_STEP = 1 / 30;
 const CORPSE_DRAG_RANGE = TILE_METERS * 1.4;
 const HORSE_MOUNT_RANGE = TILE_METERS * 2;
 const HORSE_FOLLOW_DISTANCE = TILE_METERS * 2.35;
-const CORPSE_TRAIL_FRESH_SECONDS = 125;
-const BLOOD_POOL_LIFE_SECONDS = 480;
+const BLOOD_POOL_LIFE_SECONDS = 900;
 const BLOOD_CELL_METERS = TILE_METERS * 8;
+
+// Corpse blood is measured in one shared finite reserve. Resting pools and
+// drag marks both spend from it, so a body can taper naturally without an
+// arbitrary timer suddenly switching every blood effect off.
+const corpseBloodCatalog = {
+  chicken:{capacity:.78,poolBase:1.45,poolSpread:4.8},
+  boar:{capacity:3.25,poolBase:2.15,poolSpread:6.9},
+  horse:{capacity:4.7,poolBase:2.45,poolSpread:7.8}
+};
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
 
@@ -998,6 +1006,7 @@ function bridgeNeighbor(gx,gy,axis){
 }
 
 function drawBridgeTexture(target,sx,sy,size,gx,gy,bridge){
+  if(typeof drawArtistTileOverride==="function"&&drawArtistTileOverride("bridge_"+bridge.material,target,sx,sy,size)) return;
   const wood=bridge.material==="wood";
   const base=wood?"#76502f":"#77786d";
   const light=wood?"#a87943":"#9b9c8d";
@@ -1027,13 +1036,14 @@ function drawBridgeTexture(target,sx,sy,size,gx,gy,bridge){
   target.fillRect(Math.floor(sx+size-pixel*1.5),Math.floor(sy+size-pixel*1.5),bolt,bolt);
 }
 
-function drawGridBlock(gx,gy,camX,camY,color,accent=null){
+function drawGridBlock(gx,gy,camX,camY,color,accent=null,assetId=null){
   const size=TILE_METERS*VIEW_SCALE;
   const x=(gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2;
   const y=(gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2;
   const px=Math.floor(x);
   const py=Math.floor(y);
   const block=Math.ceil(size)+1;
+  if(assetId&&typeof drawArtistTileOverride==="function"&&drawArtistTileOverride(assetId,ctx,px,py,block)) return;
   ctx.fillStyle=color;
   ctx.fillRect(px,py,block,block);
   ctx.fillStyle="rgba(7,14,12,.20)";
@@ -1194,11 +1204,12 @@ function treeOverlapsRoad(gx,gy,kind,variant){
   return false;
 }
 
-function drawTreeBlock(gx,gy,camX,camY,colors,seed){
+function drawTreeBlock(gx,gy,camX,camY,colors,seed,assetId=null,assetAnimation="idle"){
   const size=TILE_METERS*VIEW_SCALE;
   const x=Math.floor((gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
   const y=Math.floor((gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2);
   const block=Math.ceil(size)+1;
+  if(assetId&&typeof drawArtistTileOverride==="function"&&drawArtistTileOverride(assetId,ctx,x,y,block,{animation:assetAnimation})) return;
   ctx.fillStyle=colors[1];
   ctx.fillRect(x,y,block,block);
   ctx.fillStyle=colors[0];
@@ -1228,45 +1239,45 @@ function drawGridTree(tree,camX,camY){
   drawGridBlock(gx-1,gy,camX,camY,"rgba(8,18,12,.16)");
 
   if(kind==="iceSpire"){
-    drawGridBlock(gx,gy,camX,camY,"#8fc5c9","#e7f6f2");
-    drawGridBlock(gx,gy-1,camX,camY,"#aad8d7","#f1fbf7");
-    drawGridBlock(gx-1,gy,camX,camY,"#6da9b4","#bfe3e0");
-    if(tree.variant===2) drawGridBlock(gx+1,gy,camX,camY,"#7fb6bd","#d9efeb");
+    drawGridBlock(gx,gy,camX,camY,"#8fc5c9","#e7f6f2","tree_iceSpire");
+    drawGridBlock(gx,gy-1,camX,camY,"#aad8d7","#f1fbf7","tree_iceSpire");
+    drawGridBlock(gx-1,gy,camX,camY,"#6da9b4","#bfe3e0","tree_iceSpire");
+    if(tree.variant===2) drawGridBlock(gx+1,gy,camX,camY,"#7fb6bd","#d9efeb","tree_iceSpire");
     return;
   }
 
   if(kind==="cactus"){
     const cactus=["#386a43","#4e854d","#76a35b"];
-    drawGridBlock(gx,gy,camX,camY,cactus[0],cactus[2]);
-    drawGridBlock(gx,gy-1,camX,camY,cactus[1],cactus[2]);
-    drawGridBlock(gx,gy-2,camX,camY,cactus[1],cactus[2]);
+    drawGridBlock(gx,gy,camX,camY,cactus[0],cactus[2],"tree_cactus");
+    drawGridBlock(gx,gy-1,camX,camY,cactus[1],cactus[2],"tree_cactus");
+    drawGridBlock(gx,gy-2,camX,camY,cactus[1],cactus[2],"tree_cactus");
     const side=tree.variant===1?-1:1;
-    drawGridBlock(gx+side,gy-1,camX,camY,cactus[0],cactus[2]);
-    drawGridBlock(gx+side,gy-2,camX,camY,cactus[1]);
-    if(tree.variant===2) drawGridBlock(gx-1,gy,camX,camY,cactus[0],"#d7ba5e");
+    drawGridBlock(gx+side,gy-1,camX,camY,cactus[0],cactus[2],"tree_cactus");
+    drawGridBlock(gx+side,gy-2,camX,camY,cactus[1],null,"tree_cactus");
+    if(tree.variant===2) drawGridBlock(gx-1,gy,camX,camY,cactus[0],"#d7ba5e","tree_cactus");
     return;
   }
 
   const paleTrunk=kind==="birch";
   const frostTrunk=kind==="frostPine";
-  drawGridBlock(gx,gy,camX,camY,paleTrunk?"#9d957d":frostTrunk?"#65706a":kind==="palm"?"#76512e":"#5b3d29",paleTrunk?"#5e5b54":frostTrunk?"#a6b2a8":"#93673a");
+  drawGridBlock(gx,gy,camX,camY,paleTrunk?"#9d957d":frostTrunk?"#65706a":kind==="palm"?"#76512e":"#5b3d29",paleTrunk?"#5e5b54":frostTrunk?"#a6b2a8":"#93673a",kind==="dead"?"tree_dead":"tree_trunk_"+kind);
 
   if(kind==="dead"){
-    drawGridBlock(gx,gy-1,camX,camY,"#514536","#75634b");
-    drawGridBlock(gx,gy-2,camX,camY,"#463c31");
-    drawGridBlock(gx-1,gy-2,camX,camY,"#463c31");
-    drawGridBlock(gx+1,gy-2,camX,camY,"#514536");
+    drawGridBlock(gx,gy-1,camX,camY,"#514536","#75634b","tree_dead");
+    drawGridBlock(gx,gy-2,camX,camY,"#463c31",null,"tree_dead");
+    drawGridBlock(gx-1,gy-2,camX,camY,"#463c31",null,"tree_dead");
+    drawGridBlock(gx+1,gy-2,camX,camY,"#514536",null,"tree_dead");
     return;
   }
 
   if(kind==="palm"){
-    drawGridBlock(gx,gy-1,camX,camY,"#76512e","#93673a");
+    drawGridBlock(gx,gy-1,camX,camY,"#76512e","#93673a","tree_trunk_palm");
     ctx.save();
     ctx.translate(Math.round(sway),0);
     if(revealPlayer) ctx.globalAlpha=.38;
     const colors=["#1d512e","#2e6a37","#4a8645"];
     for(const [dx,dy] of [[0,-3],[-1,-3],[1,-3],[-2,-3],[2,-3],[0,-4],[-1,-4],[1,-4]]){
-      drawTreeBlock(gx+dx,gy+dy,camX,camY,colors,3100+tree.variant);
+      drawTreeBlock(gx+dx,gy+dy,camX,camY,colors,3100+tree.variant,"tree_leaf_palm",reaction?"react":"idle");
     }
     ctx.restore();
     return;
@@ -1278,7 +1289,7 @@ function drawGridTree(tree,camX,camY){
   ctx.save();
   ctx.translate(Math.round(sway),0);
   if(revealPlayer) ctx.globalAlpha=.38;
-  for(const [dx,dy] of leafBlocks) drawTreeBlock(gx+dx,gy+dy,camX,camY,colors,3200+tree.variant);
+  for(const [dx,dy] of leafBlocks) drawTreeBlock(gx+dx,gy+dy,camX,camY,colors,3200+tree.variant,"tree_leaf_"+kind,reaction?"react":"idle");
   ctx.restore();
 }
 
@@ -1433,6 +1444,10 @@ function drawRoadDecoration(asset,camX,camY){
   ctx.save();
   ctx.translate(Math.round(screenX),Math.round(screenY));
   if(asset.flip){ctx.translate(Math.round(meta.w*block),0);ctx.scale(-1,1);}
+  if(typeof drawArtistSizedOverride==="function"&&drawArtistSizedOverride("prop_"+asset.kind,ctx,0,0,meta.w*block,meta.h*block)){
+    ctx.restore();
+    return;
+  }
   pixelRect(1,height-2,width-2,2,"rgba(7,13,11,.28)");
 
   if(asset.kind==="boulder"){
@@ -1524,6 +1539,7 @@ function drawTile(target,wx,wy,sx,sy,size,terrain){
   const {n,road,bridge,deco,transitions}=visual;
   ctx.fillStyle=visual.baseColor;
   ctx.fillRect(Math.floor(sx),Math.floor(sy),Math.ceil(size)+1,Math.ceil(size)+1);
+  if(typeof drawArtistTileOverride==="function") drawArtistTileOverride("block_"+terrain.biome,ctx,sx,sy,size);
   if(!road&&!bridge) drawBiomeTransitionDither(ctx,sx,sy,size,gx,gy,transitions);
   if(bridge) drawBridgeTexture(ctx,sx,sy,size,gx,gy,bridge);
   else if(road) drawRoadTexture(ctx,sx,sy,size,visual.roadColor,n);
@@ -1932,7 +1948,27 @@ function animalDirection(animal){
   return vy<0?"up":"down";
 }
 
-function animalSpawnAllowed(species,x,y,owned=false){
+function spawnSeparationAllowed(species,x,y,avoid=[]){
+  const radius=animalCatalog[species]?.radius||2;
+  const checked=new Set();
+  const candidates=[];
+  for(const animal of avoid) if(animal) candidates.push(animal);
+  for(const animal of animalStates.values()){
+    if(animal.removed||animal.status!=="alive"||animal.species==="crow") continue;
+    if(Math.abs(animal.x-x)>24||Math.abs(animal.y-y)>24) continue;
+    candidates.push(animal);
+  }
+  for(const animal of candidates){
+    if(checked.has(animal.id)) continue;
+    checked.add(animal.id);
+    const otherRadius=animalCatalog[animal.species]?.radius||2;
+    const minimum=(radius+otherRadius)*1.12+1.1;
+    if(Math.hypot(x-animal.x,y-animal.y)<minimum) return false;
+  }
+  return true;
+}
+
+function animalSpawnAllowed(species,x,y,owned=false,avoid=[]){
   if(x<32||y<32||x>WORLD_SIZE-32||y>WORLD_SIZE-32) return false;
   const meta=animalCatalog[species];
   const terrain=terrainAt(x,y);
@@ -1946,7 +1982,7 @@ function animalSpawnAllowed(species,x,y,owned=false){
     const gy=Math.floor(py/TILE_METERS);
     if(structureAtGrid(gx,gy)||roadDecorationAtGrid(gx,gy)||treeOccupiesGrid(gx,gy)||fallenTreeCollisionAt(px,py)) return false;
   }
-  return true;
+  return spawnSeparationAllowed(species,x,y,avoid);
 }
 
 function treeOccupiesGrid(gx,gy){
@@ -1962,7 +1998,7 @@ function treeOccupiesGrid(gx,gy){
   return null;
 }
 
-function animalSpawnPoint(species,cellX,cellY,index){
+function animalSpawnPoint(species,cellX,cellY,index,reserved=[]){
   const cellMetres=ANIMAL_CELL_TILES*TILE_METERS;
   const baseX=(cellX+.12+hash2(cellX*7+index,cellY,8101)*.76)*cellMetres;
   const baseY=(cellY+.12+hash2(cellX,cellY*7+index,8102)*.76)*cellMetres;
@@ -1971,7 +2007,7 @@ function animalSpawnPoint(species,cellX,cellY,index){
     const radius=attempt*TILE_METERS*1.45;
     const x=baseX+Math.cos(angle)*radius;
     const y=baseY+Math.sin(angle)*radius;
-    if(animalSpawnAllowed(species,x,y)) return {x,y};
+    if(animalSpawnAllowed(species,x,y,false,reserved)) return {x,y};
   }
   // Bounded deterministic fallback: a fixed spiral avoids both spawn spikes
   // and an entity appearing in a canopy merely because random retries failed.
@@ -1980,7 +2016,7 @@ function animalSpawnPoint(species,cellX,cellY,index){
     const angle=(slot%8)*Math.PI/4+hash2(cellX,cellY,8149+index)*.28;
     const x=baseX+Math.cos(angle)*ring*TILE_METERS*1.35;
     const y=baseY+Math.sin(angle)*ring*TILE_METERS*1.35;
-    if(animalSpawnAllowed(species,x,y)) return {x,y};
+    if(animalSpawnAllowed(species,x,y,false,reserved)) return {x,y};
   }
   return null;
 }
@@ -2017,6 +2053,9 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
   const headingSeeds={chicken:8201,boar:8202,horse:8203};
   const heading=hash2(cellX+index*3,cellY-index*5,headingSeeds[species]||8201)*Math.PI*2;
   const horseVariant=species==="horse"?horseVariantFor(cellX,cellY,index):null;
+  const appearanceVariant=species==="chicken"
+    ?["white","brown","black"][Math.floor(hash2(cellX+index,cellY,8207)*3)]
+    :species==="boar"?["forest","dark","russet"][Math.floor(hash2(cellX,cellY-index,8208)*3)]:null;
   const animal={
     id,species,originCellX:cellX,originCellY:cellY,
     x:point.x,y:point.y,homeX:point.x,homeY:point.y,
@@ -2028,7 +2067,9 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
     attackPhase:"idle",attackTimer:0,attackHitDone:false,dashHeading:heading,telegraphParticleTimer:0,chargeParticleTimer:0,
     bloodLevel:0,corpseDamage:0,harvestCount:0,lootQueue:null,
     angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,
-    deadAt:null,bloodTrailDistance:0,bloodReserve:1,
+    deadAt:null,bloodTrailDistance:0,bloodReserve:0,bloodCapacity:0,bloodReleased:0,
+    bloodRestTimer:0,bloodPoolEffectId:null,
+    variant:appearanceVariant,
     breed:horseVariant?.breed||null,coat:horseVariant?.coat||null,
     saddled:species==="horse"&&hash2(cellX,index+cellY,8253)<.22,
     owned:false,riderId:null,mountStamina:100,command:"follow"
@@ -2106,7 +2147,7 @@ function animalsForCell(cellX,cellY){
     if(hash2(cellX,cellY,speciesSeed)>meta.spawnChance) continue;
     const amount=meta.group[0]+Math.floor(hash2(cellX,cellY,speciesSeed+1)*(meta.group[1]-meta.group[0]+1));
     for(let index=0;index<amount;index++){
-      const point=animalSpawnPoint(species,cellX,cellY,index);
+      const point=animalSpawnPoint(species,cellX,cellY,index,animals);
       if(point) animals.push(createAnimalState(species,cellX,cellY,index,point));
     }
   }
@@ -2268,22 +2309,28 @@ function resolveAnimalCrowding(animals,dt){
       const nx=dx/distance;
       const ny=dy/distance;
       const penetration=minimum-distance;
-      const maxCorrection=Math.max(.12,dt*30);
-      const correction=Math.min(penetration*.56,maxCorrection);
-      const animalWeight=animal.owned ? .28 : animal.status==="alive" ? 1 : .42;
-      const otherWeight=other.owned ? .28 : other.status==="alive" ? 1 : .42;
-      const weightTotal=animalWeight+otherWeight||1;
-      const animalShare=otherWeight/weightTotal;
-      const otherShare=animalWeight/weightTotal;
+      // Remove almost the complete penetration in a bounded step. The old
+      // half-correction let both AIs walk back into the same pixels every
+      // frame, which looked like texture flicker. A charging boar stays on its
+      // committed line and displaces the other body instead.
+      const maxCorrection=Math.max(.55,dt*110);
+      const correction=Math.min(penetration+.06,maxCorrection);
+      const animalMobility=animal.species==="boar"&&animal.attackPhase==="charge"?0:(animal.owned ? 0.42 : 1);
+      const otherMobility=other.species==="boar"&&other.attackPhase==="charge"?0:(other.owned ? 0.42 : 1);
+      const mobilityTotal=animalMobility+otherMobility||1;
+      const animalShare=animalMobility/mobilityTotal;
+      const otherShare=otherMobility/mobilityTotal;
       const ax=animal.x+nx*correction*animalShare;
       const ay=animal.y+ny*correction*animalShare;
       const bx=other.x-nx*correction*otherShare;
       const by=other.y-ny*correction*otherShare;
       if(animalCanStand(animal,ax,ay)){animal.x=ax;animal.y=ay;}
       if(animalCanStand(other,bx,by)){other.x=bx;other.y=by;}
+      if(animalShare>0){animal.heading=Math.atan2(ny,nx);animal.wanderTimer=Math.max(animal.wanderTimer,.28);}
+      if(otherShare>0){other.heading=Math.atan2(-ny,-nx);other.wanderTimer=Math.max(other.wanderTimer,.28);}
       const relative=(animal.vx-other.vx)*nx+(animal.vy-other.vy)*ny;
       if(relative<0){
-        const impulse=relative*.46;
+        const impulse=relative*.72;
         animal.vx-=nx*impulse*animalShare;animal.vy-=ny*impulse*animalShare;
         other.vx+=nx*impulse*otherShare;other.vy+=ny*impulse*otherShare;
       }
@@ -2352,10 +2399,10 @@ function emitBoarChargeWind(animal){
   const terrain=terrainAt(animal.x,animal.y);
   const windColor=["snow","glacier","packIce"].includes(terrain.biome)?"#d9ece8"
     :["desert","beach"].includes(terrain.biome)?"#d5b879":"#b6c3b5";
-  addEffect({
-    type:"wind",layer:"air",x:animal.x+backwardsX*5+sideX*(Math.random()-.5)*5,y:animal.y+backwardsY*5+sideY*(Math.random()-.5)*5,
-    life:.34+Math.random()*.22,size:1.1+Math.random()*.85,vx:backwardsX*(13+Math.random()*9)+sideX*(Math.random()-.5)*7,
-    vy:backwardsY*(13+Math.random()*9)+sideY*(Math.random()-.5)*7,color:windColor,heading
+  for(let streak=0;streak<2;streak++) addEffect({
+    type:"wind",layer:"air",x:animal.x+backwardsX*(3+Math.random()*6)+sideX*(Math.random()-.5)*8,y:animal.y+backwardsY*(3+Math.random()*6)+sideY*(Math.random()-.5)*8,
+    life:.42+Math.random()*.25,size:1.7+Math.random()*1.35,vx:backwardsX*(16+Math.random()*12)+sideX*(Math.random()-.5)*9,
+    vy:backwardsY*(16+Math.random()*12)+sideY*(Math.random()-.5)*9,color:windColor,heading
   });
   if(Math.random()<.55) emitBoarTelegraph(animal);
 }
@@ -2378,8 +2425,9 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
     animal.heading=Math.atan2(dy,dx);
     if(distance<58&&animal.attackCooldown<=0){
       animal.attackPhase="windup";
-      animal.attackTimer=.78;
+      animal.attackTimer=.96;
       animal.attackHitDone=false;
+      animal.attackDamageActive=false;
       animal.telegraphParticleTimer=0;
       animal.chargeParticleTimer=0;
       return 0;
@@ -2392,9 +2440,11 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
     if(animal.telegraphParticleTimer<=0){animal.telegraphParticleTimer=.09;emitBoarTelegraph(animal);}
     if(animal.attackTimer<=0){
       animal.attackPhase="charge";
-      animal.attackTimer=1.08;
+      animal.attackTimer=1.18;
       animal.dashHeading=Math.atan2(dy,dx);
       animal.heading=animal.dashHeading;
+      animal.vx=Math.cos(animal.dashHeading)*meta.runSpeed*2.9;
+      animal.vy=Math.sin(animal.dashHeading)*meta.runSpeed*2.9;
     }
     return 0;
   }
@@ -2402,15 +2452,15 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
     animal.heading=animal.dashHeading;
     animal.chargeParticleTimer-=dt;
     if(animal.chargeParticleTimer<=0){animal.chargeParticleTimer=.045;emitBoarChargeWind(animal);}
-    const active=animal.attackTimer<=.98&&animal.attackTimer>=.10;
-    if(active&&distance<meta.radius+PLAYER_RADIUS+2.4) injurePlayerFromBoar(animal);
+    animal.attackDamageActive=animal.attackTimer<=1.11&&animal.attackTimer>=.08;
     if(animal.attackTimer<=0){animal.attackPhase="recover";animal.attackTimer=.78;}
-    return meta.runSpeed*2.35;
+    return meta.runSpeed*2.9;
   }
   if(animal.attackTimer<=0){
     animal.attackPhase="idle";
     animal.attackCooldown=1.15;
     animal.attackHitDone=false;
+    animal.attackDamageActive=false;
   }
   return 0;
 }
@@ -2465,9 +2515,17 @@ function updateLivingAnimal(animal,dt){
     if(animal.idleUntil>state.elapsed) speed=0;
   }
 
-  const response=1-Math.exp(-dt*(animal.species==="chicken"?8:animal.species==="horse"?4:5));
-  animal.vx=lerp(animal.vx,Math.cos(animal.heading)*speed,response);
-  animal.vy=lerp(animal.vy,Math.sin(animal.heading)*speed,response);
+  const charging=animal.species==="boar"&&animal.attackPhase==="charge";
+  if(charging){
+    // A dash is a committed impulse, not ordinary steering. Feeding it
+    // through the roaming lerp was the root cause of stationary charges.
+    animal.vx=Math.cos(animal.dashHeading)*speed;
+    animal.vy=Math.sin(animal.dashHeading)*speed;
+  }else{
+    const response=1-Math.exp(-dt*(animal.species==="chicken"?8:animal.species==="horse"?4:5));
+    animal.vx=lerp(animal.vx,Math.cos(animal.heading)*speed,response);
+    animal.vy=lerp(animal.vy,Math.sin(animal.heading)*speed,response);
+  }
   const oldX=animal.x;
   const oldY=animal.y;
   moveAnimalBody(animal,dt);
@@ -2488,11 +2546,92 @@ function updateLivingAnimal(animal,dt){
   }
   animal.dir=animalDirection(animal);
   const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
+  if(charging&&animal.attackDamageActive&&Math.hypot(state.player.x-animal.x,state.player.y-animal.y)<meta.radius+PLAYER_RADIUS+2.4) injurePlayerFromBoar(animal);
   advanceAnimalGait(animal,moved,dt);
   if(animal.species==="horse"&&moved>.02){
     animal.trackDistance=(animal.trackDistance||0)+moved;
     if(animal.trackDistance>=6.6){animal.trackDistance%=6.6;emitGroundTrack(animal.x,animal.y,animal.dir,"hoof");}
   }
+}
+
+function corpseBloodProfile(animal){
+  return corpseBloodCatalog[animal.species]||corpseBloodCatalog.boar;
+}
+
+function corpseBloodFlowFactor(animal){
+  const capacity=Math.max(.001,animal.bloodCapacity||corpseBloodProfile(animal).capacity);
+  const remaining=Math.max(0,Math.min(1,(animal.bloodReserve||0)/capacity));
+  const age=Math.max(0,state.elapsed-(animal.deadAt??state.elapsed));
+  return Math.pow(remaining,.62)*(.14+.86*Math.exp(-age/72));
+}
+
+function corpseBloodReleaseRate(animal){
+  const capacity=Math.max(.001,animal.bloodCapacity||corpseBloodProfile(animal).capacity);
+  const remaining=Math.max(0,Math.min(1,(animal.bloodReserve||0)/capacity));
+  const age=Math.max(0,state.elapsed-(animal.deadAt??state.elapsed));
+  return capacity*(.0022+.025*Math.exp(-age/34))*Math.pow(remaining,.68);
+}
+
+function spendCorpseBlood(animal,amount){
+  const reserve=Math.max(0,animal.bloodReserve||0);
+  const spent=Math.min(reserve,Math.max(0,amount));
+  animal.bloodReserve=reserve-spent;
+  animal.bloodReleased=(animal.bloodReleased||0)+spent;
+  if(animal.bloodReserve<(animal.bloodCapacity||1)*.0001) animal.bloodReserve=0;
+  return spent;
+}
+
+function detachCorpseBloodPool(animal){
+  if(!animal.bloodPoolEffectId) return;
+  const effect=state.effects.find((candidate)=>candidate.id===animal.bloodPoolEffectId);
+  if(effect) effect.ownerId=null;
+  animal.bloodPoolEffectId=null;
+}
+
+function emitCorpseDragBlood(animal,flow){
+  const profile=corpseBloodProfile(animal);
+  const amount=spendCorpseBlood(animal,(animal.bloodCapacity||profile.capacity)*(.0016+.0042*flow));
+  if(amount<=0) return;
+  const mainSize=2.05+flow*1.85+(animal.species==="boar"?.55:animal.species==="horse"?.8:0);
+  addBloodWorldEffect(animal.x+(Math.random()-.5)*1.5,animal.y+(Math.random()-.5)*1.5,mainSize,250+flow*170,"#581517");
+  const satellites=flow>.62?2:1;
+  for(let index=0;index<satellites;index++) addBloodWorldEffect(
+    animal.x+(Math.random()-.5)*4.2,animal.y+(Math.random()-.5)*3.2,
+    .9+flow*.85+Math.random()*.65,190+flow*120,index?"#741b1a":"#641719"
+  );
+}
+
+function updateCorpseBlood(animal,dt,moved){
+  if((animal.bloodReserve||0)<=0) return;
+  const dragging=state.draggingAnimalId===animal.id;
+  if(dragging){
+    animal.bloodRestTimer=0;
+    detachCorpseBloodPool(animal);
+    animal.bloodTrailDistance=(animal.bloodTrailDistance||0)+moved;
+    const flow=corpseBloodFlowFactor(animal);
+    const spacing=lerp(5.6,1.75,flow);
+    if(animal.bloodTrailDistance>=spacing){
+      animal.bloodTrailDistance%=spacing;
+      emitCorpseDragBlood(animal,flow);
+    }
+    return;
+  }
+
+  if(moved<.08) animal.bloodRestTimer=(animal.bloodRestTimer||0)+dt;
+  else animal.bloodRestTimer=0;
+  let pool=animal.bloodPoolEffectId&&state.effects.find((effect)=>effect.id===animal.bloodPoolEffectId);
+  if(pool&&Math.hypot(pool.x-animal.x,pool.y-animal.y)>Math.max(2.4,animalCatalog[animal.species].radius*.62)){
+    detachCorpseBloodPool(animal);
+    pool=null;
+  }
+  if(animal.bloodRestTimer<.45) return;
+  pool=pool||createCorpseBloodPool(animal);
+  if(!pool) return;
+  const spent=spendCorpseBlood(animal,corpseBloodReleaseRate(animal)*dt);
+  if(spent<=0) return;
+  pool.bloodAmount=(pool.bloodAmount||0)+spent;
+  pool.life=Math.max(pool.life,BLOOD_POOL_LIFE_SECONDS);
+  pool.maxLife=Math.max(pool.maxLife,BLOOD_POOL_LIFE_SECONDS);
 }
 
 function updateAnimalRagdoll(animal,dt){
@@ -2526,22 +2665,8 @@ function updateAnimalRagdoll(animal,dt){
   animal.angularVelocity*=Math.exp(-dt*5.5);
   animal.motionSpeed=0;
   animal.gaitMode="dead";
-  const age=Math.max(0,state.elapsed-(animal.deadAt??state.elapsed));
-  if(state.draggingAnimalId===animal.id&&age<CORPSE_TRAIL_FRESH_SECONDS&&animal.bloodReserve>0){
-    const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
-    animal.bloodTrailDistance=(animal.bloodTrailDistance||0)+moved;
-    const freshness=.18+.82*Math.exp(-age/26);
-    const spacing=lerp(2.25,5.6,1-freshness);
-    if(animal.bloodTrailDistance>=spacing){
-      animal.bloodTrailDistance%=spacing;
-      const spent=Math.min(animal.bloodReserve,.041*lucklessCurve(freshness));
-      animal.bloodReserve=Math.max(0,animal.bloodReserve-spent);
-      addBloodWorldEffect(animal.x,animal.y,1.45+animal.bloodLevel*.88,175+freshness*80,"#5b1718");
-    }
-  }
+  updateCorpseBlood(animal,dt,Math.hypot(animal.x-oldX,animal.y-oldY));
 }
-
-function lucklessCurve(value){return .55+value*.9;}
 
 function updateAnimals(dt){
   if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
@@ -2589,7 +2714,12 @@ function killAnimal(animal,damage){
   animal.health=0;
   animal.bloodLevel=Math.min(1.6,Math.max(.65,animal.bloodLevel+.24));
   animal.deadAt=state.elapsed;
-  animal.bloodReserve=Math.min(1.25,.55+animal.bloodLevel*.42);
+  const bloodProfile=corpseBloodProfile(animal);
+  animal.bloodCapacity=bloodProfile.capacity*(.86+Math.min(1,animal.bloodLevel)*.14);
+  animal.bloodReserve=animal.bloodCapacity;
+  animal.bloodReleased=0;
+  animal.bloodRestTimer=0;
+  animal.bloodTrailDistance=0;
   animal.bloodPoolEffectId=null;
   animal.attackPhase="idle";
   const dx=animal.x-state.player.x;
@@ -2601,8 +2731,8 @@ function killAnimal(animal,damage){
   animal.angle=0;
   prepareAnimalLoot(animal);
   createCorpseBloodPool(animal);
-  animal.bloodReserve=Math.max(0,animal.bloodReserve-.1);
-  emitBlood(animal,animal.species==="boar"?10:6);
+  spendCorpseBlood(animal,animal.bloodCapacity*.035);
+  emitBlood(animal,animal.species==="boar"?15:animal.species==="horse"?18:9);
   showToast(animalCatalog[animal.species].name+" erlegt · der Kadaver kann gezogen und zerlegt werden",2600);
 }
 
@@ -2611,8 +2741,7 @@ function harvestAnimalCorpse(animal,damage){
   animal.bloodLevel=Math.min(1.8,animal.bloodLevel+damage/animal.maxHealth*.32);
   animal.hitFlash=.14;
   animal.angularVelocity+=(Math.random()-.5)*1.8;
-  const released=Math.min(animal.bloodReserve||0,.04+damage/animal.maxHealth*.1);
-  animal.bloodReserve=Math.max(0,(animal.bloodReserve||0)-released);
+  const released=spendCorpseBlood(animal,.04+damage/animal.maxHealth*.1);
   if(released>0) emitBlood(animal,Math.min(9,2+Math.ceil(released*45)));
   if(!animal.lootQueue) prepareAnimalLoot(animal);
   const loot=animal.lootQueue[0];
@@ -2672,12 +2801,15 @@ function drawChicken(animal,x,y){
   ctx.translate(Math.round(x),Math.round(y));
   ctx.scale(flip,1);
   if(animal.status==="alive"){
+    const coat=animal.variant==="black"?{body:"#3b4140",wing:"#626764",flash:"#8b9994"}
+      :animal.variant==="brown"?{body:"#b9824e",wing:"#805933",flash:"#e7b47d"}
+        :{body:"#e8e1c4",wing:"#b8aa88",flash:"#f7d6cf"};
     const moving=animal.gaitMode!=="idle";
     const step=moving?(Math.sin(animal.gait)>.15?1:0):0;
     ctx.fillStyle="rgba(0,0,0,.28)";ctx.fillRect(-5*u,u,10*u,2*u);
-    ctx.fillStyle=animal.hitFlash>0?"#f7d6cf":"#e8e1c4";ctx.fillRect(-4*u,-4*u,7*u,5*u);
-    ctx.fillStyle="#b8aa88";ctx.fillRect(-2*u,-3*u,4*u,3*u);
-    ctx.fillStyle="#e8e1c4";ctx.fillRect(1*u,-7*u,4*u,4*u);
+    ctx.fillStyle=animal.hitFlash>0?coat.flash:coat.body;ctx.fillRect(-4*u,-4*u,7*u,5*u);
+    ctx.fillStyle=coat.wing;ctx.fillRect(-2*u,-3*u,4*u,3*u);
+    ctx.fillStyle=coat.body;ctx.fillRect(1*u,-7*u,4*u,4*u);
     ctx.fillStyle="#d7a73a";ctx.fillRect(5*u,-5*u,2*u,u);
     ctx.fillStyle="#a7352e";ctx.fillRect(2*u,-9*u,u,2*u);ctx.fillRect(3*u,-9*u,u,u);
     ctx.fillStyle="#1b211d";ctx.fillRect(4*u,(blinkClosed(animal)?-5:-6)*u,u,u);
@@ -2706,15 +2838,18 @@ function drawBoar(animal,x,y){
   ctx.translate(Math.round(x),Math.round(y));
   ctx.scale(flip,1);
   if(animal.status==="alive"){
+    const coat=animal.variant==="dark"?{body:"#393536",head:"#29282a",snout:"#211f21",leg:"#282426",flash:"#805b59"}
+      :animal.variant==="russet"?{body:"#754b35",head:"#5c382b",snout:"#43291f",leg:"#493025",flash:"#ad715b"}
+        :{body:"#5e4637",head:"#463329",snout:"#3a2922",leg:"#3d2d25",flash:"#9d5d51"};
     const step=animal.gaitMode==="idle"?0:(Math.sin(animal.gait)>.1?1:-1);
     const attackDrop=animal.attackPhase==="windup"?2:animal.attackPhase==="charge"?1:0;
     ctx.fillStyle="rgba(0,0,0,.30)";ctx.fillRect(-6*u,u,13*u,2*u);
-    ctx.fillStyle=animal.hitFlash>0?"#9d5d51":"#5e4637";ctx.fillRect(-6*u,-5*u,10*u,6*u);
-    ctx.fillStyle="#463329";ctx.fillRect(-4*u,-7*u,5*u,3*u);ctx.fillRect(2*u,(-5+attackDrop)*u,5*u,5*u);
-    ctx.fillStyle="#3a2922";ctx.fillRect(6*u,(-3+attackDrop)*u,3*u,3*u);ctx.fillRect(0,-7*u,2*u,2*u);
+    ctx.fillStyle=animal.hitFlash>0?coat.flash:coat.body;ctx.fillRect(-6*u,-5*u,10*u,6*u);
+    ctx.fillStyle=coat.head;ctx.fillRect(-4*u,-7*u,5*u,3*u);ctx.fillRect(2*u,(-5+attackDrop)*u,5*u,5*u);
+    ctx.fillStyle=coat.snout;ctx.fillRect(6*u,(-3+attackDrop)*u,3*u,3*u);ctx.fillRect(0,-7*u,2*u,2*u);
     ctx.fillStyle="#d5c49a";ctx.fillRect(6*u,attackDrop*u,3*u,u);ctx.fillRect(7*u,(-1+attackDrop)*u,u,2*u);
     ctx.fillStyle="#151815";ctx.fillRect(5*u,(blinkClosed(animal)?-3:-4+attackDrop)*u,u,u);
-    ctx.fillStyle="#3d2d25";ctx.fillRect((-4-step)*u,u,2*u,4*u);ctx.fillRect((2+step)*u,u,2*u,4*u);
+    ctx.fillStyle=coat.leg;ctx.fillRect((-4-step)*u,u,2*u,4*u);ctx.fillRect((2+step)*u,u,2*u,4*u);
     ctx.fillStyle="#7a5a42";ctx.fillRect(-7*u,-4*u,u,2*u);
     drawAnimalBloodMarks(ctx,animal,u);
   }else{
@@ -2832,19 +2967,22 @@ function drawHorse(animal,x,y){
 }
 
 function drawCrow(crow,x,y){
+  // Tree crows are simulated (and still launch as a group) while completely
+  // hidden by the crown. Showing a semi-transparent bird inside the leaves
+  // read like a rendering bug and gave away every occupied tree.
+  if(crow.flightState!=="flying") return;
   if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("crow",crow,ctx,x,y)) return;
   const u=2;
   const flip=crow.dir==="left"?-1:1;
   const flying=crow.flightState==="flying";
   const wing=flying?Math.round(Math.sin(crow.gait)*2):0;
   ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.scale(flip,1);
-  ctx.globalAlpha=flying?1:(crow.hiddenFactor||.55);
+  ctx.globalAlpha=1;
   if(flying){ctx.fillStyle="rgba(5,10,12,.18)";ctx.fillRect(-4*u,5*u,8*u,u);}
   ctx.fillStyle="#11171a";ctx.fillRect(-2*u,-2*u,5*u,3*u);ctx.fillRect(2*u,-3*u,2*u,2*u);
   ctx.fillStyle="#252e32";ctx.fillRect(-u,-2*u,2*u,u);
   ctx.fillStyle="#0a0d0f";
   if(flying){ctx.fillRect((-5-wing)*u,(-2-wing)*u,4*u,2*u);ctx.fillRect(2*u,(-2+wing)*u,(4+wing)*u,2*u);}
-  else{ctx.fillRect(-2*u,u,u,2*u);ctx.fillRect(u,u,u,2*u);}
   ctx.fillStyle="#ad9a62";ctx.fillRect(4*u,-2*u,u,u);
   ctx.restore();
 }
@@ -2970,7 +3108,7 @@ function drawStructureBlock(code,gx,gy,camX,camY){
   };
   const pair=colors[code];
   if(!pair) return;
-  drawGridBlock(gx,gy,camX,camY,pair[0],pair[1]);
+  drawGridBlock(gx,gy,camX,camY,pair[0],pair[1],"structure_"+code);
   if(code==="D"){
     const size=TILE_METERS*VIEW_SCALE;
     const x=Math.floor((gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
@@ -3038,7 +3176,8 @@ function addEffect(effect){
     entry.cellKey=Math.floor(entry.x/BLOOD_CELL_METERS)+","+Math.floor(entry.y/BLOOD_CELL_METERS);
     const sameCell=state.effects.filter((candidate)=>candidate.decal&&candidate.cellKey===entry.cellKey);
     if(sameCell.length>=BLOOD_DECALS_PER_CELL){
-      const oldest=state.effects.indexOf(sameCell[0]);
+      const recyclable=sameCell.find((candidate)=>candidate.type!=="bloodPool")||sameCell[0];
+      const oldest=state.effects.indexOf(recyclable);
       if(oldest>=0) state.effects.splice(oldest,1);
     }
   }
@@ -3046,12 +3185,18 @@ function addEffect(effect){
     let decals=0;
     for(const candidate of state.effects) if(candidate.decal) decals++;
     if(decals>=GROUND_DECAL_LIMIT){
-      const oldest=state.effects.findIndex((candidate)=>candidate.decal);
+      let oldest=state.effects.findIndex((candidate)=>candidate.decal&&candidate.type!=="bloodPool");
+      if(oldest<0) oldest=state.effects.findIndex((candidate)=>candidate.decal);
       if(oldest>=0) state.effects.splice(oldest,1);
     }
   }
   state.effects.push(entry);
-  if(state.effects.length>EFFECT_LIMIT) state.effects.splice(0,state.effects.length-EFFECT_LIMIT);
+  while(state.effects.length>EFFECT_LIMIT){
+    let recyclable=state.effects.findIndex((candidate)=>!candidate.decal&&candidate.type!=="bloodPool");
+    if(recyclable<0) recyclable=state.effects.findIndex((candidate)=>candidate.type!=="bloodPool");
+    if(recyclable<0) recyclable=0;
+    state.effects.splice(recyclable,1);
+  }
   return entry;
 }
 
@@ -3069,13 +3214,19 @@ function addBloodWorldEffect(x,y,size,life,color="#641719",options={}){
     vx:water.flowX*water.speed,vy:water.flowY*water.speed,color,water:true,diffusion:water.speed<1?.55:.28,
     ownerId:options.ownerId||null,sourcePool:!!options.pool
   });
-  return addEffect({type:options.pool?"bloodPool":"bloodDecal",layer:"ground",decal:true,x,y,size,baseSize:size,life,color,pool:!!options.pool,ownerId:options.ownerId||null,growth:options.pool?0:1});
+  return addEffect({
+    type:options.pool?"bloodPool":"bloodDecal",layer:"ground",decal:true,x,y,size,baseSize:size,life,color,
+    pool:!!options.pool,ownerId:options.ownerId||null,bloodAmount:options.bloodAmount||0,
+    poolCapacity:options.poolCapacity||1,poolSpread:options.poolSpread||3.2
+  });
 }
 
 function createCorpseBloodPool(animal){
   if(animal.bloodPoolEffectId) return state.effects.find((effect)=>effect.id===animal.bloodPoolEffectId)||null;
-  const baseSize=animal.species==="boar"?1.45:animal.species==="horse"?1.7:1.05;
-  const effect=addBloodWorldEffect(animal.x,animal.y,baseSize,BLOOD_POOL_LIFE_SECONDS,"#551416",{pool:true,ownerId:animal.id});
+  const profile=corpseBloodProfile(animal);
+  const effect=addBloodWorldEffect(animal.x,animal.y,profile.poolBase,BLOOD_POOL_LIFE_SECONDS,"#511315",{
+    pool:true,ownerId:animal.id,poolCapacity:animal.bloodCapacity||profile.capacity,poolSpread:profile.poolSpread
+  });
   animal.bloodPoolEffectId=effect?.id||null;
   return effect;
 }
@@ -3134,7 +3285,7 @@ function updateSkyShadows(){
   const heading=hash2(Math.floor(state.elapsed),17,8672)*Math.PI*2;
   for(let index=0;index<count&&active+index<SKY_SHADOW_LIMIT;index++) addEffect({
     type:"skyShadow",layer:"ground",x:state.player.x-140*Math.cos(heading)+index*7,y:state.player.y-140*Math.sin(heading)+index*5,
-    life:8,size:2.8+index*.25,vx:Math.cos(heading)*38,vy:Math.sin(heading)*38
+    life:8,size:7.2+index*.65,vx:Math.cos(heading)*38,vy:Math.sin(heading)*38
   });
 }
 
@@ -3147,16 +3298,11 @@ function updateWorldReactions(dt){
   updateSkyShadows();
   for(const effect of state.effects){
     effect.life-=dt;
-    if(effect.type==="bloodPool"||effect.sourcePool){
-      const owner=effect.ownerId&&animalStates.get(effect.ownerId);
-      if(owner&&owner.bloodReserve>0){
-        const age=Math.max(0,state.elapsed-(owner.deadAt||state.elapsed));
-        const rate=.014*Math.exp(-age/38)+.002;
-        const spent=Math.min(owner.bloodReserve,rate*dt);
-        owner.bloodReserve-=spent;
-        effect.growth=Math.min(1.65,(effect.growth||0)+spent*1.7);
-      }
-      effect.size=(effect.baseSize||.9)+(effect.growth||0)*(effect.sourcePool?1.8:3.2);
+    if(effect.type==="bloodPool"){
+      const fill=Math.max(0,Math.min(1,(effect.bloodAmount||0)/Math.max(.001,effect.poolCapacity||1)));
+      // Square-root area growth makes the edge advance quickly at first and
+      // then settle gradually as the finite reserve runs out.
+      effect.size=(effect.baseSize||1.2)+Math.sqrt(fill)*(effect.poolSpread||3.2);
     }
     if(effect.type==="bloodCloud"){
       const profile=waterBloodProfile(effect.x,effect.y);
@@ -3170,7 +3316,7 @@ function updateWorldReactions(dt){
       const profile=waterBloodProfile(effect.x,effect.y);
       effect.layer="ground";effect.type=profile?"bloodCloud":"bloodDecal";effect.decal=!profile;
       effect.cellKey=profile?null:Math.floor(effect.x/BLOOD_CELL_METERS)+","+Math.floor(effect.y/BLOOD_CELL_METERS);
-      effect.life=profile?profile.life:75;effect.maxLife=effect.life;
+      effect.life=profile?profile.life:210;effect.maxLife=effect.life;
       effect.vx=profile?profile.flowX*profile.speed:0;effect.vy=profile?profile.flowY*profile.speed:0;
       effect.diffusion=profile?.speed<1?.55:.28;effect.size*=profile?1.25:.9;
     }
@@ -3187,7 +3333,13 @@ function updateWorldReactions(dt){
   }
   state.effects=state.effects.filter((effect,index)=>!effect.decal||keepDecal.has(index));
   let decalOverflow=state.effects.reduce((sum,effect)=>sum+(effect.decal?1:0),0)-GROUND_DECAL_LIMIT;
-  if(decalOverflow>0) state.effects=state.effects.filter((effect)=>!effect.decal||decalOverflow--<=0);
+  if(decalOverflow>0){
+    state.effects=state.effects.filter((effect)=>{
+      if(!effect.decal||effect.type==="bloodPool") return true;
+      if(decalOverflow>0){decalOverflow--;return false;}
+      return true;
+    });
+  }
   const follow=1-Math.exp(-dt*7.5);
   state.camera.x=lerp(state.camera.x,state.player.x,follow);
   state.camera.y=lerp(state.camera.y,state.player.y,follow);
@@ -3249,14 +3401,24 @@ function drawEffects(camX,camY,layer){
         ctx.fillRect(Math.round(x-size),Math.round(y-size*.32),size*2,Math.max(2,Math.round(size*.64)));
         ctx.fillRect(Math.round(x-size*spreadA),Math.round(y-size*.62),Math.max(2,Math.round(size*1.08)),Math.max(2,Math.round(size*.45)));
         ctx.fillRect(Math.round(x-size*.2),Math.round(y+size*.08),Math.max(2,Math.round(size*(.75+spreadB))),Math.max(2,Math.round(size*.32)));
+        for(let lobe=0;lobe<4;lobe++){
+          const phase=((effect.seed>>>(lobe*3))&31)/31*Math.PI*2;
+          const lobeSize=size*(.22+((effect.seed>>>(lobe*4+2))&7)/34);
+          ctx.fillRect(Math.round(x+Math.cos(phase)*size*.72-lobeSize/2),Math.round(y+Math.sin(phase)*size*.29-lobeSize*.24),Math.max(2,Math.round(lobeSize)),Math.max(2,Math.round(lobeSize*.48)));
+        }
         ctx.fillStyle="#7f211f";ctx.fillRect(Math.round(x-size*.42),Math.round(y-size*.55),Math.max(2,Math.round(size*.86)),Math.max(2,Math.round(size*.22)));
-      }else ctx.fillRect(Math.round(x-size/2),Math.round(y-size*.32),size,Math.max(2,Math.round(size*.65)));
+      }else{
+        ctx.fillRect(Math.round(x-size/2),Math.round(y-size*.32),size,Math.max(2,Math.round(size*.65)));
+        if(effect.type==="bloodDecal"&&size>4) ctx.fillRect(Math.round(x+size*.42),Math.round(y-size*.48),Math.max(2,Math.round(size*.28)),Math.max(2,Math.round(size*.24)));
+      }
     }else if(effect.type==="skyShadow"){
-      ctx.globalAlpha*=.16;
+      ctx.globalAlpha*=.19;
       ctx.fillStyle="#081015";
-      const flap=Math.sin(state.elapsed*6+effect.id.length)*effect.size*VIEW_SCALE;
-      ctx.fillRect(Math.round(x-effect.size*VIEW_SCALE-flap),Math.round(y),Math.max(2,Math.round(effect.size*VIEW_SCALE)),2);
-      ctx.fillRect(Math.round(x+flap),Math.round(y),Math.max(2,Math.round(effect.size*VIEW_SCALE)),2);
+      const wing=Math.max(4,Math.round(effect.size*VIEW_SCALE));
+      const flap=Math.round(Math.sin(state.elapsed*5.2+effect.seed)*wing*.22);
+      ctx.fillRect(Math.round(x-wing-flap),Math.round(y+flap*.18),wing,Math.max(3,Math.round(wing*.15)));
+      ctx.fillRect(Math.round(x+flap),Math.round(y-flap*.18),wing,Math.max(3,Math.round(wing*.15)));
+      ctx.fillRect(Math.round(x-wing*.18),Math.round(y-wing*.06),Math.max(3,Math.round(wing*.36)),Math.max(3,Math.round(wing*.18)));
     }else if(effect.type==="bubble"){
       ctx.strokeStyle="rgba(218,245,243,.82)";
       ctx.lineWidth=1;
@@ -3599,6 +3761,7 @@ function drawWorld(){
 }
 
 function drawBackHair(c,u,style,hair,dir){
+  if(typeof artistAssetEnabled==="function"&&artistAssetEnabled("hair_"+style)) return;
   if(dir==="up"||style==="hood"||style==="undercut"||style==="mohawk"||style==="tousled") return;
   c.fillStyle=shade(hair,-8);
   if(dir==="side"){
@@ -3639,6 +3802,7 @@ function drawBackHair(c,u,style,hair,dir){
 }
 
 function drawHair(c,u,style,hair,dir){
+  if(typeof drawArtistStaticOverride==="function"&&drawArtistStaticOverride("hair_"+style,c,8*u,16*u,{animation:dir==="side"?"side":dir,pixelSize:u})) return;
   c.fillStyle=hair;
   if(dir==="side"){
     if(style==="hood"){
@@ -3899,6 +4063,13 @@ function drawHeldItem(c,u,dir,player){
       c.fillRect(3*u,-u,length*u,Math.max(2,u));
       c.restore();
     }
+  }
+
+  if(typeof drawArtistStaticOverride==="function"&&drawArtistStaticOverride("item_"+itemId,c,6*u,6*u,{
+    animation:active?"swing":"idle",progress:active?progress:null,pixelSize:u
+  })){
+    c.restore();
+    return;
   }
 
   if(itemId==="ironSword"){
@@ -4276,6 +4447,10 @@ function drawInventoryItemIcon(canvas,itemId){
   const cy=Math.floor(canvas.height/2);
   c.save();
   c.translate(cx,cy);
+  if(typeof drawArtistStaticOverride==="function"&&drawArtistStaticOverride("item_"+itemId,c,0,8*unit,{animation:"idle",pixelSize:unit})){
+    c.restore();
+    return;
+  }
   if(itemId==="ironSword"){
     c.rotate(-.72);
     c.fillStyle="#563b23";c.fillRect(-2*unit,5*unit,4*unit,2*unit);
@@ -5819,12 +5994,18 @@ window.__ARCHIPELAGO_DEBUG__ = {
   updateAnimalRagdoll,
   resolveAnimalCrowding,
   animalCrowdRadius,
+  spawnSeparationAllowed,
   updateBoarAttack,
   emitBoarChargeWind,
   advanceAnimalGait,
   animalSpawnAllowed,
   addBloodWorldEffect,
   createCorpseBloodPool,
+  corpseBloodProfile,
+  corpseBloodFlowFactor,
+  corpseBloodReleaseRate,
+  spendCorpseBlood,
+  updateCorpseBlood,
   waterBloodProfile,
   applyPlayerBleed,
   updatePlayerBleed,

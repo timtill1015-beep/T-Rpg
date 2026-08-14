@@ -34,7 +34,7 @@
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.13</span>
+        <span class="title-version">PROTOTYP · 0.14</span>
       </div>
     </section>
 
@@ -256,6 +256,13 @@
         <div class="asset-editor-layout">
           <aside class="asset-editor-panel asset-editor-assets">
             <span class="asset-editor-kicker">01 · ASSET</span>
+            <label>Kategorie
+              <select id="assetEditorCategory"></select>
+            </label>
+            <label>Asset suchen
+              <input id="assetEditorSearch" type="search" placeholder="z. B. Schwert, Haar, Block" />
+            </label>
+            <p id="assetEditorAssetMeta" class="asset-editor-asset-meta"></p>
             <div id="assetEditorAssetList" class="asset-editor-asset-list"></div>
             <label class="asset-editor-switch"><input id="assetEditorEnabled" type="checkbox" /> Im Spiel aktiv</label>
             <label>Darstellungsgröße
@@ -263,8 +270,8 @@
               <output id="assetEditorScaleValue">3×</output>
             </label>
             <div class="asset-editor-help">
-              <strong>Workflow</strong>
-              <p>Asset wählen, Animation und Frame einstellen, Ebene markieren und Pixel zeichnen. Die Vorschau spielt den aktuellen Clip ab.</p>
+              <strong>Ohne Code ins Spiel</strong>
+              <p>1. Kategorie, Variante und Clip wählen.<br />2. Frames/Ebenen bearbeiten und „Im Spiel aktiv“ einschalten.<br />3. „Projektdatei speichern“ lädt <em>artist-assets.json</em> herunter. Diese Datei auf GitHub über <em>Add file → Upload files</em> ersetzen; GitHub Pages übernimmt sie beim nächsten Build.</p>
             </div>
           </aside>
 
@@ -283,6 +290,12 @@
                 <button id="assetEditorAddFrame">+ Frame</button>
                 <button id="assetEditorDuplicateFrame">Duplizieren</button>
                 <button id="assetEditorDeleteFrame">Löschen</button>
+              </div>
+              <div class="asset-editor-clip-actions" aria-label="Animationsclips verwalten">
+                <button id="assetEditorAddAnimation">+ Clip</button>
+                <button id="assetEditorDuplicateAnimation">Clip kopieren</button>
+                <button id="assetEditorRenameAnimation">Umbenennen</button>
+                <button id="assetEditorDeleteAnimation">Clip löschen</button>
               </div>
             </div>
 

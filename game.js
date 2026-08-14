@@ -35,9 +35,9 @@ const VISUAL_CACHE_LIMIT = 36000;
 const TREE_CACHE_LIMIT = 120000;
 const ROAD_DECOR_CACHE_LIMIT = 24000;
 const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
-const EFFECT_LIMIT = 180;
-const GROUND_DECAL_LIMIT = 120;
-const BLOOD_DECALS_PER_CELL = 18;
+const EFFECT_LIMIT = 260;
+const GROUND_DECAL_LIMIT = 176;
+const BLOOD_DECALS_PER_CELL = 24;
 const CROW_ACTIVE_LIMIT = 72;
 const SKY_SHADOW_LIMIT = 10;
 const UI_UPDATE_MS = 100;
@@ -49,13 +49,15 @@ const ANIMAL_CELL_TILES = 18;
 const ANIMAL_CACHE_LIMIT = 32000;
 const ANIMAL_ACTIVE_RADIUS = 520;
 const ANIMAL_HIT_RANGE = TILE_METERS * 2.75;
+const ANIMAL_CROWD_CELL_METERS = TILE_METERS * 1.5;
+const ANIMAL_CROWD_STEP = 1 / 30;
 // A corpse now has to be visibly within reach before it can be grabbed. This
 // is exactly half of the previous 2.8-block interaction tolerance.
 const CORPSE_DRAG_RANGE = TILE_METERS * 1.4;
 const HORSE_MOUNT_RANGE = TILE_METERS * 2;
 const HORSE_FOLLOW_DISTANCE = TILE_METERS * 2.35;
-const CORPSE_TRAIL_FRESH_SECONDS = 95;
-const BLOOD_POOL_LIFE_SECONDS = 240;
+const CORPSE_TRAIL_FRESH_SECONDS = 125;
+const BLOOD_POOL_LIFE_SECONDS = 480;
 const BLOOD_CELL_METERS = TILE_METERS * 8;
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
@@ -194,6 +196,7 @@ const state = {
   nextSkyShadowAt:9,
   footstepDistance: 0,
   horseTrackDistance:0,
+  animalCrowdAccumulator:0,
   blockedUntil: 0,
   interactionTarget: null,
   dead: false,
@@ -2022,7 +2025,7 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
     health:meta.maxHealth,maxHealth:meta.maxHealth,status:"alive",
     wanderTimer:.8+hash2(cellX,cellY,8211+index)*3.4,idleUntil:0,
     hitFlash:0,fleeUntil:0,aggressionUntil:0,attackCooldown:0,
-    attackPhase:"idle",attackTimer:0,attackHitDone:false,dashHeading:heading,telegraphParticleTimer:0,
+    attackPhase:"idle",attackTimer:0,attackHitDone:false,dashHeading:heading,telegraphParticleTimer:0,chargeParticleTimer:0,
     bloodLevel:0,corpseDamage:0,harvestCount:0,lootQueue:null,
     angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,
     deadAt:null,bloodTrailDistance:0,bloodReserve:1,
@@ -2227,6 +2230,67 @@ function moveAnimalBody(animal,dt){
   }
 }
 
+function animalCrowdRadius(animal){
+  const meta=animalCatalog[animal.species];
+  if(!meta||animal.species==="crow") return 0;
+  return Math.max(1.7,meta.radius*(animal.status==="alive"?.82:.58));
+}
+
+function resolveAnimalCrowding(animals,dt){
+  const bodies=animals
+    .filter((animal)=>!animal.removed&&animal.status==="alive"&&animal.species!=="crow"&&animal.id!==state.mountedHorseId)
+    .sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+  if(bodies.length<2) return;
+  const cells=new Map();
+  for(const animal of bodies){
+    const key=Math.floor(animal.x/ANIMAL_CROWD_CELL_METERS)+","+Math.floor(animal.y/ANIMAL_CROWD_CELL_METERS);
+    if(!cells.has(key)) cells.set(key,[]);
+    cells.get(key).push(animal);
+  }
+  const seen=new Set();
+  for(const animal of bodies){
+    const cellX=Math.floor(animal.x/ANIMAL_CROWD_CELL_METERS);
+    const cellY=Math.floor(animal.y/ANIMAL_CROWD_CELL_METERS);
+    for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++) for(const other of cells.get((cellX+ox)+","+(cellY+oy))||[]){
+      if(other===animal) continue;
+      const pair=animal.id<other.id?animal.id+"|"+other.id:other.id+"|"+animal.id;
+      if(seen.has(pair)) continue;
+      seen.add(pair);
+      const minimum=animalCrowdRadius(animal)+animalCrowdRadius(other);
+      let dx=animal.x-other.x;
+      let dy=animal.y-other.y;
+      let distance=Math.hypot(dx,dy);
+      if(distance>=minimum) continue;
+      if(distance<.001){
+        const angle=hash2(stableTextHash(animal.id),stableTextHash(other.id),8445)*Math.PI*2;
+        dx=Math.cos(angle);dy=Math.sin(angle);distance=1;
+      }
+      const nx=dx/distance;
+      const ny=dy/distance;
+      const penetration=minimum-distance;
+      const maxCorrection=Math.max(.12,dt*30);
+      const correction=Math.min(penetration*.56,maxCorrection);
+      const animalWeight=animal.owned ? .28 : animal.status==="alive" ? 1 : .42;
+      const otherWeight=other.owned ? .28 : other.status==="alive" ? 1 : .42;
+      const weightTotal=animalWeight+otherWeight||1;
+      const animalShare=otherWeight/weightTotal;
+      const otherShare=animalWeight/weightTotal;
+      const ax=animal.x+nx*correction*animalShare;
+      const ay=animal.y+ny*correction*animalShare;
+      const bx=other.x-nx*correction*otherShare;
+      const by=other.y-ny*correction*otherShare;
+      if(animalCanStand(animal,ax,ay)){animal.x=ax;animal.y=ay;}
+      if(animalCanStand(other,bx,by)){other.x=bx;other.y=by;}
+      const relative=(animal.vx-other.vx)*nx+(animal.vy-other.vy)*ny;
+      if(relative<0){
+        const impulse=relative*.46;
+        animal.vx-=nx*impulse*animalShare;animal.vy-=ny*impulse*animalShare;
+        other.vx+=nx*impulse*otherShare;other.vy+=ny*impulse*otherShare;
+      }
+    }
+  }
+}
+
 function injurePlayerFromBoar(animal){
   if(animal.attackPhase!=="charge"||animal.attackHitDone||state.dead) return;
   animal.attackHitDone=true;
@@ -2279,6 +2343,23 @@ function emitBoarTelegraph(animal){
     life:.55,size:.85,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2,color:colors[terrain.biome]||"#9c8764"});
 }
 
+function emitBoarChargeWind(animal){
+  const heading=animal.dashHeading||animal.heading;
+  const backwardsX=-Math.cos(heading);
+  const backwardsY=-Math.sin(heading);
+  const sideX=-backwardsY;
+  const sideY=backwardsX;
+  const terrain=terrainAt(animal.x,animal.y);
+  const windColor=["snow","glacier","packIce"].includes(terrain.biome)?"#d9ece8"
+    :["desert","beach"].includes(terrain.biome)?"#d5b879":"#b6c3b5";
+  addEffect({
+    type:"wind",layer:"air",x:animal.x+backwardsX*5+sideX*(Math.random()-.5)*5,y:animal.y+backwardsY*5+sideY*(Math.random()-.5)*5,
+    life:.34+Math.random()*.22,size:1.1+Math.random()*.85,vx:backwardsX*(13+Math.random()*9)+sideX*(Math.random()-.5)*7,
+    vy:backwardsY*(13+Math.random()*9)+sideY*(Math.random()-.5)*7,color:windColor,heading
+  });
+  if(Math.random()<.55) emitBoarTelegraph(animal);
+}
+
 function advanceAnimalGait(animal,moved,dt){
   const speed=dt>0?moved/dt:0;
   animal.motionSpeed=lerp(animal.motionSpeed||0,speed,1-Math.exp(-dt*12));
@@ -2295,11 +2376,12 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
   if(animal.attackPhase==="idle"){
     if(animal.aggressionUntil<=state.elapsed||distance>=190) return null;
     animal.heading=Math.atan2(dy,dx);
-    if(distance<meta.radius+PLAYER_RADIUS+8&&animal.attackCooldown<=0){
+    if(distance<58&&animal.attackCooldown<=0){
       animal.attackPhase="windup";
-      animal.attackTimer=.42;
+      animal.attackTimer=.78;
       animal.attackHitDone=false;
       animal.telegraphParticleTimer=0;
+      animal.chargeParticleTimer=0;
       return 0;
     }
     return meta.runSpeed;
@@ -2310,7 +2392,7 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
     if(animal.telegraphParticleTimer<=0){animal.telegraphParticleTimer=.09;emitBoarTelegraph(animal);}
     if(animal.attackTimer<=0){
       animal.attackPhase="charge";
-      animal.attackTimer=.5;
+      animal.attackTimer=1.08;
       animal.dashHeading=Math.atan2(dy,dx);
       animal.heading=animal.dashHeading;
     }
@@ -2318,14 +2400,16 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
   }
   if(animal.attackPhase==="charge"){
     animal.heading=animal.dashHeading;
-    const active=animal.attackTimer<=.38&&animal.attackTimer>=.10;
+    animal.chargeParticleTimer-=dt;
+    if(animal.chargeParticleTimer<=0){animal.chargeParticleTimer=.045;emitBoarChargeWind(animal);}
+    const active=animal.attackTimer<=.98&&animal.attackTimer>=.10;
     if(active&&distance<meta.radius+PLAYER_RADIUS+2.4) injurePlayerFromBoar(animal);
-    if(animal.attackTimer<=0){animal.attackPhase="recover";animal.attackTimer=.62;}
-    return meta.runSpeed*1.9;
+    if(animal.attackTimer<=0){animal.attackPhase="recover";animal.attackTimer=.78;}
+    return meta.runSpeed*2.35;
   }
   if(animal.attackTimer<=0){
     animal.attackPhase="idle";
-    animal.attackCooldown=.65;
+    animal.attackCooldown=1.15;
     animal.attackHitDone=false;
   }
   return 0;
@@ -2447,12 +2531,12 @@ function updateAnimalRagdoll(animal,dt){
     const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
     animal.bloodTrailDistance=(animal.bloodTrailDistance||0)+moved;
     const freshness=.18+.82*Math.exp(-age/26);
-    const spacing=lerp(3.2,6.8,1-freshness);
+    const spacing=lerp(2.25,5.6,1-freshness);
     if(animal.bloodTrailDistance>=spacing){
       animal.bloodTrailDistance%=spacing;
-      const spent=Math.min(animal.bloodReserve,.035*lucklessCurve(freshness));
+      const spent=Math.min(animal.bloodReserve,.041*lucklessCurve(freshness));
       animal.bloodReserve=Math.max(0,animal.bloodReserve-spent);
-      addBloodWorldEffect(animal.x,animal.y,1.05+animal.bloodLevel*.62,90+freshness*45,"#5b1718");
+      addBloodWorldEffect(animal.x,animal.y,1.45+animal.bloodLevel*.88,175+freshness*80,"#5b1718");
     }
   }
 }
@@ -2462,10 +2546,16 @@ function lucklessCurve(value){return .55+value*.9;}
 function updateAnimals(dt){
   if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
   pruneDistantCrows();
-  for(const animal of activeAnimalsNear(state.player.x,state.player.y)){
+  const active=activeAnimalsNear(state.player.x,state.player.y);
+  for(const animal of active){
     if(animal.species==="crow") updateCrow(animal,dt);
     else if(animal.status==="alive") updateLivingAnimal(animal,dt);
     else updateAnimalRagdoll(animal,dt);
+  }
+  state.animalCrowdAccumulator=(state.animalCrowdAccumulator||0)+dt;
+  if(state.animalCrowdAccumulator>=ANIMAL_CROWD_STEP){
+    resolveAnimalCrowding(active,Math.min(.05,state.animalCrowdAccumulator));
+    state.animalCrowdAccumulator=0;
   }
 }
 
@@ -2474,17 +2564,18 @@ function emitBlood(animal,count=5,impact=null){
   const length=Math.hypot(direction.x,direction.y)||1;
   const nx=direction.x/length;
   const ny=direction.y/length;
+  count=Math.max(1,Math.ceil(count*1.65));
   for(let index=0;index<count;index++) addEffect({
     type:"blood",layer:"air",x:animal.x+(Math.random()-.5)*3,y:animal.y+(Math.random()-.5)*3,
-    life:.65+Math.random()*.75,size:.45+Math.random()*.7,
+    life:.8+Math.random()*.9,size:.68+Math.random()*1.05,
     vx:nx*(8+Math.random()*12)+(Math.random()-.5)*7,vy:ny*(7+Math.random()*10)-6-Math.random()*7,
     color:index%3===0?"#8f211d":"#5f1718"
   });
-  const stains=Math.max(1,Math.ceil(count*.3));
+  const stains=Math.max(2,Math.ceil(count*.36));
   for(let index=0;index<stains;index++) addBloodWorldEffect(
     animal.x+nx*(2+Math.random()*5)+(Math.random()-.5)*2,
     animal.y+ny*(2+Math.random()*5)+(Math.random()-.5)*2,
-    .65+Math.random()*.65,75+Math.random()*50,index%2?"#571718":"#771c1b"
+    .9+Math.random()*.95,130+Math.random()*90,index%2?"#571718":"#771c1b"
   );
 }
 
@@ -2574,6 +2665,7 @@ function drawAnimalBloodMarks(c,animal,u){
 }
 
 function drawChicken(animal,x,y){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("chicken",animal,ctx,x,y)) return;
   const u=2;
   const flip=animalDirection(animal)==="left"?-1:1;
   ctx.save();
@@ -2607,6 +2699,7 @@ function drawChicken(animal,x,y){
 }
 
 function drawBoar(animal,x,y){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("boar",animal,ctx,x,y)) return;
   const u=3;
   const flip=animalDirection(animal)==="left"?-1:1;
   ctx.save();
@@ -2639,6 +2732,7 @@ function drawBoar(animal,x,y){
 }
 
 function drawHorse(animal,x,y){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("horse",animal,ctx,x,y)) return;
   const u=2;
   const breed=horseBreedCatalog[animal.breed]||horseBreedCatalog.warmblood;
   const coat=horseCoatCatalog[animal.coat]||horseCoatCatalog.bay;
@@ -2738,6 +2832,7 @@ function drawHorse(animal,x,y){
 }
 
 function drawCrow(crow,x,y){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("crow",crow,ctx,x,y)) return;
   const u=2;
   const flip=crow.dir==="left"?-1:1;
   const flying=crow.flightState==="flying";
@@ -2938,6 +3033,7 @@ function drawLandmarkLabel(landmark,camX,camY){
 
 function addEffect(effect){
   const entry={...effect,id:effect.id||"effect:"+(++state.effectSerial),createdAt:state.elapsed,maxLife:effect.maxLife||effect.life};
+  entry.seed=entry.seed??stableTextHash(entry.id);
   if(entry.decal){
     entry.cellKey=Math.floor(entry.x/BLOOD_CELL_METERS)+","+Math.floor(entry.y/BLOOD_CELL_METERS);
     const sameCell=state.effects.filter((candidate)=>candidate.decal&&candidate.cellKey===entry.cellKey);
@@ -2969,16 +3065,17 @@ function waterBloodProfile(x,y){
 function addBloodWorldEffect(x,y,size,life,color="#641719",options={}){
   const water=waterBloodProfile(x,y);
   if(water) return addEffect({
-    type:"bloodCloud",layer:"ground",x,y,size:size*1.2,life:Math.min(life,water.life),
+    type:"bloodCloud",layer:"ground",x,y,size:size*1.2,baseSize:size*1.2,life:Math.min(life,water.life),
     vx:water.flowX*water.speed,vy:water.flowY*water.speed,color,water:true,diffusion:water.speed<1?.55:.28,
     ownerId:options.ownerId||null,sourcePool:!!options.pool
   });
-  return addEffect({type:options.pool?"bloodPool":"bloodDecal",layer:"ground",decal:true,x,y,size,life,color,pool:!!options.pool,ownerId:options.ownerId||null,growth:options.pool?0:1});
+  return addEffect({type:options.pool?"bloodPool":"bloodDecal",layer:"ground",decal:true,x,y,size,baseSize:size,life,color,pool:!!options.pool,ownerId:options.ownerId||null,growth:options.pool?0:1});
 }
 
 function createCorpseBloodPool(animal){
   if(animal.bloodPoolEffectId) return state.effects.find((effect)=>effect.id===animal.bloodPoolEffectId)||null;
-  const effect=addBloodWorldEffect(animal.x,animal.y,.9,BLOOD_POOL_LIFE_SECONDS,"#551416",{pool:true,ownerId:animal.id});
+  const baseSize=animal.species==="boar"?1.45:animal.species==="horse"?1.7:1.05;
+  const effect=addBloodWorldEffect(animal.x,animal.y,baseSize,BLOOD_POOL_LIFE_SECONDS,"#551416",{pool:true,ownerId:animal.id});
   animal.bloodPoolEffectId=effect?.id||null;
   return effect;
 }
@@ -3059,7 +3156,7 @@ function updateWorldReactions(dt){
         owner.bloodReserve-=spent;
         effect.growth=Math.min(1.65,(effect.growth||0)+spent*1.7);
       }
-      effect.size=.9+(effect.growth||0)*(effect.sourcePool?1.8:3.2);
+      effect.size=(effect.baseSize||.9)+(effect.growth||0)*(effect.sourcePool?1.8:3.2);
     }
     if(effect.type==="bloodCloud"){
       const profile=waterBloodProfile(effect.x,effect.y);
@@ -3127,6 +3224,14 @@ function drawEffects(camX,camY,layer){
       ctx.fillStyle=effect.color||"#b8a47a";
       const size=Math.max(2,Math.round((effect.size+progress)*VIEW_SCALE));
       ctx.fillRect(Math.round(x),Math.round(y),size,size);
+    }else if(effect.type==="wind"){
+      ctx.globalAlpha*=.58;
+      ctx.strokeStyle=effect.color||"#c8d2c7";
+      ctx.lineWidth=Math.max(1,Math.round(VIEW_SCALE*.42));
+      const length=Math.max(5,Math.round(effect.size*VIEW_SCALE*5));
+      const dx=Math.cos(effect.heading||0)*length;
+      const dy=Math.sin(effect.heading||0)*length;
+      ctx.beginPath();ctx.moveTo(Math.round(x-dx*.5),Math.round(y-dy*.5));ctx.lineTo(Math.round(x+dx*.5),Math.round(y+dy*.5));ctx.stroke();
     }else if(effect.type==="woodChip"){
       ctx.fillStyle=effect.color||"#b47c43";
       const size=Math.max(2,Math.round(effect.size*VIEW_SCALE));
@@ -3139,8 +3244,12 @@ function drawEffects(camX,camY,layer){
         ctx.fillRect(Math.round(x-size),Math.round(y-size*.45),size*2,Math.max(2,Math.round(size*.9)));
         ctx.fillStyle="rgba(138,44,50,.2)";ctx.fillRect(Math.round(x-size*.45),Math.round(y-size*.7),size,Math.max(2,Math.round(size*.45)));
       }else if(effect.type==="bloodPool"){
-        ctx.fillRect(Math.round(x-size),Math.round(y-size*.38),size*2,Math.max(2,Math.round(size*.76)));
-        ctx.fillStyle="#7f211f";ctx.fillRect(Math.round(x-size*.42),Math.round(y-size*.62),Math.max(2,Math.round(size*.9)),Math.max(2,Math.round(size*.28)));
+        const spreadA=.72+(effect.seed%19)/60;
+        const spreadB=.34+((effect.seed>>>5)%17)/70;
+        ctx.fillRect(Math.round(x-size),Math.round(y-size*.32),size*2,Math.max(2,Math.round(size*.64)));
+        ctx.fillRect(Math.round(x-size*spreadA),Math.round(y-size*.62),Math.max(2,Math.round(size*1.08)),Math.max(2,Math.round(size*.45)));
+        ctx.fillRect(Math.round(x-size*.2),Math.round(y+size*.08),Math.max(2,Math.round(size*(.75+spreadB))),Math.max(2,Math.round(size*.32)));
+        ctx.fillStyle="#7f211f";ctx.fillRect(Math.round(x-size*.42),Math.round(y-size*.55),Math.max(2,Math.round(size*.86)),Math.max(2,Math.round(size*.22)));
       }else ctx.fillRect(Math.round(x-size/2),Math.round(y-size*.32),size,Math.max(2,Math.round(size*.65)));
     }else if(effect.type==="skyShadow"){
       ctx.globalAlpha*=.16;
@@ -3450,7 +3559,7 @@ function drawWorld(){
   }
   for(const peer of state.peers.values()) renderQueue.push({type:peer.mount?"peerMounted":"peer",y:peer.y,player:peer});
   renderQueue.push({type:localMount?"localMounted":"local",y:state.player.y,player:state.player,horse:localMount});
-  renderQueue.sort((a,b)=>a.y-b.y);
+  renderQueue.sort((a,b)=>a.y-b.y||String(a.animal?.id||a.player?.id||a.type).localeCompare(String(b.animal?.id||b.player?.id||b.type)));
   for(const item of renderQueue){
     if(item.type==="tree"){
       drawGridTree(item.tree,camX,camY);
@@ -3860,6 +3969,10 @@ function drawPixelName(c,text,x,y,color){
 }
 
 function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("player",p,c,x,y,{scale,portraitMode})){
+    if(p.name&&!portraitMode) drawPixelName(c,p.name,x,y-22*Math.max(1,Math.round(scale))-12,local?"#f3d47c":"#f0ead8");
+    return;
+  }
   // Integer sprite units keep every limb and clothing layer on the pixel
   // grid. Fractional units were the main source of the soft, smeared player.
   const u=Math.max(1,Math.round(scale));
@@ -4762,9 +4875,11 @@ function requestDebugMode(){
     setDebugMode(false);
     return;
   }
-  const password=window.prompt("Debug-Passwort eingeben:","");
-  if(password==="1234") setDebugMode(true);
-  else if(password!==null) showToast("Falsches Debug-Passwort");
+  const token=sessionStorage.getItem("archipelago.debug.local-session");
+  if(token==="enabled"){setDebugMode(true);return;}
+  const confirmation=window.prompt("Debugmodus für diese Browser-Sitzung aktivieren? Tippe DEBUG ein:","");
+  if(confirmation==="DEBUG"){sessionStorage.setItem("archipelago.debug.local-session","enabled");setDebugMode(true);}
+  else if(confirmation!==null) showToast("Debugmodus nicht aktiviert");
 }
 
 function nearestLandmark(x,y){
@@ -5112,6 +5227,7 @@ function startGame(){
   state.effects=[];
   state.footstepDistance=0;
   state.horseTrackDistance=0;
+  state.animalCrowdAccumulator=0;
   state.player.stamina=100;
   state.player.health=100;
   state.player.swimming=false;
@@ -5701,6 +5817,10 @@ window.__ARCHIPELAGO_DEBUG__ = {
   updateAnimals,
   updateLivingAnimal,
   updateAnimalRagdoll,
+  resolveAnimalCrowding,
+  animalCrowdRadius,
+  updateBoarAttack,
+  emitBoarChargeWind,
   advanceAnimalGait,
   animalSpawnAllowed,
   addBloodWorldEffect,
@@ -5713,6 +5833,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   updateCrow,
   updateSkyShadows,
   blinkClosed,
+  effectLimits:{global:EFFECT_LIMIT,groundDecals:GROUND_DECAL_LIMIT,bloodPerCell:BLOOD_DECALS_PER_CELL},
   addEffect,
   emitGroundTrack,
   spawnStartingHorse,

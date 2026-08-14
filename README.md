@@ -2,7 +2,7 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.12)
+## Aktueller Stand (0.13)
 
 - richtiger Titelscreen mit animierter Weltkulisse
 - erweiterter Charaktereditor mit zehn Frisuren, sechs Bartstilen, sechs Kleidungsformen sowie zusätzlichen Haar-, Stoff- und Mantelfarben
@@ -31,6 +31,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Eisenschwert als 1×3-Gegenstand mit einzelnem Hieb und sichtbarem Pixel-Trail sowie Holzfälleraxt als 2×3-Gegenstand
 - persistente Baumzustände mit Trefferpunkten, erhaltener Block-/Rindentextur, mindestens einem vollen Weltblock Stammdicke, beschleunigter Fallphysik, kontinuierlichem sicherem Push-out und anschließend drei physikalischen Holzabschnitten, die auf nahe freie 8-m-Rasterzellen einrasten
 - frei umherlaufende Hühnergruppen mit geschwindigkeitsgekoppeltem, ruhigerem Laufzyklus sowie Wildschweine mit ausweichbarem Telegraph, festgelegtem Dash, einmaligem Trefferfenster und Erholungsphase
+- lebende Tiere besitzen eine begrenzte räumliche Körpertrennung mit gedämpfter Impulsauflösung; feststeckende Gruppen werden ohne Teleport getrennt und ein stabiler Render-Tiebreaker verhindert Flimmern bei gleicher Tiefenposition
 - deterministische kleine Rabengruppen sitzen teilweise verdeckt in passenden Bäumen, fliegen bei Annäherung oder Baumfall gemeinsam auf und verlassen anschließend den aktiven Simulationsbereich; subtile, begrenzte Himmelsschatten ergänzen weit entfernte Vögel
 - frei umherlaufende Pferde in vier Rassen (Warmblut, Araber, Kaltblut und Pony) und sechs Fellvarianten (Brauner, Rappe, Fuchs, Schimmel, Palomino und Schecke); Körperlänge, Körperhöhe, Beinlänge und Reitgeschwindigkeit unterscheiden sich je nach Rasse
 - gesattelte und ungesattelte Pferde als echte Tierzustände; ein ungesatteltes Pferd kann angesehen, aber noch nicht geritten werden
@@ -38,9 +39,11 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Aufsitzen und Absteigen über `E` oder die mobile Aktionstaste, unverkleinerte Sitzpose ohne Laufbeine, richtungsabhängige Reitdarstellung, distanzgekoppelte Schritt-/Galoppzyklen, natürlicher Schweif, Pferdeausdauer, Hufspuren sowie blockierte Tiefseewege
 - alle lebenden Figuren und Tiere mit Augen blinzeln in deterministisch versetzten Intervallen; tote Tiere behalten dauerhaft sichtbar geschlossene Augen
 - progressive Verletzungsdarstellung mit impulsabhängigen Blutspritzern, ortsfesten und langlebigen Welt-Blutdecals sowie einem gemeinsamen endlichen Blutvorrat für ruhende Lache und Ziehspur
+- deutlich kräftigere Blutspritzer, größere und länger sichtbare Schleifflecken sowie unregelmäßige, bis zu acht Minuten sichtbare Blutlachen; globale und zellenweise Caps recyceln weiterhin alte Effekte
 - Blut verdünnt sich in Meer- und Flachwasser zu kurzlebigen Wolken; in Flüssen folgt es der tatsächlich berechneten Strömungsrichtung
 - physische Tierkadaver mit passiver Schleifpose; über `E` lassen sie sich aus einer bewusst knappen Reichweite von 1,4 Weltblöcken aufnehmen, per gedämpfter Constraint nah hinter dem Spieler ziehen und wieder loslassen; frische Kadaver erzeugen größere, mit der Zeit seltener werdende Blutspuren
 - Wildschwein-Dashes können eine begrenzte Spielerblutung auslösen: kleiner periodischer Schaden, endliches Blutvolumen, bewegungsabhängige Spur, Wasserverdünnung, HUD-Restzeit und sicherer Reset bei Tod/Respawn
+- Wildschwein-Charges starten bereits aus lesbarer Distanz, laden länger sichtbar auf und ziehen während des verlängerten Dashs einen untergrundgefärbten Wind-/Staubschweif hinter sich her
 - Tiere und Kadaver bleiben durch ganzzahlige Pixelkörper, gefüllte Gliedmaßen und ohne weich geglättete Vektorrotationen auch während ihrer Bewegung klar gerastert
 - artspezifische Kadaververwertung durch weitere Waffentreffer mit rohem Hühner-/Wildfleisch, Federn, Haut, Hauern und Knochen als echten Raster- und Stapelitems
 - datengetriebene Tierarten, Verhaltenszustände, Trefferwerte, Loottabellen, Itemkatalog, Equipment-Regeln und Aktions-Handler als Basis für weitere Tiere, Waffen, Rüstung, Ressourcen, Behälter und Beute
@@ -48,6 +51,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Minimap und große beschriftete Weltkarte mit Legende
 - mobile Touch-Steuerung mit Mehrfinger-D-Pad, gedrückt gehaltenem Sprint, großen Aktions-/Interaktionstasten sowie direkten Buttons für Inventar, Karte und Pause; HUD und Overlays berücksichtigen Hochformat, Querformat und Display-Safe-Areas
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
+- integriertes Asset Studio für Nicht-Programmierer: Pixel-Stift, Radierer, Füllen, Pipette, Spiegeln, Onion Skin, Animationsframes/FPS, Live-Vorschau, bis zu zwölf frei sortierbare Ebenen, Deckkraft, Undo/Redo sowie validierter JSON-Import und -Export
 
 ## Steuerung
 
@@ -62,16 +66,23 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 | E | Weltobjekt untersuchen / Tierkadaver ziehen oder loslassen / Pferd besteigen oder absteigen |
 | H | Eigenes Pferd zwischen `FOLLOW` und `STAY` umschalten |
 | M | Weltkarte |
-| # | Debugmodus öffnen (Passwort `1234`) |
+| # im Haupt-/Charaktermenü | Asset Studio öffnen; beim ersten Öffnen lokales Studio-Passwort für dieses Gerät setzen |
+| # im laufenden Spiel | Debugmodus für die aktuelle Browser-Sitzung aktivieren |
 | Esc | Pause / Overlay schließen |
 
 Auf Smartphones und Tablets erscheint automatisch eine eigene Touch-Oberfläche. Links liegt das D-Pad, rechts befinden sich Sprint beziehungsweise Galopp, eine kontextabhängige Aktionstaste mit den Zuständen `Reiten`, `Absteigen`, `Ziehen` und `Loslassen` sowie der große Werkzeug-/Angriffsknopf. Inventar, Karte, Pferdekommando und Pause sind oben rechts erreichbar. Die Steuerung unterstützt mehrere gleichzeitig gehaltene Finger, beispielsweise Lenken plus Galopp und Angriff.
 
 Im Debugmodus teleportiert ein Klick auf die Weltkarte an jede gewünschte Position. Ein Klick direkt in die Spielwelt versetzt die Figur innerhalb des sichtbaren Ausschnitts.
 
+## Asset Studio
+
+Das Asset Studio wird im Titel- oder Charaktermenü mit `#` geöffnet. Es enthält vorbereitete, aber zunächst deaktivierte Pixelvorlagen für Spieler, Huhn, Wildschwein, Pferd und Rabe. Pro Asset lassen sich die vorgesehenen Zustände wie `IDLE`, `WALK`, `PANIC`, `WINDUP`, `CHARGE`, `GALLOP`, `DEAD` oder `FLY` als einzelne Frames bearbeiten. Ebenen werden von hinten nach vorn gerendert; Sichtbarkeit, Name, Reihenfolge und Deckkraft sind Teil des Packs. Aktivierte Assets ersetzen nur dann die prozedurale Standardgrafik, wenn der gewählte Clip tatsächlich Pixel enthält. Dadurch bleibt ein unvollständiger Pack spielbar.
+
+`Entwurf speichern` legt den aktuellen Stand sofort im Browser (`localStorage`) ab und das Spiel verwendet ihn auf diesem Gerät. `JSON exportieren` erzeugt eine transportierbare Datei für andere Artists. `Projektdatei speichern` schreibt – sofern der Browser den Dateidialog unterstützt – eine validierte `artist-assets.json`; andernfalls wird genau diese Datei heruntergeladen. Liegt sie neben `index.html`, lädt das Spiel sie bei jedem Start automatisch. Damit eine Änderung für alle Spieler dauerhaft wird, muss diese Projektdatei anschließend wie die anderen Spieldateien committed und deployed werden. Da das Spiel statisch gehostet wird, kann ein Browser-Editor ohne Backend nicht selbstständig in das öffentliche GitHub-Repository schreiben. Das Studio-Passwort wird deshalb nur lokal im jeweiligen Browser gesetzt; im öffentlichen Code liegt kein gemeinsames Passwort und kein fester Passwort-Hash.
+
 ## Netlify-Deployment
 
-1. index.html, style.css und game.js müssen direkt im veröffentlichten Ordner liegen.
+1. `index.html`, `style.css`, `game.js`, `asset-editor.js` und `artist-assets.json` müssen direkt im veröffentlichten Ordner liegen.
 2. Den Ordner über Netlify Drop veröffentlichen.
 3. Die erzeugte HTTPS-Seite öffnen.
 4. Für Multiplayer eine Lobby hosten, den Code teilen und anschließend die Lobby betreten.

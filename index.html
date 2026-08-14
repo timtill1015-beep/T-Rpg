@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="style.css" />
   <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script defer src="game.js"></script>
+  <script defer src="asset-editor.js"></script>
 </head>
 <body>
   <div id="app">
@@ -33,7 +34,7 @@
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.8</span>
+        <span class="title-version">PROTOTYP · 0.13</span>
       </div>
     </section>
 
@@ -220,6 +221,128 @@
           </div>
         </section>
       </main>
+    </section>
+
+    <section id="assetEditorOverlay" class="asset-editor-overlay hidden" aria-label="Asset Studio">
+      <div id="assetEditorLogin" class="asset-editor-login modal-card" role="dialog" aria-modal="true" aria-labelledby="assetEditorLoginTitle">
+        <p class="eyebrow">Geschützter Werkzeugbereich</p>
+        <h2 id="assetEditorLoginTitle">Asset Studio</h2>
+        <p>Texturen, Animationsframes und Ebenen direkt im Browser bearbeiten. Beim ersten Öffnen setzt du ein lokales Studio-Passwort für dieses Gerät.</p>
+        <label>Lokales Studio-Passwort
+          <input id="assetEditorPassword" type="password" autocomplete="current-password" />
+        </label>
+        <p id="assetEditorLoginError" class="asset-editor-error hidden" role="alert">Passwort stimmt nicht.</p>
+        <div class="asset-editor-login-actions">
+          <button id="assetEditorCancelLogin">Abbrechen</button>
+          <button id="assetEditorUnlock" class="primary">Studio öffnen</button>
+        </div>
+        <small>Der Passwortschutz ist bei einer statischen Website nur eine Zugangshürde, keine Server-Authentifizierung.</small>
+      </div>
+
+      <div id="assetEditorWorkspace" class="asset-editor-workspace hidden">
+        <header class="asset-editor-head">
+          <div>
+            <p class="eyebrow">Artist-Werkzeug</p>
+            <h2 id="assetEditorTitle">Asset Studio</h2>
+            <p id="assetEditorStatus">Projekt-Pack geladen</p>
+          </div>
+          <div class="asset-editor-head-actions">
+            <button id="assetEditorUndo" title="Rückgängig (Strg+Z)">↶</button>
+            <button id="assetEditorRedo" title="Wiederholen (Strg+Y)">↷</button>
+            <button id="assetEditorClose" class="icon-button" aria-label="Asset Studio schließen">×</button>
+          </div>
+        </header>
+
+        <div class="asset-editor-layout">
+          <aside class="asset-editor-panel asset-editor-assets">
+            <span class="asset-editor-kicker">01 · ASSET</span>
+            <div id="assetEditorAssetList" class="asset-editor-asset-list"></div>
+            <label class="asset-editor-switch"><input id="assetEditorEnabled" type="checkbox" /> Im Spiel aktiv</label>
+            <label>Darstellungsgröße
+              <input id="assetEditorScale" type="range" min="1" max="6" step="0.25" />
+              <output id="assetEditorScaleValue">3×</output>
+            </label>
+            <div class="asset-editor-help">
+              <strong>Workflow</strong>
+              <p>Asset wählen, Animation und Frame einstellen, Ebene markieren und Pixel zeichnen. Die Vorschau spielt den aktuellen Clip ab.</p>
+            </div>
+          </aside>
+
+          <main class="asset-editor-stage">
+            <div class="asset-editor-animation-bar">
+              <label>Animation
+                <select id="assetEditorAnimation"></select>
+              </label>
+              <label>Tempo (FPS)
+                <input id="assetEditorFps" type="number" min="1" max="24" step="1" />
+              </label>
+              <div class="asset-editor-frame-actions" aria-label="Animationsframes">
+                <button id="assetEditorPrevFrame" aria-label="Vorheriger Frame">‹</button>
+                <strong id="assetEditorFrameLabel">1 / 1</strong>
+                <button id="assetEditorNextFrame" aria-label="Nächster Frame">›</button>
+                <button id="assetEditorAddFrame">+ Frame</button>
+                <button id="assetEditorDuplicateFrame">Duplizieren</button>
+                <button id="assetEditorDeleteFrame">Löschen</button>
+              </div>
+            </div>
+
+            <div class="asset-editor-canvases">
+              <div class="asset-editor-grid-wrap">
+                <canvas id="assetEditorCanvas" width="640" height="640" aria-label="Pixelraster"></canvas>
+              </div>
+              <aside class="asset-editor-preview-wrap">
+                <span>LIVE-VORSCHAU</span>
+                <canvas id="assetEditorPreview" width="240" height="240"></canvas>
+                <label class="asset-editor-switch"><input id="assetEditorOnion" type="checkbox" /> Vorherigen Frame zeigen</label>
+                <label class="asset-editor-switch"><input id="assetEditorGridToggle" type="checkbox" checked /> Raster zeigen</label>
+              </aside>
+            </div>
+
+            <div class="asset-editor-tools" role="toolbar" aria-label="Pixelwerkzeuge">
+              <button class="active" data-asset-tool="pencil">Stift <kbd>P</kbd></button>
+              <button data-asset-tool="eraser">Radierer <kbd>E</kbd></button>
+              <button data-asset-tool="fill">Füllen <kbd>F</kbd></button>
+              <button data-asset-tool="picker">Pipette <kbd>I</kbd></button>
+              <label class="asset-editor-color">Farbe <input id="assetEditorColor" type="color" value="#d8ad55" /></label>
+              <input id="assetEditorColorText" class="asset-editor-color-text" value="#d8ad55" maxlength="9" aria-label="Farbe als Hexwert" />
+              <button id="assetEditorMirror">Horizontal spiegeln</button>
+              <button id="assetEditorClearFrame">Frame leeren</button>
+            </div>
+          </main>
+
+          <aside class="asset-editor-panel asset-editor-layers">
+            <span class="asset-editor-kicker">02 · EBENEN</span>
+            <div id="assetEditorLayerList" class="asset-editor-layer-list"></div>
+            <div class="asset-editor-layer-actions">
+              <button id="assetEditorAddLayer">+ Ebene</button>
+              <button id="assetEditorDuplicateLayer">Duplizieren</button>
+              <button id="assetEditorDeleteLayer">Löschen</button>
+            </div>
+            <label>Ebenenname
+              <input id="assetEditorLayerName" maxlength="24" />
+            </label>
+            <label>Deckkraft
+              <input id="assetEditorLayerOpacity" type="range" min="0" max="1" step="0.05" />
+              <output id="assetEditorLayerOpacityValue">100%</output>
+            </label>
+            <div class="asset-editor-layer-order">
+              <button id="assetEditorLayerUp">Ebene nach vorn</button>
+              <button id="assetEditorLayerDown">Ebene nach hinten</button>
+            </div>
+          </aside>
+        </div>
+
+        <footer class="asset-editor-footer">
+          <div>
+            <button id="assetEditorSaveDraft" class="primary">Entwurf speichern</button>
+            <button id="assetEditorSaveProject">Projektdatei speichern</button>
+            <button id="assetEditorExport">JSON exportieren</button>
+            <button id="assetEditorImport">JSON importieren</button>
+            <input id="assetEditorImportFile" class="hidden" type="file" accept="application/json,.json" />
+          </div>
+          <button id="assetEditorReset">Asset zurücksetzen</button>
+        </footer>
+      </div>
     </section>
 
     <section id="gamePanel" class="game-wrap hidden">

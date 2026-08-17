@@ -2,7 +2,20 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.14)
+## Aktueller Stand (0.15)
+
+- neues Startgebiet **Treibholz** mit Dorfwegen, drei Hütten, Mira, Händler Borin, Werkbank, Brunnen und Lagerfeuer
+- vollständige erste Questkette: Materialien sammeln, Jagdspeer herstellen, das erste Banditenlager räumen und Belohnung abholen
+- Werkbank-, Lagerfeuer- und Händlerrezepte für Jagdspeer, Lederweste, Feldverbände, gebratenes Fleisch und Vorräte
+- drei getrennte lokale Spielstände mit Laden, Überschreiben, Löschen, 20-Sekunden-Autosave und sichtbarer Speicherbestätigung
+- Spielstände erhalten Position, Figur, Inventar/Ausrüstung, Questfortschritt, Banditen, geöffnete Truhen, veränderte Tiere und bearbeitete Bäume
+- direkteres Kampffeedback mit kurzem Hit-Stop, Kamerawackeln, Geräuschen, klaren Banditen-Telegraphen, Ausweichrolle und Rüstungswirkung
+- neuer Jagdspeer mit größerer Reichweite, eigener Animation, Inventarbild, Asset-Slot und Schnellzugriff über `3`
+- soziale Tierreaktionen: Wildschweine verteidigen verwundete Artgenossen, während friedliche Tiere als Gruppe fliehen
+- drei Banditenlager mit insgesamt neun Gegnern, drei Höhleneingänge und drei Ruinen-Beutekisten als neue Erkundungsziele
+- dynamische Regen-, Sturm-, Schnee-, Staub- und Nebelphasen sowie ein stärker lesbarer Tag-/Nachtwechsel
+- Asset Studio 2.0 mit Laufzeitbindung, Vererbungsmodell für Varianten, Szenenvorschau, Richtungsansicht, Anker-, Hand- und Hitbox-Metadaten sowie konkreter Validierung pro Asset
+- neue editierbare Figuren, Animationen und Weltobjekte: Mira, Borin, Banditen, Jagdspeer, Werkbank, Lagerfeuer, Brunnen, Dorfhütten, Höhlen, Zelte und Beutetruhen
 
 - richtiger Titelscreen mit animierter Weltkulisse
 - erweiterter Charaktereditor mit zehn Frisuren, sechs Bartstilen, sechs Kleidungsformen sowie zusätzlichen Haar-, Stoff- und Mantelfarben
@@ -60,7 +73,8 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 | WASD / Pfeiltasten | Laufen / Pferd lenken |
 | Shift | Sprinten / auf dem Pferd galoppieren |
 | I | Inventar öffnen / schließen |
-| 1 / 2 | Schwert / Axt ausrüsten |
+| 1 / 2 / 3 | Schwert / Axt / Jagdspeer ausrüsten |
+| Leertaste | Ausweichrolle in Blick- oder Laufrichtung |
 | Linksklick | Ausgerüsteten Gegenstand benutzen |
 | R | Ausgewählten Gegenstand im Inventar drehen |
 | E | Weltobjekt untersuchen / Tierkadaver ziehen oder loslassen / Pferd besteigen oder absteigen |
@@ -70,19 +84,21 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 | # im laufenden Spiel | Debugmodus für die aktuelle Browser-Sitzung aktivieren |
 | Esc | Pause / Overlay schließen |
 
-Auf Smartphones und Tablets erscheint automatisch eine eigene Touch-Oberfläche. Links liegt das D-Pad, rechts befinden sich Sprint beziehungsweise Galopp, eine kontextabhängige Aktionstaste mit den Zuständen `Reiten`, `Absteigen`, `Ziehen` und `Loslassen` sowie der große Werkzeug-/Angriffsknopf. Inventar, Karte, Pferdekommando und Pause sind oben rechts erreichbar. Die Steuerung unterstützt mehrere gleichzeitig gehaltene Finger, beispielsweise Lenken plus Galopp und Angriff.
+Auf Smartphones und Tablets erscheint automatisch eine eigene Touch-Oberfläche. Links liegt das D-Pad, rechts befinden sich Sprint beziehungsweise Galopp, Ausweichrolle, eine kontextabhängige Aktionstaste mit den Zuständen `Reiten`, `Absteigen`, `Ziehen` und `Loslassen` sowie der große Werkzeug-/Angriffsknopf. Inventar, Karte, Pferdekommando und Pause sind oben rechts erreichbar. Die Steuerung unterstützt mehrere gleichzeitig gehaltene Finger, beispielsweise Lenken plus Galopp und Angriff.
 
 Im Debugmodus teleportiert ein Klick auf die Weltkarte an jede gewünschte Position. Ein Klick direkt in die Spielwelt versetzt die Figur innerhalb des sichtbaren Ausschnitts.
 
 ## Asset Studio
 
-Das Asset Studio wird im Titel- oder Charaktermenü mit `#` geöffnet. Kategorie und Suche erschließen den vollständigen derzeit renderbaren Katalog: Spieler, Tierbasen und artspezifische Varianten, alle zehn Frisuren, Schwert/Axt und Lootitems, alle Terrain-/Brücken-/Gebäudeblöcke, Baumstämme/-kronen sowie jede Straßendekoration. Neben den fest benannten `GAME`-Clips wie `IDLE`, `WALK`, `PANIC`, `WINDUP`, `CHARGE`, `GALLOP`, `DEAD` und `FLY` können Artists eigene Clips hinzufügen, duplizieren, umbenennen und löschen. Die fest benannten Clips behalten absichtlich ihren Namen, damit die Spiellogik sie weiterhin sicher aufrufen kann. Ebenen werden von hinten nach vorn gerendert; Sichtbarkeit, Name, Reihenfolge und Deckkraft sind Teil des Packs. Aktivierte Assets ersetzen nur dann die prozedurale Standardgrafik, wenn der gewählte Clip tatsächlich Pixel enthält. Dadurch bleibt auch ein unvollständiger Pack spielbar.
+Das Asset Studio wird im Titel- oder Charaktermenü mit `#` geöffnet. Kategorie und Suche erschließen den vollständigen derzeit renderbaren Katalog: Spieler, Mira, Borin, Banditen, Tierbasen und artspezifische Varianten, alle zehn Frisuren, sämtliche Waffen und Lootitems, Terrain-/Brücken-/Gebäudeblöcke, Baumstämme/-kronen sowie alle alten und neuen Weltobjekte. Neben den fest benannten `GAME`-Clips wie `IDLE`, `WALK`, `ATTACK`, `HURT`, `PANIC`, `WINDUP`, `CHARGE`, `GALLOP`, `DEAD`, `BURN`, `OPEN` und `FLY` können Artists eigene Clips hinzufügen, duplizieren, umbenennen und löschen. Die fest benannten Clips behalten absichtlich ihren Namen, damit die Spiellogik sie weiterhin sicher aufrufen kann. Varianten können die Basisgrafik erben, statt jede Animation erneut kopieren zu müssen.
+
+Die Live-Vorschau besitzt Wald-, Dorf-, Kampf- und Inventarszenen sowie eine Richtungsansicht. Ankerpunkt, Bodenlinie, Hitbox und Handposition sind direkt editierbar und werden in der Vorschau farbig eingeblendet. Eine Validierungsbox meldet fehlende Pflichtanimationen, leere Frames, unplausible Metadaten und die konkrete Laufzeitfunktion, an die das Asset gebunden ist. Ebenen werden von hinten nach vorn gerendert; Sichtbarkeit, Name, Reihenfolge und Deckkraft sind Teil des Packs. Aktivierte Assets ersetzen nur dann die prozedurale Standardgrafik, wenn der gewählte Clip tatsächlich Pixel enthält. Dadurch bleibt auch ein unvollständiger Pack spielbar.
 
 `Entwurf speichern` legt den aktuellen Stand sofort im Browser (`localStorage`) ab und das Spiel verwendet ihn auf diesem Gerät. `JSON exportieren` erzeugt eine transportierbare Datei für andere Artists. `Projektdatei speichern` schreibt – sofern der Browser den Dateidialog unterstützt – eine validierte `artist-assets.json`; andernfalls wird genau diese Datei heruntergeladen. Liegt sie neben `index.html`, lädt das Spiel sie bei jedem Start automatisch. Damit eine Änderung für alle Spieler dauerhaft wird, muss diese Projektdatei anschließend wie die anderen Spieldateien committed und deployed werden. Da das Spiel statisch gehostet wird, kann ein Browser-Editor ohne Backend nicht selbstständig in das öffentliche GitHub-Repository schreiben. Das Studio-Passwort wird deshalb nur lokal im jeweiligen Browser gesetzt; im öffentlichen Code liegt kein gemeinsames Passwort und kein fester Passwort-Hash.
 
 ## GitHub-Pages-Deployment
 
-1. `index.html`, `style.css`, `game.js`, `asset-editor.js` und `artist-assets.json` liegen direkt im veröffentlichten Branch.
+1. `index.html`, `style.css`, `game.js`, `v015-systems.js`, `asset-editor.js` und `artist-assets.json` liegen direkt im veröffentlichten Branch.
 2. In GitHub unter **Settings → Pages** den Branch `agent/living-world-ui-pass` und den Ordner `/ (root)` auswählen.
 3. Jeder neue Fast-Forward-Commit auf diesem Branch löst den Pages-Build automatisch aus.
 4. Das Spiel liegt anschließend unter `https://timtill1015-beep.github.io/T-Rpg/`.

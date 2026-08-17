@@ -1878,7 +1878,7 @@ function woodGridPositionFree(x,y,angle,piece,physics){
   for(const cell of candidateCells) for(const [ox,oy] of [[0,0],[-half,0],[half,0],[0,-half],[0,half]]) if(collisionAt(cell.x+ox,cell.y+oy,physics)) return false;
   const occupied=new Set(candidateCells.map((cell)=>Math.round(cell.x/TILE_METERS)+","+Math.round(cell.y/TILE_METERS)));
   for(const other of physics.woodPieces||[]){
-    if(other===piece||!other.settled) continue;
+    if(other===piece||other.collected||!other.settled) continue;
     for(const cell of woodPieceCells(other.x,other.y,other.angle,other.lengthTiles)) if(occupied.has(Math.round(cell.x/TILE_METERS)+","+Math.round(cell.y/TILE_METERS))) return false;
   }
   return true;
@@ -1907,6 +1907,7 @@ function snapWoodPiece(piece,physics){
 
 function updateWoodPieces(physics,dt){
   for(const piece of createWoodPieces(physics)){
+    if(piece.collected) continue;
     if(piece.settled) continue;
     piece.x+=piece.vx*dt;piece.y+=piece.vy*dt;piece.z+=piece.vz*dt;piece.vz-=dt*18;piece.angle+=piece.angularVelocity*dt;
     piece.vx*=Math.exp(-dt*2.5);piece.vy*=Math.exp(-dt*2.5);piece.angularVelocity*=Math.exp(-dt*3.2);
@@ -1923,6 +1924,7 @@ function drawWoodPieces(tree,physics,camX,camY){
   const block=TILE_METERS*VIEW_SCALE;
   const trunk=tree.kind==="birch"?"#9d957d":tree.kind==="frostPine"?"#65706a":tree.kind==="palm"?"#76512e":"#5b3d29";
   for(const [index,piece] of createWoodPieces(physics).entries()){
+    if(piece.collected) continue;
     const x=(piece.x-camX)*VIEW_SCALE+canvas.width/2;
     const y=(piece.y-camY)*VIEW_SCALE+canvas.height/2-piece.z*VIEW_SCALE;
     ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.rotate(piece.angle);
@@ -2480,6 +2482,7 @@ function updateLivingAnimal(animal,dt){
   const dx=state.player.x-animal.x;
   const dy=state.player.y-animal.y;
   const distance=Math.hypot(dx,dy)||1;
+  window.__ARCHIPELAGO_V015__?.updateAnimalSocial?.(animal,dt,distance);
   let speed=meta.walkSpeed;
 
   if(animal.species==="horse"&&animal.owned){
@@ -2780,6 +2783,7 @@ function damageAnimal(animal,damage,itemId){
     animal.fleeUntil=state.elapsed+5;
     showToast("Huhn · "+Math.ceil(animal.health)+" / "+animal.maxHealth+" Leben",1000);
   }
+  window.__ARCHIPELAGO_V015__?.onAnimalDamaged?.(animal,damage,itemId);
   return true;
 }
 
@@ -3088,6 +3092,8 @@ function collisionAt(x,y,ignorePhysics=null){
   if(structure&&structure.code!=="p") return structure;
   const roadDecoration=roadDecorationAtGrid(gx,gy);
   if(roadDecoration) return {type:"roadDecoration",asset:roadDecoration,gx,gy};
+  const systemHit=window.__ARCHIPELAGO_V015__?.collisionAt?.(x,y);
+  if(systemHit) return systemHit;
   return null;
 }
 
@@ -3249,7 +3255,10 @@ function emitGroundTrack(x,y,dir,kind="foot"){
   }
 }
 
-function emitFootstep(x,y){emitGroundTrack(x,y,state.player.dir,"foot");}
+function emitFootstep(x,y){
+  emitGroundTrack(x,y,state.player.dir,"foot");
+  window.__ARCHIPELAGO_V015__?.sound?.("footstep",terrainAt(x,y).biome);
+}
 
 function shakeTree(tree,strong=false){
   tree.reactUntil=Math.max(tree.reactUntil,state.elapsed+(strong?1.35:.55));
@@ -3485,6 +3494,8 @@ function nearbyInteraction(){
       }
     }
   }
+  const systemTarget=window.__ARCHIPELAGO_V015__?.nearbyInteraction?.();
+  if(systemTarget&&(!best||systemTarget.distance<best.distance)) best=systemTarget;
   return best;
 }
 
@@ -3501,6 +3512,7 @@ function updateInteractionHint(){
     const target=state.interactionTarget;
     mobileLabel.textContent=!target?"Aktion":target.type==="animalCorpse"
       ?(state.draggingAnimalId===target.animal.id?"Loslassen":"Ziehen")
+      :target.mobileLabel?target.mobileLabel
       :target.type==="horse"
         ?(state.mountedHorseId?"Absteigen":target.animal.saddled?"Reiten":"Ansehen")
       :"Ansehen";
@@ -3513,6 +3525,10 @@ function updateInteractionHint(){
 function interactWithWorld(){
   const target=state.interactionTarget||nearbyInteraction();
   if(!target) return;
+  if(window.__ARCHIPELAGO_V015__?.interact?.(target)){
+    state.interactionTarget=null;
+    return;
+  }
   if(target.type==="horse"){
     if(state.mountedHorseId) dismountHorse();
     else mountHorse(target.animal);
@@ -3668,8 +3684,9 @@ function drawWorld(){
   const w=canvas.width;
   const h=canvas.height;
   ctx.clearRect(0,0,w,h);
-  const camX=state.camera.x;
-  const camY=state.camera.y;
+  const cameraOffset=window.__ARCHIPELAGO_V015__?.cameraOffset?.()||{x:0,y:0};
+  const camX=state.camera.x+cameraOffset.x;
+  const camY=state.camera.y+cameraOffset.y;
   const metresAcross=w/VIEW_SCALE;
   const metresHigh=h/VIEW_SCALE;
   const viewLeft=camX-metresAcross/2;
@@ -3687,6 +3704,7 @@ function drawWorld(){
   // overlay effects (currently drowning bubbles) are allowed above them.
   drawAmbientNature();
   drawEffects(camX,camY,"ground");
+  window.__ARCHIPELAGO_V015__?.drawGround?.(camX,camY);
   const trees=visibleTrees(
     Math.floor(startX/TILE_METERS),Math.ceil(endX/TILE_METERS),
     Math.floor(startY/TILE_METERS),Math.ceil(endY/TILE_METERS)
@@ -3720,9 +3738,16 @@ function drawWorld(){
     renderQueue.push({type:"animal",y:animal.y+animalCatalog[animal.species].radius*.35,animal});
   }
   for(const peer of state.peers.values()) renderQueue.push({type:peer.mount?"peerMounted":"peer",y:peer.y,player:peer});
+  for(const custom of window.__ARCHIPELAGO_V015__?.renderables?.(viewLeft,viewTop,camX+metresAcross/2,camY+metresHigh/2)||[]){
+    renderQueue.push({type:"v015",y:custom.y,custom});
+  }
   renderQueue.push({type:localMount?"localMounted":"local",y:state.player.y,player:state.player,horse:localMount});
   renderQueue.sort((a,b)=>a.y-b.y||String(a.animal?.id||a.player?.id||a.type).localeCompare(String(b.animal?.id||b.player?.id||b.type)));
   for(const item of renderQueue){
+    if(item.type==="v015"){
+      window.__ARCHIPELAGO_V015__?.drawRenderable?.(item.custom,camX,camY);
+      continue;
+    }
     if(item.type==="tree"){
       drawGridTree(item.tree,camX,camY);
       continue;
@@ -3751,13 +3776,7 @@ function drawWorld(){
   }
   for(const landmark of landmarks) drawLandmarkLabel(landmark,camX,camY);
   drawEffects(camX,camY,"air");
-
-  const hour=(8+state.elapsed/120)%24;
-  if(hour<6||hour>19){
-    const darkness=hour<5||hour>21?0.25:0.12;
-    ctx.fillStyle="rgba(8,18,38,"+darkness+")";
-    ctx.fillRect(0,0,w,h);
-  }
+  window.__ARCHIPELAGO_V015__?.drawOverlay?.(camX,camY);
 }
 
 function drawBackHair(c,u,style,hair,dir){
@@ -4092,6 +4111,13 @@ function drawHeldItem(c,u,dir,player){
     c.fillStyle="#929995";
     c.fillRect(7*u,-3*u,4*u,2*u);
     c.fillRect(9*u,-2*u,2*u,4*u);
+  }else if(itemId==="huntingSpear"){
+    c.fillStyle="#7d522f";
+    c.fillRect(-2*u,-u,15*u,2*u);
+    c.fillStyle="#c3ccc8";
+    c.fillRect(12*u,-2*u,4*u,4*u);
+    c.fillStyle="#edf2e9";
+    c.fillRect(15*u,-u,3*u,2*u);
   }
   c.restore();
 }
@@ -4480,6 +4506,18 @@ function drawInventoryItemIcon(canvas,itemId){
     c.fillStyle="#f2ead1";c.fillRect(-2*unit,-6*unit,2*unit,8*unit);
   }else if(itemCatalog[itemId]?.icon==="bone"){
     c.rotate(-.35);c.fillStyle="#d9d0b5";c.fillRect(-2*unit,-6*unit,4*unit,12*unit);c.fillRect(-4*unit,-7*unit,3*unit,3*unit);c.fillRect(unit,-7*unit,3*unit,3*unit);c.fillRect(-4*unit,5*unit,3*unit,3*unit);c.fillRect(unit,5*unit,3*unit,3*unit);
+  }else if(itemCatalog[itemId]?.icon==="wood"){
+    c.rotate(-.55);c.fillStyle="#6d4528";c.fillRect(-3*unit,-7*unit,6*unit,14*unit);c.fillStyle="#ae7a45";c.fillRect(-2*unit,-6*unit,2*unit,12*unit);
+  }else if(itemCatalog[itemId]?.icon==="coin"){
+    c.fillStyle="#80631f";c.fillRect(-5*unit,-5*unit,10*unit,10*unit);c.fillStyle="#e2bd54";c.fillRect(-4*unit,-4*unit,8*unit,8*unit);c.fillStyle="#fff0a1";c.fillRect(-2*unit,-3*unit,2*unit,5*unit);
+  }else if(itemCatalog[itemId]?.icon==="cooked"){
+    c.fillStyle="#6c261f";c.fillRect(-6*unit,-3*unit,12*unit,7*unit);c.fillStyle="#c76b43";c.fillRect(-4*unit,-4*unit,8*unit,3*unit);c.fillStyle="#ead0a1";c.fillRect(4*unit,-1*unit,4*unit,2*unit);
+  }else if(itemCatalog[itemId]?.icon==="bandage"){
+    c.fillStyle="#d9d5c2";c.fillRect(-6*unit,-3*unit,12*unit,6*unit);c.fillStyle="#a76b62";c.fillRect(-2*unit,-3*unit,4*unit,6*unit);
+  }else if(itemCatalog[itemId]?.icon==="vest"){
+    c.fillStyle="#6f4632";c.fillRect(-6*unit,-6*unit,12*unit,13*unit);c.fillStyle="#a5744e";c.fillRect(-3*unit,-6*unit,6*unit,9*unit);c.fillStyle="#171c1c";c.fillRect(-2*unit,-7*unit,4*unit,4*unit);
+  }else if(itemCatalog[itemId]?.icon==="spear"){
+    c.rotate(-.62);c.fillStyle="#855b35";c.fillRect(-2*unit,-8*unit,3*unit,17*unit);c.fillStyle="#c6d0cc";c.fillRect(-3*unit,-10*unit,5*unit,4*unit);c.fillStyle="#eef2e9";c.fillRect(-unit,-12*unit,2*unit,3*unit);
   }
   c.restore();
 }
@@ -4542,8 +4580,8 @@ function renderInventory(){
   $("inventoryItemSize").textContent=selected?(inventoryItemSize(selected).width+" × "+inventoryItemSize(selected).height+" Felder"+((selected.quantity||1)>1?" · Menge "+selected.quantity:"")):"–";
   $("inventoryItemDescription").textContent=definition?definition.description:"Wähle einen Gegenstand oder Ausrüstungsslot.";
   const equipped=selected?equippedSlotForItem(selected.id):null;
-  $("inventoryEquipBtn").disabled=!definition||!definition.equipSlot;
-  $("inventoryEquipBtn").textContent=!definition?.equipSlot?"Material":equipped?"In Rucksack":"Ausrüsten";
+  $("inventoryEquipBtn").disabled=!definition||(!definition.equipSlot&&!definition.consumable);
+  $("inventoryEquipBtn").textContent=definition?.consumable?"Benutzen":!definition?.equipSlot?"Material":equipped?"In Rucksack":"Ausrüsten";
   $("inventoryRotateBtn").disabled=!selected||!!equipped;
   updateQuickbar();
 }
@@ -4687,6 +4725,7 @@ function performAxeImpact(){
 }
 
 function performSwordImpact(){
+  if(window.__ARCHIPELAGO_V015__?.performPlayerStrike?.("ironSword",itemCatalog.ironSword.animalDamage)) return;
   const animalTarget=findAnimalTarget(TILE_METERS*2.35);
   if(animalTarget){
     damageAnimal(animalTarget.animal,itemCatalog.ironSword.animalDamage,"ironSword");
@@ -4704,12 +4743,14 @@ function useEquippedItem(){
   state.action.type=definition.action;
   state.action.itemId=item.itemId;
   state.action.elapsed=0;
-  state.action.duration=definition.action==="swordSwing"?.34:.48;
+  state.action.duration=definition.duration||(definition.action==="swordSwing"?.34:.48);
   state.action.cooldown=definition.cooldown;
   state.player.actionType=definition.action;
   state.player.actionProgress=.001;
   if(definition.action==="axeSwing") performAxeImpact();
   else if(definition.action==="swordSwing") performSwordImpact();
+  else if(window.__ARCHIPELAGO_V015__?.useEquippedItem?.(item,definition)) return true;
+  window.__ARCHIPELAGO_V015__?.sound?.("swing",item.itemId);
   return true;
 }
 
@@ -4875,7 +4916,7 @@ function moveMountedPlayer(dt,horse,dx,dy){
 }
 
 function movePlayer(dt){
-  if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
+  if(state.paused||state.mapOpen||state.inventoryOpen||state.dead||window.__ARCHIPELAGO_V015__?.isRolling?.()) return;
   let dx=0;
   let dy=0;
   if(state.keys.has("w")||state.keys.has("arrowup")) dy-=1;
@@ -5307,9 +5348,11 @@ function resizeGameCanvas(){
 
 function loop(ts){
   if(!state.running) return;
-  const dt=Math.min(.04,(ts-state.lastTime)/1000||0);
+  const realDt=Math.min(.04,(ts-state.lastTime)/1000||0);
+  const dt=window.__ARCHIPELAGO_V015__?.frameDt?.(realDt)??realDt;
   state.lastTime=ts;
   state.elapsed+=dt;
+  window.__ARCHIPELAGO_V015__?.update?.(dt,realDt);
   movePlayer(dt);
   updateWorldReactions(dt);
   if(!state.paused&&!state.mapOpen&&!state.inventoryOpen) drawWorld();
@@ -5432,6 +5475,7 @@ function startGame(){
   state.lastUiUpdate=0;
   updatePortrait();
   updateMobileControlState();
+  window.__ARCHIPELAGO_V015__?.onGameStarted?.();
   requestAnimationFrame(loop);
   broadcast({type:"hello",player:publicPlayer()});
   const breed=horseBreedCatalog[startingHorse.breed]||horseBreedCatalog.warmblood;
@@ -5726,8 +5770,8 @@ window.addEventListener("keydown",(event)=>{
     rotateSelectedInventoryItem();
     event.preventDefault();
   }
-  if((key==="1"||key==="2")&&state.running&&!event.repeat){
-    const itemId=key==="1"?"ironSword":"woodsmanAxe";
+  if((key==="1"||key==="2"||key==="3")&&state.running&&!event.repeat){
+    const itemId=key==="1"?"ironSword":key==="2"?"woodsmanAxe":"huntingSpear";
     const item=state.inventory.items.find((entry)=>entry.itemId===itemId);
     if(item) equipInventoryItem(item.id);
     event.preventDefault();
@@ -5798,6 +5842,7 @@ $("copyCodeBtn").addEventListener("click",async()=>{
 $("resumeBtn").addEventListener("click",()=>togglePause(false));
 $("openMapBtn").addEventListener("click",()=>{togglePause(false);toggleMap(true);});
 $("leaveBtn").addEventListener("click",()=>{
+  window.__ARCHIPELAGO_V015__?.saveNow?.("menu");
   state.running=false;
   const horse=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
   if(horse) horse.riderId=null;
@@ -5813,6 +5858,11 @@ $("closeInventoryBtn").addEventListener("click",()=>toggleInventory(false));
 $("inventoryEquipBtn").addEventListener("click",()=>{
   const selected=inventoryItemById(state.inventory.selectedId);
   if(!selected) return;
+  const definition=itemCatalog[selected.itemId];
+  if(definition?.consumable){
+    window.__ARCHIPELAGO_V015__?.useConsumable?.(selected,definition);
+    return;
+  }
   if(equippedSlotForItem(selected.id)) unequipInventoryItem(selected.id);
   else equipInventoryItem(selected.id);
 });
@@ -5879,6 +5929,7 @@ for(const button of document.querySelectorAll("[data-mobile-action]")){
   const action=button.dataset.mobileAction;
   const handler=action==="attack"?()=>useEquippedItem()
     :action==="interact"?()=>interactWithWorld()
+    :action==="dodge"?()=>window.__ARCHIPELAGO_V015__?.dodge?.()
     :action==="horse-command"?()=>toggleHorseCommand()
     :action==="inventory"?()=>{
       if(state.paused) togglePause(false);
@@ -5930,6 +5981,8 @@ requestAnimationFrame(paintPreview);
 window.__ARCHIPELAGO_DEBUG__ = {
   WORLD_SIZE,
   TILE_METERS,
+  VIEW_SCALE,
+  PLAYER_RADIUS,
   CORPSE_DRAG_RANGE,
   palette,
   terrainAt,
@@ -5953,6 +6006,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   visibleStructureBlocks,
   collisionAt,
   canOccupy,
+  isWalkable,
   movePlayer,
   updateWorldReactions,
   nearbyInteraction,
@@ -5966,6 +6020,9 @@ window.__ARCHIPELAGO_DEBUG__ = {
   inventoryItemSize,
   canPlaceInventoryItem,
   addInventoryItem,
+  inventoryItemById,
+  renderInventory,
+  syncHeldItem,
   equipInventoryItem,
   unequipInventoryItem,
   rotateSelectedInventoryItem,
@@ -5986,7 +6043,9 @@ window.__ARCHIPELAGO_DEBUG__ = {
   animalsForCell,
   animalsInRect,
   activeAnimalsNear,
+  animalCellCache,
   animalStates,
+  createAnimalState,
   findAnimalTarget,
   damageAnimal,
   updateAnimals,
@@ -6028,6 +6087,10 @@ window.__ARCHIPELAGO_DEBUG__ = {
   killPlayer,
   respawnPlayer,
   startGame,
+  showTitle,
+  showMenu,
+  showToast,
+  togglePause,
   teleportPlayer,
   setDebugMode,
   drawCharacter,

@@ -5,10 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#071116" />
   <title>Archipelago — Echoes of the Shattered Sea</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=0.15" />
   <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script defer src="game.js"></script>
-  <script defer src="asset-editor.js"></script>
+  <script defer src="game.js?v=0.15"></script>
+  <script defer src="v015-systems.js?v=0.15"></script>
+  <script defer src="asset-editor.js?v=0.15"></script>
 </head>
 <body>
   <div id="app">
@@ -28,13 +29,23 @@
         <nav class="title-actions" aria-label="Hauptmenü">
           <button id="beginBtn" class="menu-button primary">Neues Abenteuer <span>›</span></button>
           <button id="multiplayerTitleBtn" class="menu-button">Mehrspieler <span>›</span></button>
-          <button id="continueBtn" class="menu-button" disabled title="Speicherstände folgen in einem späteren Update">Fortsetzen <small>Noch kein Spielstand</small></button>
+          <button id="continueBtn" class="menu-button" disabled>Spielstände <small>Noch kein Spielstand</small></button>
         </nav>
       </div>
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.14</span>
+        <span class="title-version">PROTOTYP · 0.15</span>
+      </div>
+    </section>
+
+    <section id="saveSlotsOverlay" class="screen-overlay save-slots-overlay hidden" aria-label="Spielstände">
+      <div class="save-slots-card modal-card" role="dialog" aria-modal="true" aria-labelledby="saveSlotsTitle">
+        <header class="save-slots-head">
+          <div><p class="eyebrow">Lokales Reisetagebuch</p><h2 id="saveSlotsTitle">Spielstände</h2><p>Drei getrennte Reisen · automatisches Speichern alle 20 Sekunden</p></div>
+          <button id="closeSaveSlots" class="icon-button" aria-label="Spielstände schließen">×</button>
+        </header>
+        <div id="saveSlotList" class="save-slot-list"></div>
       </div>
     </section>
 
@@ -305,7 +316,21 @@
               </div>
               <aside class="asset-editor-preview-wrap">
                 <span>LIVE-VORSCHAU</span>
+                <label>Szene
+                  <select id="assetEditorScene">
+                    <option value="forest">Wald</option>
+                    <option value="village">Dorf</option>
+                    <option value="combat">Kampf</option>
+                    <option value="inventory">Inventar</option>
+                  </select>
+                </label>
+                <label>Richtung
+                  <select id="assetEditorDirection">
+                    <option value="down">Vorne</option><option value="left">Links</option><option value="up">Hinten</option><option value="right">Rechts</option>
+                  </select>
+                </label>
                 <canvas id="assetEditorPreview" width="240" height="240"></canvas>
+                <div id="assetEditorRuntimeStatus" class="asset-runtime-status"></div>
                 <label class="asset-editor-switch"><input id="assetEditorOnion" type="checkbox" /> Vorherigen Frame zeigen</label>
                 <label class="asset-editor-switch"><input id="assetEditorGridToggle" type="checkbox" checked /> Raster zeigen</label>
               </aside>
@@ -342,6 +367,16 @@
               <button id="assetEditorLayerUp">Ebene nach vorn</button>
               <button id="assetEditorLayerDown">Ebene nach hinten</button>
             </div>
+            <span class="asset-editor-kicker asset-meta-kicker">03 · RUNTIME</span>
+            <div class="asset-meta-grid">
+              <label>Anker X<input id="assetEditorAnchorX" type="number" step="1" /></label>
+              <label>Anker Y<input id="assetEditorAnchorY" type="number" step="1" /></label>
+              <label>Hitbox X<input id="assetEditorHitboxX" type="number" min="1" step="1" /></label>
+              <label>Hitbox Y<input id="assetEditorHitboxY" type="number" min="1" step="1" /></label>
+              <label>Hand X<input id="assetEditorHandX" type="number" step="1" /></label>
+              <label>Hand Y<input id="assetEditorHandY" type="number" step="1" /></label>
+            </div>
+            <div id="assetEditorValidation" class="asset-validation" role="status"></div>
           </aside>
         </div>
 
@@ -385,9 +420,9 @@
       </aside>
 
       <aside class="quest-hud glass-panel">
-        <span class="quest-label">ERKUNDUNG</span>
-        <strong>Die zersplitterte See</strong>
-        <p>Finde einen bewohnten Ort und folge den alten Wegen.</p>
+        <span id="questLabel" class="quest-label">AUFBRUCH</span>
+        <strong id="questTitle">Glut im Nebel</strong>
+        <p id="questDescription">Sprich mit Mira im Lager Treibholz.</p>
       </aside>
 
       <aside class="minimap-frame glass-panel">
@@ -402,6 +437,7 @@
         <span><kbd>I</kbd> Inventar</span>
         <span><kbd>E</kbd> Interagieren</span>
         <span><kbd>H</kbd> Pferd Follow/Stay</span>
+        <span><kbd>LEER</kbd> Ausweichrolle</span>
         <span><kbd>LMB</kbd> Benutzen</span>
         <span><kbd>M</kbd> Karte</span>
         <span><kbd>ESC</kbd> Menü</span>
@@ -413,6 +449,9 @@
         </button>
         <button type="button" data-quick-item="woodsmanAxe" aria-label="Axt ausrüsten">
           <kbd>2</kbd><i class="quick-icon axe-icon" aria-hidden="true"></i><small>Axt</small>
+        </button>
+        <button type="button" data-quick-item="huntingSpear" aria-label="Jagdspeer ausrüsten">
+          <kbd>3</kbd><i class="quick-icon spear-icon" aria-hidden="true"></i><small>Speer</small>
         </button>
       </div>
 
@@ -450,6 +489,9 @@
           <button type="button" class="mobile-attack" data-mobile-action="attack" aria-label="Ausgerüsteten Gegenstand benutzen">
             <b aria-hidden="true">⚔</b><span id="mobileAttackLabel">Schwert</span>
           </button>
+          <button type="button" class="mobile-dodge" data-mobile-action="dodge" aria-label="Ausweichrolle">
+            <b aria-hidden="true">↝</b><span>Rolle</span>
+          </button>
         </div>
       </div>
 
@@ -463,7 +505,25 @@
           <h2>Pause</h2>
           <button id="resumeBtn" class="primary">Weiterreisen</button>
           <button id="openMapBtn">Weltkarte</button>
+          <button id="saveGameBtn">Jetzt speichern</button>
+          <button id="openSaveSlotsInGame">Spielstände</button>
           <button id="leaveBtn">Zurück zum Hauptmenü</button>
+        </div>
+      </div>
+
+      <div id="craftOverlay" class="screen-overlay craft-overlay hidden">
+        <div class="craft-card modal-card">
+          <header><div><p id="craftKicker" class="eyebrow">Werkbank</p><h2 id="craftTitle">Herstellen</h2><p id="craftSubtitle">Materialien werden direkt aus dem Rucksack verwendet.</p></div><button id="closeCraft" class="icon-button" aria-label="Herstellung schließen">×</button></header>
+          <div id="craftRecipeList" class="craft-recipe-list"></div>
+        </div>
+      </div>
+
+      <div id="dialogOverlay" class="screen-overlay dialog-overlay hidden">
+        <div class="dialog-card modal-card">
+          <p id="dialogKicker" class="eyebrow">Treibholz</p>
+          <h2 id="dialogSpeaker">Mira</h2>
+          <p id="dialogText"></p>
+          <div id="dialogActions" class="dialog-actions"></div>
         </div>
       </div>
 
@@ -537,7 +597,7 @@
             </aside>
           </div>
 
-          <footer class="inventory-footer"><kbd>I</kbd> schließen <span>·</span> <kbd>1</kbd>/<kbd>2</kbd> Werkzeug wechseln <span>·</span> <kbd>LMB</kbd> benutzen</footer>
+          <footer class="inventory-footer"><kbd>I</kbd> schließen <span>·</span> <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> Werkzeug wechseln <span>·</span> <kbd>LMB</kbd> benutzen</footer>
         </div>
       </div>
 

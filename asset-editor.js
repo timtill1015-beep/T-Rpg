@@ -1,6 +1,6 @@
 "use strict";
 
-const ARTIST_ASSET_SCHEMA_VERSION=2;
+const ARTIST_ASSET_SCHEMA_VERSION=3;
 const ARTIST_ASSET_PROJECT_URL="artist-assets.json";
 const ARTIST_ASSET_STORAGE_KEY="archipelago.artist-assets.v1";
 const ARTIST_ASSET_GATE_KEY="archipelago.artist-studio.local-gate.v1";
@@ -22,7 +22,10 @@ function registerArtistDefinitions(category,definitions){
 }
 
 registerArtistDefinitions("characters",[
-  {id:"player",label:"Spieler komplett",width:16,height:24,scale:3,runtime:"player",animations:["idle","walk","attack","ride"]}
+  {id:"player",label:"Spieler komplett",width:16,height:24,scale:3,runtime:"player",binding:"drawCharacter",animations:["idle","walk","attack","ride"]},
+  {id:"npc_mira",label:"Mira · Dorfvorsteherin",width:16,height:24,scale:3,runtime:"npc",guide:"player",binding:"v015:npc",animations:["idle","talk","walk"]},
+  {id:"npc_borin",label:"Borin · Händler",width:16,height:24,scale:3,runtime:"npc",guide:"player",binding:"v015:npc",animations:["idle","talk"]},
+  {id:"bandit",label:"Bandit",width:16,height:24,scale:3,runtime:"bandit",guide:"player",binding:"v015:bandit",animations:["idle","walk","windup","attack","hurt","dead"]}
 ]);
 registerArtistDefinitions("animals",[
   {id:"chicken",label:"Huhn · Basis",width:16,height:16,scale:2,runtime:"chicken",animations:["idle","walk","panic","dead"]},
@@ -43,8 +46,11 @@ registerArtistDefinitions("hair",[
 registerArtistDefinitions("items",[
   {id:"item_ironSword",label:"Eisenschwert",width:16,height:12,scale:2,runtime:"item",variant:"ironSword",guide:"sword",animations:["idle","swing"]},
   {id:"item_woodsmanAxe",label:"Holzfälleraxt",width:16,height:12,scale:2,runtime:"item",variant:"woodsmanAxe",guide:"axe",animations:["idle","swing"]},
-  ...[["rawChicken","Rohes Huhn","meat"],["rawPork","Rohes Wild","meat"],["feather","Feder","feather"],["boarHide","Tierhaut","hide"],["tusk","Hauer","tusk"],["bone","Knochen","bone"]]
+  ...[["rawChicken","Rohes Huhn","meat"],["rawPork","Rohes Wild","meat"],["feather","Feder","feather"],["boarHide","Tierhaut","hide"],["tusk","Hauer","tusk"],["bone","Knochen","bone"],["wood","Holz","wood"],["coin","Münze","coin"],["cookedChicken","Gebratenes Huhn","meat"],["cookedPork","Gebratenes Wild","meat"],["fieldBandage","Feldverband","hide"],["leatherVest","Lederweste","hide"]]
     .map(([variant,label,guide])=>({id:"item_"+variant,label,width:16,height:16,scale:2,runtime:"item",variant,guide,animations:["idle"]}))
+]);
+registerArtistDefinitions("items",[
+  {id:"item_huntingSpear",label:"Jagdspeer",width:20,height:12,scale:2,runtime:"item",variant:"huntingSpear",guide:"spear",binding:"drawHeldItem",animations:["idle","swing"]}
 ]);
 
 const artistTerrainPalettes={
@@ -80,6 +86,15 @@ const artistPropDefinitions={boulder:[2,2,"Fels"],standingStone:[1,2,"Menhir"],s
 registerArtistDefinitions("props",Object.entries(artistPropDefinitions).map(([variant,[w,h,label]])=>({
   id:"prop_"+variant,label,width:w*8,height:h*8,scale:2,runtime:"prop",variant,guide:"prop",animations:["idle"]
 })));
+registerArtistDefinitions("props",[
+  {id:"prop_workbench",label:"Werkbank",width:24,height:16,scale:2,runtime:"v015prop",variant:"workbench",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_campfire",label:"Lagerfeuer",width:16,height:16,scale:2,runtime:"v015prop",variant:"campfire",guide:"prop",binding:"v015:world",animations:["idle","burn"]},
+  {id:"prop_well",label:"Dorfbrunnen",width:24,height:16,scale:2,runtime:"v015prop",variant:"well",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_hut",label:"Dorfhütte",width:32,height:24,scale:2,runtime:"v015prop",variant:"hut",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_cave",label:"Höhleneingang",width:32,height:24,scale:2,runtime:"v015prop",variant:"cave",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_banditTent",label:"Banditenzelt",width:32,height:24,scale:2,runtime:"v015prop",variant:"banditTent",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_lootChest",label:"Beutetruhe",width:16,height:16,scale:2,runtime:"v015prop",variant:"lootChest",guide:"prop",binding:"v015:world",animations:["idle","open"]}
+]);
 
 function paintArtistRect(frame,x,y,width,height,color){
   for(let py=y;py<y+height;py++) for(let px=x;px<x+width;px++) frame[px+","+py]=color;
@@ -119,6 +134,8 @@ function createArtistGuideLayers(id){
   }else if(id==="axe"){
     paintArtistRect(body,2,8,11,2,"#79502e");paintArtistRect(body,9,4,5,6,"#4a5352");
     paintArtistRect(details,3,8,7,1,"#aa7442");paintArtistRect(details,9,4,5,2,"#a8afaa");
+  }else if(id==="spear"){
+    paintArtistRect(body,1,8,15,2,"#855b35");paintArtistRect(body,15,6,3,6,"#c6d0cc");paintArtistRect(details,18,7,2,4,"#eef2e9");
   }else if(definition?.kind==="tile"){
     const palette=definition.palette||["#4d5b55","#83927d"];
     paintArtistRect(body,0,0,definition.width,definition.height,palette[0]);
@@ -145,6 +162,17 @@ function prepareArtistGuideFrame(id,layerId,animation,source){
   return frame;
 }
 
+function defaultArtistMeta(definition){
+  const characterLike=["player","npc","bandit","chicken","boar","horse","crow"].includes(definition.runtime);
+  return {
+    anchor:{x:Math.floor(definition.width/2),y:definition.height},
+    hitbox:{width:Math.max(2,Math.round(definition.width*(characterLike ? .46 : .72))),height:Math.max(2,Math.round(definition.height*(characterLike ? .32 : .58)))},
+    hand:{x:Math.round(definition.width*.72),y:Math.round(definition.height*.56)},
+    groundY:definition.height,
+    binding:definition.binding||({player:"drawCharacter",chicken:"drawChicken",boar:"drawBoar",horse:"drawHorse",crow:"drawCrow",hair:"drawHair",item:"drawHeldItem",tile:"drawTile",prop:"drawRoadDecoration"}[definition.runtime]||"runtime")
+  };
+}
+
 function createArtistAsset(id){
   const definition=artistAssetDefinitions[id];
   const animations={};
@@ -156,7 +184,7 @@ function createArtistAsset(id){
   });
   return {
     id,enabled:false,width:definition.width,height:definition.height,scale:definition.scale,
-    animations,layers
+    animations,layers,inherits:definition.base||null,meta:defaultArtistMeta(definition)
   };
 }
 
@@ -170,7 +198,7 @@ let artistAssetPack=createDefaultArtistPack();
 const artistSpriteCanvasCache=new Map();
 const assetEditorState={
   unlocked:false,open:false,assetId:"player",animation:"idle",frameIndex:0,layerIndex:0,tool:"pencil",
-  category:"characters",search:"",onion:false,showGrid:true,drawing:false,lastPixel:null,dirty:false,history:[],redo:[],previewStartedAt:performance.now(),saveTimer:null
+  category:"characters",search:"",scene:"forest",direction:"down",onion:false,showGrid:true,drawing:false,lastPixel:null,dirty:false,history:[],redo:[],previewStartedAt:performance.now(),saveTimer:null
 };
 
 function cloneArtistData(value){return JSON.parse(JSON.stringify(value));}
@@ -204,14 +232,22 @@ function normalizeArtistFrame(frame,width,height){
 function normalizeArtistPack(candidate){
   const defaults=createDefaultArtistPack();
   const source=candidate&&typeof candidate==="object"?candidate:{};
-  if(source.schemaVersion!=null&&![1,ARTIST_ASSET_SCHEMA_VERSION].includes(Number(source.schemaVersion))) throw new Error("Nicht unterstützte Asset-Pack-Version");
+  if(source.schemaVersion!=null&&![1,2,ARTIST_ASSET_SCHEMA_VERSION].includes(Number(source.schemaVersion))) throw new Error("Nicht unterstützte Asset-Pack-Version");
   const pack={schemaVersion:ARTIST_ASSET_SCHEMA_VERSION,name:String(source.name||defaults.name).slice(0,80),updatedAt:source.updatedAt||null,assets:{}};
   for(const [id,definition] of Object.entries(artistAssetDefinitions)){
     const fallback=defaults.assets[id];
     const input=source.assets?.[id]&&typeof source.assets[id]==="object"?source.assets[id]:fallback;
+    const fallbackMeta=defaultArtistMeta(definition);
+    const inputMeta=input.meta&&typeof input.meta==="object"?input.meta:{};
     const asset={
       id,enabled:input.enabled===true,width:definition.width,height:definition.height,
-      scale:clampArtistNumber(input.scale,1,6,definition.scale),animations:{},layers:[]
+      scale:clampArtistNumber(input.scale,1,6,definition.scale),animations:{},layers:[],inherits:definition.base||null,
+      meta:{
+        anchor:{x:Math.round(clampArtistNumber(inputMeta.anchor?.x,0,definition.width,fallbackMeta.anchor.x)),y:Math.round(clampArtistNumber(inputMeta.anchor?.y,0,definition.height,fallbackMeta.anchor.y))},
+        hitbox:{width:Math.round(clampArtistNumber(inputMeta.hitbox?.width,1,definition.width,fallbackMeta.hitbox.width)),height:Math.round(clampArtistNumber(inputMeta.hitbox?.height,1,definition.height,fallbackMeta.hitbox.height))},
+        hand:{x:Math.round(clampArtistNumber(inputMeta.hand?.x,0,definition.width,fallbackMeta.hand.x)),y:Math.round(clampArtistNumber(inputMeta.hand?.y,0,definition.height,fallbackMeta.hand.y))},
+        groundY:Math.round(clampArtistNumber(inputMeta.groundY,0,definition.height,fallbackMeta.groundY)),binding:fallbackMeta.binding
+      }
     };
     const customAnimations=Object.keys(input.animations||{})
       .map((name)=>cleanArtistId(name,""))
@@ -360,6 +396,14 @@ function artistAnimationForEntity(assetId,entity){
     if(entity.actionType) return "attack";
     return entity.moving?"walk":"idle";
   }
+  if(runtime==="npc") return entity.talking?"talk":entity.moving?"walk":"idle";
+  if(runtime==="bandit"){
+    if(entity.status==="dead") return "dead";
+    if(entity.hitFlash>0) return "hurt";
+    if(entity.phase==="windup") return "windup";
+    if(entity.phase==="attack") return "attack";
+    return entity.moving?"walk":"idle";
+  }
   if(runtime==="crow") return "fly";
   if(entity.status&&entity.status!=="alive") return "dead";
   if(runtime==="boar"&&entity.attackPhase==="windup") return "windup";
@@ -432,8 +476,9 @@ function drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,fl
   target.globalAlpha*=alpha;
   target.translate(Math.round(x),Math.round(y));
   if(flip) target.scale(-1,1);
-  const originX=-Math.floor(width*pixelSize/2);
-  const originY=-height*pixelSize;
+  const anchor=asset.meta?.anchor||{x:width/2,y:height};
+  const originX=-Math.floor(anchor.x*pixelSize);
+  const originY=-Math.floor(anchor.y*pixelSize);
   target.drawImage(compiled.surface,0,0,width,height,originX,originY,width*pixelSize,height*pixelSize);
   target.restore();
   return true;
@@ -441,10 +486,16 @@ function drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,fl
 
 function drawArtistSpriteOverride(assetId,entity,target,x,y,options={}){
   assetId=artistVariantAssetId(assetId,entity);
-  const asset=artistAssetPack.assets[assetId];
+  let asset=artistAssetPack.assets[assetId];
   if(!asset?.enabled) return false;
   let animation=artistAnimationForEntity(assetId,entity);
   let frameIndex=artistFrameForEntity(asset,animation,entity);
+  if(!artistFrameHasPixels(asset,animation,frameIndex)){
+    const inherited=asset.inherits&&artistAssetPack.assets[asset.inherits];
+    if(inherited?.enabled&&inherited.animations[animation]&&artistFrameHasPixels(inherited,animation,Math.min(frameIndex,inherited.animations[animation].frames-1))){
+      asset=inherited;frameIndex=Math.min(frameIndex,inherited.animations[animation].frames-1);
+    }
+  }
   if(!artistFrameHasPixels(asset,animation,frameIndex)){
     const fallback=artistAssetDefinitions[assetId].animations[0];
     if(!artistFrameHasPixels(asset,fallback,0)) return false;
@@ -557,11 +608,48 @@ function drawArtistPreview(timestamp=performance.now()){
   const asset=currentArtistAsset();
   const track=currentArtistTrack();
   const frameIndex=Math.floor((timestamp-assetEditorState.previewStartedAt)/1000*track.fps)%track.frames;
-  target.fillStyle="#102226";target.fillRect(0,0,preview.width,preview.height);
-  target.fillStyle="#172f31";target.fillRect(0,Math.round(preview.height*.76),preview.width,preview.height);
+  const scenes={
+    forest:["#355b5e","#31533d","#1d382d"],village:["#587070","#8e7c55","#59462f"],
+    combat:["#353c45","#54423d","#2a2523"],inventory:["#0c1b1f","#17292b","#0b1417"]
+  };
+  const scene=scenes[assetEditorState.scene]||scenes.forest;
+  target.fillStyle=scene[0];target.fillRect(0,0,preview.width,preview.height);
+  target.fillStyle=scene[1];target.fillRect(0,Math.round(preview.height*.63),preview.width,preview.height*.37);
+  target.fillStyle=scene[2];for(let x=0;x<preview.width;x+=16) target.fillRect(x,Math.round(preview.height*.77)+(x/16%2)*4,12,4);
+  if(assetEditorState.scene==="village"){
+    target.fillStyle="#5b3c2a";target.fillRect(18,82,58,78);target.fillStyle="#a56a43";target.fillRect(10,68,74,24);target.fillStyle="#c6a55e";target.fillRect(40,116,15,44);
+  }else if(assetEditorState.scene==="combat"){
+    target.fillStyle="#441f20";target.fillRect(16,164,46,5);target.fillStyle="#a4513f";target.fillRect(22,160,24,4);
+  }else if(assetEditorState.scene==="inventory"){
+    target.strokeStyle="#51676a";for(let y=22;y<200;y+=24) for(let x=18;x<222;x+=24) target.strokeRect(x+.5,y+.5,23,23);
+  }
   const maxScale=Math.floor(Math.min(preview.width/(asset.width+4),preview.height/(asset.height+5)));
-  drawArtistAssetFrame(target,asset,assetEditorState.animation,frameIndex,preview.width/2,preview.height*.84,Math.max(2,maxScale));
-  target.fillStyle="#d8ad55";target.fillRect(Math.round(preview.width/2)-2,Math.round(preview.height*.84)+3,4,2);
+  const pixelSize=Math.max(2,maxScale);
+  const anchorX=preview.width/2;
+  const anchorY=preview.height*.84;
+  drawArtistAssetFrame(target,asset,assetEditorState.animation,frameIndex,anchorX,anchorY,pixelSize,assetEditorState.direction==="left");
+  const meta=asset.meta||defaultArtistMeta(artistAssetDefinitions[asset.id]);
+  target.save();target.globalAlpha=.82;target.strokeStyle="#65d5ba";target.lineWidth=1;
+  const hitW=meta.hitbox.width*pixelSize;const hitH=meta.hitbox.height*pixelSize;
+  target.strokeRect(Math.round(anchorX-hitW/2)+.5,Math.round(anchorY-hitH)+.5,Math.round(hitW),Math.round(hitH));
+  const originX=anchorX-meta.anchor.x*pixelSize;const originY=anchorY-meta.anchor.y*pixelSize;
+  target.fillStyle="#f4d270";target.fillRect(Math.round(anchorX)-2,Math.round(anchorY)-2,5,5);
+  target.fillStyle="#e87564";target.fillRect(Math.round(originX+meta.hand.x*pixelSize)-2,Math.round(originY+meta.hand.y*pixelSize)-2,5,5);
+  target.restore();
+}
+
+function validateArtistAsset(id=assetEditorState.assetId){
+  const definition=artistAssetDefinitions[id];const asset=artistAssetPack.assets[id];const errors=[];const warnings=[];
+  for(const clip of definition.animations){
+    if(!asset.animations[clip]) errors.push("GAME-Clip "+clip.toUpperCase()+" fehlt");
+    else if(asset.enabled&&!Array.from({length:asset.animations[clip].frames},(_,i)=>artistFrameHasPixels(asset,clip,i)).some(Boolean)) warnings.push(clip.toUpperCase()+" hat keine sichtbaren Pixel");
+  }
+  if(asset.layers.length>ARTIST_ASSET_MAX_LAYERS) errors.push("Zu viele Ebenen");
+  if(asset.meta.anchor.x<0||asset.meta.anchor.x>asset.width||asset.meta.anchor.y<0||asset.meta.anchor.y>asset.height) errors.push("Anker liegt außerhalb des Sprites");
+  if(asset.meta.hitbox.width<1||asset.meta.hitbox.height<1) errors.push("Hitbox muss größer als 0 sein");
+  if(definition.base&&!artistAssetDefinitions[definition.base]) errors.push("Vererbungsbasis fehlt");
+  if(!asset.enabled) warnings.push("Noch nicht im Spiel aktiviert");
+  return {errors,warnings,linked:!!asset.meta.binding,binding:asset.meta.binding||"nicht verbunden"};
 }
 
 function renderArtistAssetButtons(){
@@ -634,6 +722,24 @@ function renderAssetEditor(){
   $("assetEditorLayerName").value=layer.name;
   $("assetEditorLayerOpacity").value=String(layer.opacity);
   $("assetEditorLayerOpacityValue").textContent=Math.round(layer.opacity*100)+"%";
+  $("assetEditorScene").value=assetEditorState.scene;
+  $("assetEditorDirection").value=assetEditorState.direction;
+  $("assetEditorAnchorX").value=String(asset.meta.anchor.x);
+  $("assetEditorAnchorY").value=String(asset.meta.anchor.y);
+  $("assetEditorHitboxX").value=String(asset.meta.hitbox.width);
+  $("assetEditorHitboxY").value=String(asset.meta.hitbox.height);
+  $("assetEditorHandX").value=String(asset.meta.hand.x);
+  $("assetEditorHandY").value=String(asset.meta.hand.y);
+  $("assetEditorAnchorX").max=$("assetEditorHitboxX").max=$("assetEditorHandX").max=String(asset.width);
+  $("assetEditorAnchorY").max=$("assetEditorHitboxY").max=$("assetEditorHandY").max=String(asset.height);
+  const validation=validateArtistAsset();
+  const runtimeStatus=$("assetEditorRuntimeStatus");
+  runtimeStatus.classList.toggle("warn",!validation.linked);
+  runtimeStatus.innerHTML="<strong>"+(validation.linked?"✓ IM SPIEL VERBUNDEN":"△ NUR VORLAGE")+"</strong>Hook: "+validation.binding+" · Gelb = Anker · Rot = Hand · Grün = Hitbox";
+  const validationPanel=$("assetEditorValidation");
+  validationPanel.classList.toggle("has-errors",!!validation.errors.length);
+  const notes=validation.errors.map((message)=>"Fehler: "+message).concat(validation.warnings.map((message)=>"Hinweis: "+message));
+  validationPanel.innerHTML=notes.length?"<strong>Asset-Prüfung</strong><ul>"+notes.map((note)=>"<li>"+note+"</li>").join("")+"</ul>":"✓ Asset spielbereit · alle Pflichtclips und Runtime-Daten vorhanden";
   $("assetEditorDeleteLayer").disabled=asset.layers.length<=1;
   $("assetEditorLayerUp").disabled=assetEditorState.layerIndex>=asset.layers.length-1;
   $("assetEditorLayerDown").disabled=assetEditorState.layerIndex<=0;
@@ -895,6 +1001,17 @@ function bindAssetEditor(){
   $("assetEditorLayerOpacity").addEventListener("change",(event)=>{captureArtistHistory();currentArtistLayer().opacity=clampArtistNumber(event.target.value,0,1,1);scheduleArtistDraftSave();renderAssetEditor();});
   $("assetEditorOnion").addEventListener("change",(event)=>{assetEditorState.onion=event.target.checked;drawArtistEditorGrid();});
   $("assetEditorGridToggle").addEventListener("change",(event)=>{assetEditorState.showGrid=event.target.checked;drawArtistEditorGrid();});
+  $("assetEditorScene").addEventListener("change",(event)=>{assetEditorState.scene=event.target.value;drawArtistPreview();});
+  $("assetEditorDirection").addEventListener("change",(event)=>{assetEditorState.direction=event.target.value;const definition=artistAssetDefinitions[assetEditorState.assetId];if(definition.runtime==="hair"){const clip=event.target.value==="up"?"up":event.target.value==="down"?"down":"side";if(currentArtistAsset().animations[clip]){assetEditorState.animation=clip;assetEditorState.frameIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();return;}}drawArtistPreview();});
+  const bindMetaNumber=(id,path,min,max)=>$(id).addEventListener("change",(event)=>{
+    const asset=currentArtistAsset();captureArtistHistory();
+    const axisMax=["x","width"].includes(path[1])?asset.width:asset.height;const value=Math.round(clampArtistNumber(event.target.value,min,Math.min(max,axisMax),path[0]==="anchor"?asset.meta.anchor[path[1]]:path[0]==="hitbox"?asset.meta.hitbox[path[1]]:asset.meta.hand[path[1]]));
+    if(path[0]==="anchor") asset.meta.anchor[path[1]]=value; else if(path[0]==="hitbox") asset.meta.hitbox[path[1]]=value; else asset.meta.hand[path[1]]=value;
+    scheduleArtistDraftSave();renderAssetEditor();
+  });
+  bindMetaNumber("assetEditorAnchorX",["anchor","x"],0,64);bindMetaNumber("assetEditorAnchorY",["anchor","y"],0,64);
+  bindMetaNumber("assetEditorHitboxX",["hitbox","width"],1,64);bindMetaNumber("assetEditorHitboxY",["hitbox","height"],1,64);
+  bindMetaNumber("assetEditorHandX",["hand","x"],0,64);bindMetaNumber("assetEditorHandY",["hand","y"],0,64);
   for(const button of document.querySelectorAll("[data-asset-tool]")) button.addEventListener("click",()=>{assetEditorState.tool=button.dataset.assetTool;renderAssetEditor();});
   $("assetEditorColor").addEventListener("input",(event)=>setArtistColor(event.target.value));
   $("assetEditorColorText").addEventListener("change",(event)=>{if(!setArtistColor(event.target.value)) event.target.value=$("assetEditorColor").value;});
@@ -936,5 +1053,5 @@ requestAnimationFrame(assetEditorPreviewLoop);
 window.__ARCHIPELAGO_ASSET_EDITOR__={
   definitions:artistAssetDefinitions,categories:artistAssetCategories,get pack(){return artistAssetPack;},normalizeArtistPack,createDefaultArtistPack,
   drawArtistSpriteOverride,drawArtistStaticOverride,drawArtistTileOverride,drawArtistSizedOverride,artistAssetEnabled,
-  openAssetEditor,closeAssetEditor,saveArtistDraft,loadArtistAssetPack
+  validateArtistAsset,openAssetEditor,closeAssetEditor,saveArtistDraft,loadArtistAssetPack
 };

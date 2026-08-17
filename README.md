@@ -2,7 +2,32 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.15)
+## Aktueller Stand (0.18)
+
+- **Eiswacht als vollständig eigenes Forschungsdorf:** Das ausgeloste Norddorf verwendet kein generisches Stadtmuster mehr, sondern 32 handplatzierte Gebäude, Einrichtungen und Umgebungsdetails mit eigener Pixelgrafik, Kollision und Interaktion
+- individuelles Dorfensemble mit Langhaus **Zur Stillen Flamme**, Observatorium, Werkhof, Wärmestube, Frostgewächshaus, Räucherhaus, Weißnacht-Archiv, Wohnhütten, Dampfgenerator, Eisbecken, Fischgestell, Expeditionsschlitten, Wetterfahne, Schichtglocke und Nordlicht-Leuchtfeuer
+- sechs benannte Bewohner – Elara, Tova, Njal, Sela, Orik und Iven – mit eigener Rolle, Erscheinung, Vergangenheit, Beziehungen, Dialogthemen, Arbeitsplätzen und vollständigen Tagesplänen; Dorfhund Murr folgt Njal, bewacht den Werkhof oder schläft während des Sturms am Ofen
+- lebendiger Dorfablauf mit Nachtwachen, Fischfang, Schmiede- und Klinikschichten, Botanik, Funkarchiv, Kurierwegen, Mittagsglocke, gemeinsamem Abendessen sowie vollständig veränderten Aufenthaltsorten während eines weißen Sturms
+- umfangreiche lokale Geschichte um das gestrandete Schiff **Nordlicht**, siebenundvierzig Winter Forschung, die verschwundenen Bewohner der Weißnacht und ein antwortendes Licht unter dem Gletscher; Gebäude und Kleindetails erzählen zusätzliche Teile davon
+- mehrstufige Eiswacht-Aufgabe: drei verstreute Aurora-Peilsteine finden, die Prismensplitter zu Tova bringen, die Linse reparieren und das Nordlicht-Leuchtfeuer aktivieren; Fortschritt, Funde und Belohnung sind im bestehenden Spielstand enthalten
+- tägliche Dorfaktivitäten und Belohnungen mit Eisloch-Angeln, Selas Behandlung, Frostblütentee, geräuchertem Eisling, Njals Handel und der einzigartigen Laterne der Weißnacht
+- eigenes Eiswacht-HUD, Sturmwarnung, nächtliche Aurora bei repariertem Leuchtfeuer, beleuchtete Fenster und Laternen, Generator-/Schmiededetails, Schneepfade sowie vollständig tiefensortierte Bewohner und Gebäude
+- Asset Studio um alle Eiswacht-Bewohner, Murr, fünf neue Gegenstände und 21 Dorfgebäude/-objekte samt Leuchtfeuerzustand erweitert
+
+- vollständiges Wüsten-Rework mit fünf großflächigen Unterbiomen: Goldene Dünen, Rote Tafelwüste, Salzpfannen, Dornsteppe und Schluchtenland; Oasen bleiben als grüne Rückzugsräume erhalten
+- eigene Bodentexturen und Kleindetails pro Wüstenzone mit Dünenrippen, Salzrissen und -kristallen, Rotkies, Sonnensteinen, Dornen, Wüstenblüten und regional verteiltem Bewuchs
+- drei neue südliche Reiseziele: Karawanserei Qadim mit Tiefbrunnen, das Salzkloster Miraj mit verlorener Karawane und das Observatorium im Glasmeer mit kühlendem Altar und Beute
+- neue Wüstenfauna mit fliehenden Wüstenechsen in drei Varianten sowie aggressiven Schakalrudeln in drei Fellfarben; beide besitzen eigene Werte, Animationen, Kadaverlagen, Blutmengen und Loot
+- Tageshitze als sanft ansteigendes Reiserisiko mit Ausdauerbelastung und spätem Hitzschlag; Oasen, Tiefbrunnen, Schattenplätze, Rast und der Glasaltar kühlen die Figur wieder ab
+- neues südliches Wetter mit Hitzeflimmern, Staubphasen und dichten Sandstürmen, die Sicht und Bewegung beeinflussen, ohne andere Regionen zusätzlich zu belasten
+- vier neue prozedurale Wüstenszenen an Straßen: Sonnenobelisken, Karawanenwracks, Knochenfelder und Schattensegel
+- Asset Studio um alle fünf Wüstenblöcke, beide Tierbasen, sechs Tier-Varianten, neue Ressourcen/Rezepte und sämtliche neuen Straßen- und Zielobjekte erweitert
+
+- neuer Jagdbogen mit verbrauchbaren Pfeilen, Flugkollision, Fernkampfschaden gegen Tiere und Banditen, Werkbankrezept, Inventar-/Handgrafik, Schnellzugriff über `4` sowie getrennten `DRAW`- und `FLIGHT`-Assets im Studio
+- räumlicher Tierindex statt wiederholter globaler Suchen, getrennte deutlich kleinere Langzeit-Caches, bedarfsgebündelte Decal-Pflege und automatisch reduzierte Wetterdichte bei langsamen Frames
+- robuste Tierkörper: Bewegung blockiert neue Überlappungen bereits vor dem Schritt; ein dreipassiger, räumlich begrenzter Solver trennt auch dichte Gruppen und Paare an Hindernissen
+- drei dauerhaft gewählte Kadaverlagen pro Tierart; Hühner und Wildschweine behalten dabei ihre Gefieder-/Fellvariante, und mehrere `DEAD`-Frames im Asset Studio dienen nun als statische Kadavervarianten
+- überarbeitetes Blut pro Tierart mit eigenem Farbprofil, Körperwunde, Lachenform und Blutmenge: starker sichtbarer Ersterguss, kurze Hauptblutung und langes kontinuierliches Nachsickern aus einer gemeinsamen endlichen Reserve
 
 - neues Startgebiet **Treibholz** mit Dorfwegen, drei Hütten, Mira, Händler Borin, Werkbank, Brunnen und Lagerfeuer
 - vollständige erste Questkette: Materialien sammeln, Jagdspeer herstellen, das erste Banditenlager räumen und Belohnung abholen
@@ -26,7 +51,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - pixelklarer Spieler-Renderpfad mit ganzzahligen Sprite-Pixeln und einer Canvas-Auflösung, die der tatsächlichen Fenstergröße entspricht; Spielernamen werden ohne geglättete Browser-Schrift als eigenes 5×7-Pixelalphabet gezeichnet
 - funktionales Sprint- und Schwimmsystem mit Strömungs-, Flachwasser- und Tiefseegeschwindigkeiten
 - Tiefseeschwimmen verbraucht Ausdauer; erschöpfte Figuren sinken, ertrinken und erwachen am letzten sicheren Ufer
-- 20 × 20 km große Welt mit Nordpol, Packeis, Tundra, Gletschern, südlicher Sonnenwüste und Oasen
+- 20 × 20 km große Welt mit Nordpol, Packeis, Tundra, Gletschern, fünf südlichen Wüstenzonen und Oasen
 - weichere Biomgrenzen durch mehrteilige Farbmischung und 8×8-Pixel-Dithering, ohne die Gameplay-Biome zu verändern
 - organischere Inselkonturen mit Buchten, Halbinseln und kleinen Schären
 - höhenbasierte Flüsse, die vom Hochland abwärts bis an die Küste entwässern
@@ -37,7 +62,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - dreimal breitere Hauptwege und deutlich seltener gesetzte Geröllfelder im Hochland
 - Wege besitzen echte 8×8-Pixeltexturen mit Spurrillen, Pfützen, Steinen und wechselnden Oberflächen
 - automatische Holz- und Steinbrücken an jeder Weg-/Flusskreuzung
-- 13 deterministische Straßendeko-Typen: große Findlinge, Steinmale, Wegweiser, Meilensteine, kaputte Wagen, Handkarren, Vorräte, Laternen, Wegschreine, Lager, Baumstämme, Trümmer und Anschlagtafeln
+- 17 deterministische Straßendeko-Typen: große Findlinge, Steinmale, Wegweiser, Meilensteine, kaputte Wagen, Handkarren, Vorräte, Laternen, Wegschreine, Lager, Baumstämme, Trümmer, Anschlagtafeln sowie vier eigene Wüstenszenen
 - deutlich größere Abstände zwischen Straßenszenen, damit Wege wieder ruhig lesbar und frei begehbar bleiben
 - vollständiger Baum-/Kronenabstand zu Wegen sowie Kollisionen und eigene Interaktionen für große Straßendekorationen
 - Mehrfeld-Inventar mit 10×6-Rucksackraster, Verschieben, Drehen, Schnellwechsel und vorbereiteten Slots für Kopf, Körper, Beine, Stiefel und Haupthand
@@ -64,7 +89,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - Minimap und große beschriftete Weltkarte mit Legende
 - mobile Touch-Steuerung mit Mehrfinger-D-Pad, gedrückt gehaltenem Sprint, großen Aktions-/Interaktionstasten sowie direkten Buttons für Inventar, Karte und Pause; HUD und Overlays berücksichtigen Hochformat, Querformat und Display-Safe-Areas
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
-- integriertes Asset Studio für Nicht-Programmierer mit neun übersichtlichen Kategorien und dem vollständigen aktuellen Renderkatalog: Figuren, Tierbasen, Huhn-/Wildschwein-/Pferdevarianten, zehn Frisuren, alle Waffen/Items, sämtliche Terrain- und Bau-Blöcke, Baumteile sowie 13 Weltobjekte; Pixelwerkzeuge, frei verwaltbare Animationsclips/Frames/FPS, Live-Vorschau, bis zu zwölf sortierbare Ebenen, Deckkraft, Undo/Redo und validierter JSON-Transfer bleiben enthalten
+- integriertes Asset Studio für Nicht-Programmierer mit neun übersichtlichen Kategorien und dem vollständigen aktuellen Renderkatalog: Figuren, Tierbasen und Varianten einschließlich Wüstenechsen/Schakalen, zehn Frisuren, alle Waffen/Items, sämtliche Terrain- und Bau-Blöcke, Baumteile sowie alte und neue Weltobjekte; Pixelwerkzeuge, frei verwaltbare Animationsclips/Frames/FPS, Live-Vorschau, bis zu zwölf sortierbare Ebenen, Deckkraft, Undo/Redo und validierter JSON-Transfer bleiben enthalten
 
 ## Steuerung
 
@@ -73,7 +98,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 | WASD / Pfeiltasten | Laufen / Pferd lenken |
 | Shift | Sprinten / auf dem Pferd galoppieren |
 | I | Inventar öffnen / schließen |
-| 1 / 2 / 3 | Schwert / Axt / Jagdspeer ausrüsten |
+| 1 / 2 / 3 / 4 | Schwert / Axt / Jagdspeer / Jagdbogen ausrüsten |
 | Leertaste | Ausweichrolle in Blick- oder Laufrichtung |
 | Linksklick | Ausgerüsteten Gegenstand benutzen |
 | R | Ausgewählten Gegenstand im Inventar drehen |
@@ -98,7 +123,7 @@ Die Live-Vorschau besitzt Wald-, Dorf-, Kampf- und Inventarszenen sowie eine Ric
 
 ## GitHub-Pages-Deployment
 
-1. `index.html`, `style.css`, `game.js`, `v015-systems.js`, `asset-editor.js` und `artist-assets.json` liegen direkt im veröffentlichten Branch.
+1. `index.html`, `style.css`, `game.js`, `v015-systems.js`, `v018-eiswacht.js`, `asset-editor.js` und `artist-assets.json` liegen direkt im veröffentlichten Branch.
 2. In GitHub unter **Settings → Pages** den Branch `agent/living-world-ui-pass` und den Ordner `/ (root)` auswählen.
 3. Jeder neue Fast-Forward-Commit auf diesem Branch löst den Pages-Build automatisch aus.
 4. Das Spiel liegt anschließend unter `https://timtill1015-beep.github.io/T-Rpg/`.

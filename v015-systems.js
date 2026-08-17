@@ -11,26 +11,33 @@ const SAVE_PREFIX="archipelago.save.v3.";
 const SAVE_VERSION=3;
 const AUTOSAVE_SECONDS=20;
 const START={x:9000,y:11400};
+const DESERT_BIOMES=["desert","redDesert","saltFlat","drySteppe","badlands"];
 
 Object.assign(itemCatalog,{
   wood:{name:"Holz",short:"Holz",category:"resource",width:2,height:1,maxStack:12,icon:"wood",description:"Ein trockener Holzabschnitt für Werkbank und Lagerfeuer."},
   coin:{name:"Inselmünze",short:"Münzen",category:"resource",width:1,height:1,maxStack:99,icon:"coin",description:"Alte Inselmünzen. Borin nimmt sie noch immer an."},
   cookedChicken:{name:"Gebratenes Huhn",short:"Huhn",category:"food",width:1,height:1,maxStack:6,icon:"cooked",consumable:true,heal:18,description:"Am Feuer gebraten. Stellt 18 Leben wieder her."},
   cookedPork:{name:"Gebratenes Wild",short:"Wild",category:"food",width:2,height:1,maxStack:6,icon:"cooked",consumable:true,heal:30,description:"Kräftiges Wildfleisch. Stellt 30 Leben wieder her."},
+  cookedGame:{name:"Gebratenes Wüstenwild",short:"Wüstenwild",category:"food",width:2,height:1,maxStack:6,icon:"cooked",consumable:true,heal:24,description:"Mageres Wüstenfleisch mit Salzkruste. Stellt 24 Leben wieder her und kühlt kurz ab."},
   fieldBandage:{name:"Feldverband",short:"Verband",category:"medicine",width:1,height:2,maxStack:5,icon:"bandage",consumable:true,heal:38,description:"Stoppt Blutung und stellt 38 Leben wieder her."},
   leatherVest:{name:"Verstärkte Lederweste",short:"Lederweste",category:"armor",equipSlot:"body",width:2,height:3,icon:"vest",armor:6,description:"Einfache Rüstung aus zäher Wildschweinhaut."},
-  huntingSpear:{name:"Jagdspeer",short:"Speer",category:"weapon",equipSlot:"mainHand",width:1,height:4,action:"spearThrust",duration:.42,cooldown:.55,animalDamage:68,corpseDamage:28,icon:"spear",description:"Lange Reichweite und ein klarer, gerichteter Stoß."}
+  huntingSpear:{name:"Jagdspeer",short:"Speer",category:"weapon",equipSlot:"mainHand",width:1,height:4,action:"spearThrust",duration:.42,cooldown:.55,animalDamage:68,corpseDamage:28,icon:"spear",description:"Lange Reichweite und ein klarer, gerichteter Stoß."},
+  huntingBow:{name:"Jagdbogen",short:"Bogen",category:"weapon",equipSlot:"mainHand",width:2,height:3,action:"bowShot",duration:.48,cooldown:.62,animalDamage:58,corpseDamage:12,icon:"bow",description:"Leiser Fernkampf bis etwa 170 Meter. Benötigt für jeden Schuss einen Pfeil."},
+  arrow:{name:"Jagdpfeil",short:"Pfeile",category:"ammo",width:1,height:2,maxStack:40,icon:"arrow",description:"Gefiederter Pfeil für den Jagdbogen."}
 });
 
 const recipes={
   workbench:[
     {id:"huntingSpear",label:"Jagdspeer",icon:"⚔",needs:{wood:2,bone:1},output:{huntingSpear:1}},
+    {id:"huntingBow",label:"Jagdbogen",icon:"⌁",needs:{wood:3,boarHide:1},output:{huntingBow:1}},
+    {id:"arrow",label:"6 Jagdpfeile",icon:"➶",needs:{wood:1,feather:2,bone:1},output:{arrow:6}},
     {id:"leatherVest",label:"Lederweste",icon:"◈",needs:{boarHide:2,wood:1},output:{leatherVest:1}},
     {id:"fieldBandage",label:"Feldverband",icon:"✚",needs:{boarHide:1,feather:2},output:{fieldBandage:2}}
   ],
   campfire:[
     {id:"cookedChicken",label:"Huhn braten",icon:"♨",needs:{rawChicken:1},output:{cookedChicken:1}},
-    {id:"cookedPork",label:"Wild braten",icon:"♨",needs:{rawPork:1},output:{cookedPork:1}}
+    {id:"cookedPork",label:"Wild braten",icon:"♨",needs:{rawPork:1},output:{cookedPork:1}},
+    {id:"cookedGame",label:"Wüstenwild braten",icon:"♨",needs:{rawGame:1},output:{cookedGame:1}}
   ],
   trader:[
     {id:"buyBandage",label:"Verband kaufen",icon:"✚",needs:{coin:3},output:{fieldBandage:1}},
@@ -61,9 +68,15 @@ const worldObjects=[
   {id:"cave-sun",kind:"cave",x:13220,y:16920,radius:14,solid:true,label:"Gluthöhle betreten",mobileLabel:"Erkunden"},
   {id:"ruin-cache-1",kind:"lootChest",x:10735,y:10905,radius:6,solid:true,label:"Gezeitenkiste öffnen",mobileLabel:"Öffnen"},
   {id:"ruin-cache-2",kind:"lootChest",x:15135,y:5755,radius:6,solid:true,label:"Königskiste öffnen",mobileLabel:"Öffnen"},
-  {id:"ruin-cache-3",kind:"lootChest",x:6705,y:17315,radius:6,solid:true,label:"Sonnenuhr-Kassette öffnen",mobileLabel:"Öffnen"}
+  {id:"ruin-cache-3",kind:"lootChest",x:6705,y:17315,radius:6,solid:true,label:"Sonnenuhr-Kassette öffnen",mobileLabel:"Öffnen"},
+  {id:"qadim-well",kind:"desertWell",x:9828,y:17462,radius:8,solid:true,label:"Tiefbrunnen benutzen",mobileLabel:"Trinken"},
+  {id:"qadim-cache",kind:"lootChest",x:9880,y:17492,radius:6,solid:true,label:"Karawanentruhe öffnen",mobileLabel:"Öffnen"},
+  {id:"miraj-caravan",kind:"caravan",x:4928,y:16812,radius:14,solid:true,label:"Salzkarawane untersuchen",mobileLabel:"Suchen"},
+  {id:"miraj-cache",kind:"lootChest",x:4970,y:16828,radius:6,solid:true,label:"Salzkassette öffnen",mobileLabel:"Öffnen"},
+  {id:"glass-altar",kind:"sunAltar",x:16228,y:17092,radius:10,solid:true,label:"Glasaltar berühren",mobileLabel:"Berühren"},
+  {id:"glass-cache",kind:"lootChest",x:16178,y:17114,radius:6,solid:true,label:"Sternentruhe öffnen",mobileLabel:"Öffnen"}
 ];
-const propPixelSizes={workbench:[48,32],campfire:[32,32],well:[48,32],hut:[64,48],cave:[64,48],banditTent:[64,48],lootChest:[32,32]};
+const propPixelSizes={workbench:[48,32],campfire:[32,32],well:[48,32],hut:[64,48],cave:[64,48],banditTent:[64,48],lootChest:[32,32],desertWell:[48,40],caravan:[72,48],sunAltar:[48,56]};
 
 function createBandits(){
   const camps=[
@@ -78,7 +91,7 @@ function createBandits(){
 }
 
 const runtime={
-  activeSlot:null,pendingLoad:null,autosave:0,saveFlash:0,hitStop:0,shake:0,roll:null,questSignature:"",markerSignature:"",lastSocial:new Map(),lastSoundAt:new Map(),audio:null,
+  activeSlot:null,pendingLoad:null,autosave:0,saveFlash:0,hitStop:0,shake:0,roll:null,arrows:[],arrowSerial:0,renderDensity:1,frameTime:.016,questSignature:"",markerSignature:"",lastSoundAt:new Map(),audio:null,
   world:{questStage:0,bandits:createBandits(),opened:{},visited:{},crafted:{},playSeconds:0,weatherSeed:0}
 };
 
@@ -141,7 +154,7 @@ function openCraft(kind){
   const copy=titles[kind];$("craftKicker").textContent=copy[0];$("craftTitle").textContent=copy[1];$("craftSubtitle").textContent=copy[2];const list=$("craftRecipeList");list.replaceChildren();
   if(kind==="campfire"){
     const rest=document.createElement("article");rest.className="craft-recipe";rest.innerHTML='<span class="craft-recipe-icon">☾</span><div><h3>Bis zum Morgen rasten</h3><p>Leben, Ausdauer und Blutung vollständig erholen</p></div>';
-    const button=document.createElement("button");button.textContent="Rasten";button.className="primary";button.addEventListener("click",()=>{state.player.health=100;state.player.stamina=100;state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};const hour=(8+state.elapsed/120)%24;state.elapsed+=(((8-hour+24)%24)||24)*120;api.showToast("Ausgeruht · ein neuer Morgen beginnt",2200);sound("rest");saveNow("rest");renderCraft(kind);});rest.appendChild(button);list.appendChild(rest);
+    const button=document.createElement("button");button.textContent="Rasten";button.className="primary";button.addEventListener("click",()=>{state.player.health=100;state.player.stamina=100;state.player.heat=0;state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};const hour=(8+state.elapsed/120)%24;state.elapsed+=(((8-hour+24)%24)||24)*120;api.showToast("Ausgeruht · ein neuer Morgen beginnt",2200);sound("rest");saveNow("rest");renderCraft(kind);});rest.appendChild(button);list.appendChild(rest);
   }
   for(const recipe of recipes[kind]||[]){
     const article=document.createElement("article");const available=hasIngredients(recipe.needs);article.className="craft-recipe"+(available?"":" locked");article.innerHTML='<span class="craft-recipe-icon">'+recipe.icon+'</span><div><h3>'+recipe.label+'</h3><p>'+ingredientsText(recipe.needs)+'</p></div>';
@@ -187,6 +200,18 @@ function interact(target){
   if(object.kind==="workbench"){openCraft("workbench");return true;}
   if(object.kind==="campfire"){openCraft("campfire");return true;}
   if(object.kind==="well"){api.showToast("Klares Wasser · Ausdauer vollständig erholt",1800);state.player.stamina=100;sound("water");return true;}
+  if(object.kind==="desertWell"){api.showToast("Kühles Tiefenwasser · Hitze und Ausdauer erholt",2200);state.player.stamina=100;state.player.heat=0;sound("water");return true;}
+  if(object.kind==="caravan"){
+    if(!runtime.world.visited[object.id]){runtime.world.visited[object.id]=true;api.addInventoryItem("coin",4);api.addInventoryItem("lizardScale",2);showDialog("Verlorene Salzkarawane","Zwischen verhärteten Salzsäcken findest du Münzen, Echsenhaut und eine Karte zum Glasmeer. Frische Pfotenabdrücke warnen vor Schakalen.");saveNow("discovery");sound("discovery");}
+    else api.showToast("Die Karawane ist leer · Schakalspuren führen nach Osten",1900);
+    return true;
+  }
+  if(object.kind==="sunAltar"){
+    state.player.heat=Math.max(0,(state.player.heat||0)-45);
+    if(!runtime.world.visited[object.id]){runtime.world.visited[object.id]=true;api.addInventoryItem("arrow",6);showDialog("Altar aus Wüstenglas","Das schwarze Glas bleibt selbst in der Sonne kühl. In einer Nische liegen sechs unversehrte Jagdpfeile.");saveNow("discovery");sound("discovery");}
+    else api.showToast("Das Wüstenglas zieht die Hitze aus deiner Ausrüstung",1900);
+    return true;
+  }
   if(object.kind==="hut"){api.showToast(object.id==="hut-hall"?"An der Wand hängt eine Karte der zersplitterten Inseln.":"Die Hütte ist bewohnt und für die Nacht verriegelt.",2200);return true;}
   if(object.kind==="lootChest"){
     const coins=api.addInventoryItem("coin",object.camp?6:10);const bandages=api.addInventoryItem("fieldBandage",1);if(!coins&&!bandages){api.showToast("Der Rucksack ist voll · Truhe bleibt geschlossen",2200);return true;}runtime.world.opened[object.id]=true;api.showToast("Truhe geöffnet · "+coins+" Münzen"+(bandages?" und Feldverband":""),2400);sound("chest");saveNow("loot");return true;
@@ -238,7 +263,19 @@ function damageBandit(bandit,damage){
   else api.showToast("Bandit · "+Math.ceil(bandit.health)+" / "+bandit.maxHealth,850);
 }
 function performPlayerStrike(itemId,damage){const reach=itemId==="huntingSpear"?38:25;const target=banditTarget(reach);if(!target) return false;damageBandit(target.bandit,damage);return true;}
+function fireBow(definition){
+  if(inventoryCount("arrow")<1){api.showToast("Keine Pfeile · stelle sie an der Werkbank her",1700);sound("empty");return true;}
+  removeInventory("arrow",1);
+  const [dx,dy]=directionVector();
+  runtime.arrows.push({
+    id:"arrow:"+(++runtime.arrowSerial),x:state.player.x+dx*9,y:state.player.y+dy*9,
+    vx:dx*205,vy:dy*205,angle:Math.atan2(dy,dx),life:.86,damage:definition.animalDamage,ownerId:state.player.id
+  });
+  sound("bow");
+  return true;
+}
 function useEquippedItem(item,definition){
+  if(definition.action==="bowShot") return fireBow(definition);
   if(definition.action!=="spearThrust") return false;
   if(!performPlayerStrike(item.itemId,definition.animalDamage)){
     const target=api.findAnimalTarget?.(TILE_METERS*3.15);if(target) api.damageAnimal(target.animal,definition.animalDamage,item.itemId);
@@ -246,7 +283,7 @@ function useEquippedItem(item,definition){
   sound("swing","spear");return true;
 }
 function useConsumable(item,definition){
-  if(!definition.consumable) return false;state.player.health=Math.min(100,state.player.health+(definition.heal||0));if(item.itemId==="fieldBandage") state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};removeInventory(item.itemId,1);api.showToast(definition.name+" benutzt · "+Math.ceil(state.player.health)+" Leben",1800);sound("heal");saveNow("item");return true;
+  if(!definition.consumable) return false;state.player.health=Math.min(100,state.player.health+(definition.heal||0));if(item.itemId==="fieldBandage") state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};if(item.itemId==="cookedGame") state.player.heat=Math.max(0,(state.player.heat||0)-18);removeInventory(item.itemId,1);api.showToast(definition.name+" benutzt · "+Math.ceil(state.player.health)+" Leben",1800);sound("heal");saveNow("item");return true;
 }
 
 function updateBandits(dt){
@@ -269,19 +306,46 @@ function updateBandits(dt){
   }
 }
 
+function updateArrows(dt){
+  if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
+  for(const arrow of runtime.arrows){
+    arrow.life-=dt;
+    if(arrow.life<=0) continue;
+    const distance=Math.hypot(arrow.vx,arrow.vy)*dt;
+    const steps=Math.max(1,Math.ceil(distance/5));
+    for(let step=0;step<steps&&arrow.life>0;step++){
+      arrow.x+=arrow.vx*dt/steps;arrow.y+=arrow.vy*dt/steps;
+      if(api.collisionAt(arrow.x,arrow.y)){arrow.life=0;break;}
+      let hit=false;
+      for(const bandit of runtime.world.bandits){
+        if(bandit.status!=="alive"||Math.hypot(arrow.x-bandit.x,arrow.y-bandit.y)>5.4) continue;
+        damageBandit(bandit,arrow.damage);hit=true;break;
+      }
+      if(hit){arrow.life=0;break;}
+      for(const animal of api.activeAnimalsNear(arrow.x,arrow.y,15)){
+        const meta=animalCatalog[animal.species];
+        if(!meta||meta.invulnerable||animal.status!=="alive"||Math.hypot(arrow.x-animal.x,arrow.y-animal.y)>meta.radius+1.4) continue;
+        api.damageAnimal(animal,arrow.damage,"huntingBow");hit=true;break;
+      }
+      if(hit){arrow.life=0;break;}
+    }
+  }
+  runtime.arrows=runtime.arrows.filter((arrow)=>arrow.life>0);
+}
+
 function updateAnimalSocial(animal,dt,distance){
-  if(animal.status!=="alive"||animal.species==="crow") return;const key=animal.id+":"+Math.floor(state.elapsed*2);if(runtime.lastSocial.has(key)) return;runtime.lastSocial.set(key,state.elapsed);
-  if(runtime.lastSocial.size>600) for(const [id,time] of runtime.lastSocial) if(state.elapsed-time>3) runtime.lastSocial.delete(id);
-  if(animal.species==="boar"&&distance<72){
-    const wounded=api.activeAnimalsNear(animal.x,animal.y,48).some((other)=>other.species==="boar"&&other.health<other.maxHealth*.8);
+  if(animal.status!=="alive"||animal.species==="crow"||state.elapsed<(animal.nextSocialCheckAt||0)) return;
+  animal.nextSocialCheckAt=state.elapsed+.42+(animal.id.length%7)*.025;
+  if(animalCatalog[animal.species]?.hostile&&distance<72){
+    const wounded=api.activeAnimalsNear(animal.x,animal.y,48).some((other)=>other.species===animal.species&&other.health<other.maxHealth*.8);
     if(wounded) animal.aggressionUntil=Math.max(animal.aggressionUntil,state.elapsed+4.5);
   }
 }
 function onAnimalDamaged(animal,damage,itemId){
   runtime.hitStop=.045;runtime.shake=Math.max(runtime.shake,animal.species==="horse"?3:2);sound(animal.health<=0?"defeat":"hit",animal.species);
-  for(const other of api.activeAnimalsNear(animal.x,animal.y,animal.species==="boar"?58:44)){
+  for(const other of api.activeAnimalsNear(animal.x,animal.y,animalCatalog[animal.species]?.hostile?58:44)){
     if(other===animal||other.species!==animal.species||other.status!=="alive") continue;
-    if(animal.species==="boar") other.aggressionUntil=Math.max(other.aggressionUntil,state.elapsed+7);
+    if(animalCatalog[animal.species]?.hostile) other.aggressionUntil=Math.max(other.aggressionUntil,state.elapsed+7);
     else other.fleeUntil=Math.max(other.fleeUntil,state.elapsed+6);
     other.heading=Math.atan2(other.y-state.player.y,other.x-state.player.x);
   }
@@ -298,26 +362,75 @@ function fallbackNpc(entity,x,y){const player={...state.player,id:entity.id,name
 function drawNpc(object,camX,camY){const p=worldToScreen(object.x,object.y,camX,camY);const entity={id:object.id,variant:object.variant,dir:"down",moving:false,talking:!$("dialogOverlay")?.classList.contains("hidden")};const assetId=object.variant==="mira"?"npc_mira":"npc_borin";const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;if(!editor?.drawArtistSpriteOverride(assetId,entity,ctx,p.x,p.y)) fallbackNpc({...entity,kind:"npc",x:object.x,y:object.y},p.x,p.y);ctx.fillStyle="#f2dfae";ctx.font="10px Georgia";ctx.textAlign="center";ctx.fillText(object.variant==="mira"?"Mira":"Borin",Math.round(p.x),Math.round(p.y-54));}
 function drawBandit(bandit,camX,camY){const p=worldToScreen(bandit.x,bandit.y,camX,camY);const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;if(!editor?.drawArtistSpriteOverride("bandit",bandit,ctx,p.x,p.y)){if(bandit.status==="dead"){ctx.fillStyle="rgba(17,20,20,.28)";ctx.fillRect(Math.round(p.x-22),Math.round(p.y-5),44,7);ctx.fillStyle="#49312d";ctx.fillRect(Math.round(p.x-17),Math.round(p.y-12),34,10);ctx.fillStyle="#a86f45";ctx.fillRect(Math.round(p.x+10),Math.round(p.y-13),10,9);}else fallbackNpc({...bandit,kind:"bandit",variant:"bandit"},p.x,p.y);}if(bandit.status==="alive"){ctx.fillStyle="#241516";ctx.fillRect(Math.round(p.x-15),Math.round(p.y-56),30,4);ctx.fillStyle=bandit.phase==="windup"?"#f0b85c":"#b34d48";ctx.fillRect(Math.round(p.x-14),Math.round(p.y-55),Math.round(28*bandit.health/bandit.maxHealth),2);if(bandit.phase==="windup"){ctx.strokeStyle="#edc66d";ctx.strokeRect(Math.round(p.x-18),Math.round(p.y-18),36,10);}}}
 function drawProp(object,camX,camY){
-  if(object.kind==="npc"){drawNpc(object,camX,camY);return;}const p=worldToScreen(object.x,object.y,camX,camY);const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;const assetId=["workbench","campfire","well","hut","cave","banditTent","lootChest"].includes(object.kind)?"prop_"+object.kind:null;
+  if(object.kind==="npc"){drawNpc(object,camX,camY);return;}const p=worldToScreen(object.x,object.y,camX,camY);const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;const assetId=["workbench","campfire","well","hut","cave","banditTent","lootChest","desertWell","caravan","sunAltar"].includes(object.kind)?"prop_"+object.kind:null;
   const size=propPixelSizes[object.kind]||[48,32];
-  if(assetId&&editor?.drawArtistSizedOverride(assetId,ctx,p.x-size[0]/2,p.y-size[1],size[0],size[1],{animation:object.kind==="campfire"?"burn":runtime.world.opened[object.id]?"open":"idle"})) return;
+  const propAnimation=object.kind==="campfire"?"burn":object.kind==="sunAltar"?"glow":object.kind==="desertWell"?"water":runtime.world.opened[object.id]?"open":"idle";
+  if(assetId&&editor?.drawArtistSizedOverride(assetId,ctx,p.x-size[0]/2,p.y-size[1],size[0],size[1],{animation:propAnimation})) return;
   if(object.kind==="workbench"){ctx.fillStyle="#5d3d26";ctx.fillRect(Math.round(p.x-20),Math.round(p.y-13),40,13);ctx.fillStyle="#a97746";ctx.fillRect(Math.round(p.x-22),Math.round(p.y-18),44,7);ctx.fillStyle="#3e2a1e";ctx.fillRect(Math.round(p.x-17),Math.round(p.y),5,17);ctx.fillRect(Math.round(p.x+12),Math.round(p.y),5,17);}
   else if(object.kind==="campfire"){ctx.fillStyle="#4c3326";ctx.fillRect(Math.round(p.x-12),Math.round(p.y+3),24,5);ctx.fillStyle="#e15b2d";ctx.fillRect(Math.round(p.x-7),Math.round(p.y-13),14,16);ctx.fillStyle="#ffd36b";ctx.fillRect(Math.round(p.x-3),Math.round(p.y-18-Math.sin(state.elapsed*9)*3),7,14);}
   else if(object.kind==="well"){ctx.fillStyle="#555b57";ctx.fillRect(Math.round(p.x-17),Math.round(p.y-10),34,22);ctx.fillStyle="#8b8d82";ctx.fillRect(Math.round(p.x-20),Math.round(p.y-15),40,8);ctx.fillStyle="#18343c";ctx.fillRect(Math.round(p.x-12),Math.round(p.y-11),24,7);}
   else if(object.kind==="hut"){ctx.fillStyle="#725138";ctx.fillRect(Math.round(p.x-27),Math.round(p.y-35),54,38);ctx.fillStyle="#9c7148";ctx.fillRect(Math.round(p.x-22),Math.round(p.y-31),44,30);ctx.fillStyle="#5b3528";ctx.beginPath();ctx.moveTo(p.x-34,p.y-34);ctx.lineTo(p.x,p.y-65);ctx.lineTo(p.x+34,p.y-34);ctx.fill();ctx.fillStyle="#35251e";ctx.fillRect(Math.round(p.x-7),Math.round(p.y-20),14,23);ctx.fillStyle="#d4ac58";ctx.fillRect(Math.round(p.x+3),Math.round(p.y-10),2,2);}
   else if(object.kind==="banditTent"){ctx.fillStyle="#4b3430";ctx.fillRect(Math.round(p.x-27),Math.round(p.y-23),54,30);ctx.fillStyle="#7b4b3e";ctx.beginPath();ctx.moveTo(p.x-31,p.y-22);ctx.lineTo(p.x,p.y-54);ctx.lineTo(p.x+31,p.y-22);ctx.fill();ctx.fillStyle="#21191a";ctx.fillRect(Math.round(p.x-7),Math.round(p.y-24),14,31);}
   else if(object.kind==="cave"){ctx.fillStyle="#454b4b";ctx.fillRect(Math.round(p.x-34),Math.round(p.y-30),68,35);ctx.fillStyle="#171e21";ctx.fillRect(Math.round(p.x-20),Math.round(p.y-36),40,42);ctx.fillStyle="#090f12";ctx.fillRect(Math.round(p.x-13),Math.round(p.y-30),26,36);}
+  else if(object.kind==="desertWell"){ctx.fillStyle="#604238";ctx.fillRect(Math.round(p.x-21),Math.round(p.y-10),42,22);ctx.fillStyle="#a36a47";ctx.fillRect(Math.round(p.x-24),Math.round(p.y-15),48,8);ctx.fillStyle="#173c47";ctx.fillRect(Math.round(p.x-14),Math.round(p.y-11),28,7);ctx.fillStyle="#493127";ctx.fillRect(Math.round(p.x-20),Math.round(p.y-38),4,27);ctx.fillRect(Math.round(p.x+16),Math.round(p.y-38),4,27);ctx.fillRect(Math.round(p.x-18),Math.round(p.y-39),36,4);ctx.fillStyle="#c9b071";ctx.fillRect(Math.round(p.x-2),Math.round(p.y-37),4,18);}
+  else if(object.kind==="caravan"){ctx.fillStyle="rgba(18,13,10,.27)";ctx.fillRect(Math.round(p.x-34),Math.round(p.y),68,9);ctx.fillStyle="#6e4930";ctx.fillRect(Math.round(p.x-28),Math.round(p.y-29),56,28);ctx.fillStyle="#a87847";ctx.fillRect(Math.round(p.x-25),Math.round(p.y-34),50,10);ctx.fillStyle="#3c2a22";ctx.fillRect(Math.round(p.x-30),Math.round(p.y-5),15,15);ctx.fillRect(Math.round(p.x+15),Math.round(p.y-5),15,15);ctx.fillStyle="#c7a46b";ctx.fillRect(Math.round(p.x-11),Math.round(p.y-29),22,11);ctx.fillStyle="#52372b";ctx.fillRect(Math.round(p.x-4),Math.round(p.y-35),8,36);}
+  else if(object.kind==="sunAltar"){ctx.fillStyle="rgba(20,10,8,.30)";ctx.fillRect(Math.round(p.x-24),Math.round(p.y),48,8);ctx.fillStyle="#5a3634";ctx.fillRect(Math.round(p.x-20),Math.round(p.y-17),40,21);ctx.fillStyle="#a05c42";ctx.fillRect(Math.round(p.x-15),Math.round(p.y-45),30,30);ctx.fillStyle="#1c2022";ctx.fillRect(Math.round(p.x-8),Math.round(p.y-38),16,17);ctx.fillStyle="#d8914d";ctx.fillRect(Math.round(p.x-3),Math.round(p.y-32),6,6);ctx.fillStyle="rgba(255,195,92,.18)";ctx.fillRect(Math.round(p.x-24),Math.round(p.y-52),48,44);}
   else if(object.kind==="lootChest"&&!runtime.world.opened[object.id]){ctx.fillStyle="#4f301f";ctx.fillRect(Math.round(p.x-14),Math.round(p.y-10),28,18);ctx.fillStyle="#a67336";ctx.fillRect(Math.round(p.x-15),Math.round(p.y-13),30,7);ctx.fillStyle="#d7b85b";ctx.fillRect(Math.round(p.x-2),Math.round(p.y-7),5,7);}
 }
-function renderables(left,top,right,bottom){const result=[];for(const object of worldObjects){if(object.kind==="lootChest"&&runtime.world.opened[object.id]) continue;if(object.x<left-80||object.x>right+80||object.y<top-80||object.y>bottom+80) continue;result.push({kind:"object",object,y:object.y});}for(const bandit of runtime.world.bandits){if(bandit.x<left-60||bandit.x>right+60||bandit.y<top-60||bandit.y>bottom+60) continue;result.push({kind:"bandit",bandit,y:bandit.ySort||bandit.y});}return result;}
-function drawRenderable(renderable,camX,camY){renderable.kind==="bandit"?drawBandit(renderable.bandit,camX,camY):drawProp(renderable.object,camX,camY);}
+function drawArrow(arrow,camX,camY){
+  const p=worldToScreen(arrow.x,arrow.y,camX,camY);ctx.save();ctx.translate(Math.round(p.x),Math.round(p.y));ctx.rotate(arrow.angle);
+  const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;
+  if(!editor?.drawArtistStaticOverride("item_arrow",ctx,0,4,{animation:"flight",pixelSize:1.5})){
+    ctx.fillStyle="#87603a";ctx.fillRect(-9,-1,17,2);ctx.fillStyle="#d8d1ba";ctx.fillRect(-9,-3,4,2);ctx.fillRect(-9,1,4,2);ctx.fillStyle="#d9e0dc";ctx.fillRect(7,-2,4,4);
+  }
+  ctx.restore();
+}
+function renderables(left,top,right,bottom){const result=[];for(const object of worldObjects){if(object.kind==="lootChest"&&runtime.world.opened[object.id]) continue;if(object.x<left-80||object.x>right+80||object.y<top-80||object.y>bottom+80) continue;result.push({kind:"object",object,y:object.y});}for(const bandit of runtime.world.bandits){if(bandit.x<left-60||bandit.x>right+60||bandit.y<top-60||bandit.y>bottom+60) continue;result.push({kind:"bandit",bandit,y:bandit.ySort||bandit.y});}for(const arrow of runtime.arrows){if(arrow.x<left-20||arrow.x>right+20||arrow.y<top-20||arrow.y>bottom+20) continue;result.push({kind:"arrow",arrow,y:arrow.y});}return result;}
+function drawRenderable(renderable,camX,camY){if(renderable.kind==="bandit") drawBandit(renderable.bandit,camX,camY);else if(renderable.kind==="arrow") drawArrow(renderable.arrow,camX,camY);else drawProp(renderable.object,camX,camY);}
 
-function weatherType(){const biome=api.terrainAt(state.player.x,state.player.y).biome;const cycle=Math.floor((state.elapsed+runtime.world.weatherSeed)/75)%7;if(["snow","glacier","tundra","packIce"].includes(biome)) return cycle<4?"snow":cycle===4?"fog":"clear";if(["desert","beach"].includes(biome)) return cycle===2||cycle===3?"dust":"clear";if(["forest","jungle","swamp","plains"].includes(biome)) return cycle===1||cycle===2?"rain":cycle===3?"storm":cycle===5?"fog":"clear";return cycle===3?"rain":"clear";}
+function weatherType(){
+  const biome=api.terrainAt(state.player.x,state.player.y).biome;
+  const cycle=Math.floor((state.elapsed+runtime.world.weatherSeed)/75)%7;
+  if(["snow","glacier","tundra","packIce"].includes(biome)) return cycle<4?"snow":cycle===4?"fog":"clear";
+  if(DESERT_BIOMES.includes(biome)) return cycle===2?"sandstorm":cycle===3?"dust":cycle===0?"heatHaze":"clear";
+  if(biome==="beach") return cycle===2||cycle===3?"dust":"clear";
+  if(["forest","jungle","swamp","plains"].includes(biome)) return cycle===1||cycle===2?"rain":cycle===3?"storm":cycle===5?"fog":"clear";
+  return cycle===3?"rain":"clear";
+}
+function updateDesertExposure(dt){
+  if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
+  state.player.heat=Number.isFinite(state.player.heat)?state.player.heat:0;
+  const terrain=api.terrainAt(state.player.x,state.player.y);
+  const hour=(8+state.elapsed/120)%24;
+  const currentWeather=weatherType();
+  const hotDay=DESERT_BIOMES.includes(terrain.biome)&&hour>=9.5&&hour<=18.5;
+  const nearbyShade=worldObjects.some((object)=>["desertWell","caravan","sunAltar"].includes(object.kind)&&Math.hypot(object.x-state.player.x,object.y-state.player.y)<30);
+  if(hotDay&&!nearbyShade){
+    const gain=.28+(state.player.moving?.10:0)+(currentWeather==="sandstorm"?.28:currentWeather==="heatHaze"?.08:0);
+    state.player.heat=Math.min(100,state.player.heat+dt*gain);
+  }else state.player.heat=Math.max(0,state.player.heat-dt*(terrain.biome==="oasis"?.9:nearbyShade?.65:.34));
+  if(state.player.heat>72) state.player.stamina=Math.max(0,state.player.stamina-dt*(state.player.heat>92?1.1:.42));
+  if(state.player.heat>96){
+    state.player.health=Math.max(0,state.player.health-dt*.38);
+    if(state.elapsed>(runtime.heatWarnAt||0)){runtime.heatWarnAt=state.elapsed+7;api.showToast("Hitzschlag · suche Wasser oder Schatten",2300);}
+    if(state.player.health<=0) api.killPlayer("In der Wüstenhitze zusammengebrochen");
+  }
+  const indicator=$("desertHeatIndicator");
+  if(indicator){
+    const visible=DESERT_BIOMES.includes(terrain.biome)&&(state.player.heat>8||hotDay);
+    indicator.classList.toggle("hidden",!visible);
+    const signature=Math.round(state.player.heat)+":"+currentWeather;
+    if(visible&&signature!==runtime.heatUiSignature){runtime.heatUiSignature=signature;indicator.textContent="☀ HITZE "+Math.round(state.player.heat)+"% · "+(currentWeather==="sandstorm"?"SANDSTURM":currentWeather==="dust"?"STAUBWIND":currentWeather==="heatHaze"?"FLIMMERN":"TROCKEN");}
+  }
+}
+function desertMovementMultiplier(){return (weatherType()==="sandstorm"?.82:1)*((state.player.heat||0)>92?.90:1);}
 function drawOverlay(){
   const weather=weatherType();const t=state.elapsed;
-  if(weather==="rain"||weather==="storm"){ctx.save();ctx.strokeStyle=weather==="storm"?"rgba(190,218,220,.5)":"rgba(179,210,211,.35)";ctx.lineWidth=1;const count=weather==="storm"?90:55;for(let i=0;i<count;i++){const x=(i*83+t*270)% (canvas.width+60)-30;const y=(i*47+t*430)% (canvas.height+60)-30;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-8,y+20);ctx.stroke();}if(weather==="storm"&&Math.floor(t*2)%23===0){ctx.fillStyle="rgba(220,238,236,.15)";ctx.fillRect(0,0,canvas.width,canvas.height);}ctx.restore();}
-  else if(weather==="snow"){ctx.fillStyle="rgba(239,247,241,.7)";for(let i=0;i<48;i++){const x=(i*71+t*18)%canvas.width,y=(i*43+t*(28+i%5))%canvas.height;ctx.fillRect(Math.round(x),Math.round(y),i%7===0?3:2,i%7===0?3:2);}}
-  else if(weather==="dust"){ctx.fillStyle="rgba(201,156,85,.16)";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="rgba(233,193,118,.28)";for(let i=0;i<38;i++){const x=(i*91+t*74)%canvas.width,y=(i*37+t*8)%canvas.height;ctx.fillRect(Math.round(x),Math.round(y),8+i%9,1);}}
+  if(weather==="rain"||weather==="storm"){ctx.save();ctx.strokeStyle=weather==="storm"?"rgba(190,218,220,.5)":"rgba(179,210,211,.35)";ctx.lineWidth=1;const count=Math.round((weather==="storm"?90:55)*runtime.renderDensity);for(let i=0;i<count;i++){const x=(i*83+t*270)% (canvas.width+60)-30;const y=(i*47+t*430)% (canvas.height+60)-30;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x-8,y+20);ctx.stroke();}if(weather==="storm"&&Math.floor(t*2)%23===0){ctx.fillStyle="rgba(220,238,236,.15)";ctx.fillRect(0,0,canvas.width,canvas.height);}ctx.restore();}
+  else if(weather==="snow"){ctx.fillStyle="rgba(239,247,241,.7)";for(let i=0;i<Math.round(48*runtime.renderDensity);i++){const x=(i*71+t*18)%canvas.width,y=(i*43+t*(28+i%5))%canvas.height;ctx.fillRect(Math.round(x),Math.round(y),i%7===0?3:2,i%7===0?3:2);}}
+  else if(weather==="dust"){ctx.fillStyle="rgba(201,156,85,.16)";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="rgba(233,193,118,.28)";for(let i=0;i<Math.round(38*runtime.renderDensity);i++){const x=(i*91+t*74)%canvas.width,y=(i*37+t*8)%canvas.height;ctx.fillRect(Math.round(x),Math.round(y),8+i%9,1);}}
+  else if(weather==="sandstorm"){ctx.fillStyle="rgba(157,103,53,.25)";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="rgba(240,194,112,.42)";for(let i=0;i<Math.round(82*runtime.renderDensity);i++){const x=(i*97+t*230)%(canvas.width+130)-65,y=(i*41+t*21)%canvas.height;ctx.fillRect(Math.round(x),Math.round(y),18+i%24,i%9===0?2:1);}ctx.fillStyle="rgba(94,55,35,.08)";for(let band=0;band<4;band++){const x=((band*290+t*55)%(canvas.width+420))-210;ctx.fillRect(Math.round(x),band*145,260,74);}}
+  else if(weather==="heatHaze"){ctx.fillStyle="rgba(236,178,88,.055)";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="rgba(255,226,158,.07)";for(let i=0;i<7;i++){const y=70+i*92+Math.sin(t*1.7+i)*7;ctx.fillRect(0,Math.round(y),canvas.width,3);}}
   else if(weather==="fog"){ctx.fillStyle="rgba(182,202,195,.13)";ctx.fillRect(0,0,canvas.width,canvas.height);for(let i=0;i<5;i++){const x=((i*240+t*12)%(canvas.width+360))-180;ctx.fillStyle="rgba(207,221,215,.08)";ctx.fillRect(Math.round(x),80+i*95,330,54);}}
   const hour=(8+state.elapsed/120)%24;const night=hour<5?.46:hour<7?(7-hour)*.19:hour>21?.46:hour>18?(hour-18)*.13:0;if(night>0){ctx.fillStyle="rgba(5,13,35,"+Math.min(.48,night)+")";ctx.fillRect(0,0,canvas.width,canvas.height);}
 }
@@ -325,7 +438,7 @@ function drawOverlay(){
 function frameDt(dt){if(runtime.hitStop>0){runtime.hitStop=Math.max(0,runtime.hitStop-dt);return dt*.07;}return dt;}
 function cameraOffset(){if(runtime.shake<=0) return {x:0,y:0};return {x:(Math.random()-.5)*runtime.shake,y:(Math.random()-.5)*runtime.shake};}
 function update(dt,realDt){
-  if(!state.running) return;runtime.world.playSeconds+=realDt;runtime.autosave+=realDt;runtime.saveFlash=Math.max(0,runtime.saveFlash-realDt);runtime.shake=Math.max(0,runtime.shake-realDt*10);updateRoll(dt);updateBandits(dt);advanceQuestFromInventory();
+  if(!state.running) return;runtime.world.playSeconds+=realDt;runtime.autosave+=realDt;runtime.saveFlash=Math.max(0,runtime.saveFlash-realDt);runtime.shake=Math.max(0,runtime.shake-realDt*10);runtime.frameTime=runtime.frameTime*.94+realDt*.06;runtime.renderDensity=runtime.frameTime>.03 ? .55 : runtime.frameTime>.022 ? .76 : 1;updateRoll(dt);updateBandits(dt);updateArrows(dt);updateDesertExposure(dt);advanceQuestFromInventory();
   updateQuestMarker();
   const indicator=$("autosaveIndicator");if(indicator) indicator.classList.toggle("hidden",runtime.saveFlash<=0);
   if(runtime.autosave>=AUTOSAVE_SECONDS){runtime.autosave=0;saveNow("auto");}
@@ -344,12 +457,13 @@ function restoreSnapshot(save){
   Object.assign(state.player,clone(save.player));state.lastSafe=clone(save.lastSafe);state.inventory=clone(save.inventory);state.inventorySerial=save.inventorySerial||2;state.elapsed=Number(save.elapsed)||0;state.camera.x=state.player.x;state.camera.y=state.player.y;state.effects=[];state.dead=false;state.draggingAnimalId=null;
   if(state.player.health<=0){state.player.health=100;state.player.x=state.lastSafe.x;state.player.y=state.lastSafe.y;state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};state.camera.x=state.player.x;state.camera.y=state.player.y;}
   treePhysicsStates.clear();for(const entry of save.trees||[]){const tree=api.treeAtGrid(entry.gx,entry.gy);if(!tree) continue;const physics=api.getTreePhysics(tree,true);Object.assign(physics,clone(entry),{tree,key:entry.gx+","+entry.gy});}
-  api.animalStates.clear();api.animalCellCache.clear();for(const raw of save.animals||[]){const cellX=raw.originCellX??Math.floor(raw.x/(18*TILE_METERS));const cellY=raw.originCellY??Math.floor(raw.y/(18*TILE_METERS));api.createAnimalState(raw.species,cellX,cellY,0,{x:raw.x,y:raw.y},clone(raw));}
+  if(api.clearAnimalRuntimeCaches) api.clearAnimalRuntimeCaches();else{api.animalStates.clear();api.animalCellCache.clear();}for(const raw of save.animals||[]){const cellX=raw.originCellX??Math.floor(raw.x/(18*TILE_METERS));const cellY=raw.originCellY??Math.floor(raw.y/(18*TILE_METERS));api.createAnimalState(raw.species,cellX,cellY,0,{x:raw.x,y:raw.y},clone(raw));}
   state.starterHorseId=save.starterHorseId||null;state.mountedHorseId=save.mountedHorseId||null;runtime.world=clone(save.world||runtime.world);if(!Array.isArray(runtime.world.bandits)) runtime.world.bandits=createBandits();api.syncHeldItem();api.renderInventory();updateQuestHud();
 }
 function loadSlot(slot){const save=readSlot(slot);if(!save) return false;if(state.running) saveNow("switch");runtime.activeSlot=slot;runtime.pendingLoad=save;closeSaveSlots();api.togglePause(false);api.startGame();return true;}
 function nextEmptySlot(){for(let slot=1;slot<=3;slot++) if(!readSlot(slot)) return slot;return 1;}
 function onGameStarted(){
+  runtime.arrows=[];
   if(runtime.pendingLoad){const save=runtime.pendingLoad;runtime.pendingLoad=null;restoreSnapshot(save);api.showToast("Spielstand "+runtime.activeSlot+" geladen",1800);}
   else{runtime.activeSlot=runtime.activeSlot||nextEmptySlot();runtime.world={questStage:0,bandits:createBandits(),opened:{},visited:{},crafted:{},playSeconds:0,weatherSeed:Math.floor(Math.random()*525)};updateQuestHud();saveNow("new");}
   runtime.autosave=0;updateSaveUi();
@@ -375,7 +489,7 @@ function closeSaveSlots(){$("saveSlotsOverlay").classList.add("hidden");}
 function ensureAudio(){if(runtime.audio) return runtime.audio;const AudioContext=window.AudioContext||window.webkitAudioContext;if(!AudioContext) return null;runtime.audio=new AudioContext();return runtime.audio;}
 function sound(type,variant=""){
   const audio=runtime.audio;if(!audio||audio.state!=="running") return;const now=audio.currentTime;const last=runtime.lastSoundAt.get(type)||0;if(now-last<(type==="footstep"?.09:.035)) return;runtime.lastSoundAt.set(type,now);
-  const profiles={footstep:[95,.035,"square",.025],swing:[260,.07,"sawtooth",.035],hit:[82,.09,"square",.06],hurt:[62,.16,"sawtooth",.07],defeat:[55,.24,"triangle",.065],dodge:[180,.08,"triangle",.025],craft:[440,.14,"triangle",.04],quest:[660,.28,"sine",.045],pickup:[520,.08,"sine",.035],heal:[390,.22,"sine",.04],chest:[310,.16,"square",.035],rest:[220,.35,"sine",.03],water:[280,.12,"sine",.025],discovery:[330,.42,"triangle",.035],enemyAttack:[120,.12,"sawtooth",.04],ambient:[160,.35,"sine",.008],rain:[110,.25,"triangle",.006]};const [frequency,duration,wave,volume]=profiles[type]||profiles.ambient;const oscillator=audio.createOscillator(),gain=audio.createGain();oscillator.type=wave;oscillator.frequency.setValueAtTime(frequency+(variant?variant.length%7*3:0),now);gain.gain.setValueAtTime(volume,now);gain.gain.exponentialRampToValueAtTime(.0001,now+duration);oscillator.connect(gain).connect(audio.destination);oscillator.start(now);oscillator.stop(now+duration);
+  const profiles={footstep:[95,.035,"square",.025],swing:[260,.07,"sawtooth",.035],bow:[178,.14,"triangle",.045],empty:[82,.045,"square",.018],hit:[82,.09,"square",.06],hurt:[62,.16,"sawtooth",.07],defeat:[55,.24,"triangle",.065],dodge:[180,.08,"triangle",.025],craft:[440,.14,"triangle",.04],quest:[660,.28,"sine",.045],pickup:[520,.08,"sine",.035],heal:[390,.22,"sine",.04],chest:[310,.16,"square",.035],rest:[220,.35,"sine",.03],water:[280,.12,"sine",.025],discovery:[330,.42,"triangle",.035],enemyAttack:[120,.12,"sawtooth",.04],ambient:[160,.35,"sine",.008],rain:[110,.25,"triangle",.006]};const [frequency,duration,wave,volume]=profiles[type]||profiles.ambient;const oscillator=audio.createOscillator(),gain=audio.createGain();oscillator.type=wave;oscillator.frequency.setValueAtTime(frequency+(variant?variant.length%7*3:0),now);gain.gain.setValueAtTime(volume,now);gain.gain.exponentialRampToValueAtTime(.0001,now+duration);oscillator.connect(gain).connect(audio.destination);oscillator.start(now);oscillator.stop(now+duration);
 }
 
 function bindUi(){
@@ -384,13 +498,14 @@ function bindUi(){
   $("beginBtn").addEventListener("click",()=>{runtime.activeSlot=nextEmptySlot();});$("saveGameBtn").addEventListener("click",()=>saveNow("manual"));$("openSaveSlotsInGame").addEventListener("click",openSaveSlots);$("closeCraft").addEventListener("click",closeCraft);$("craftOverlay").addEventListener("click",(event)=>{if(event.target===$("craftOverlay")) closeCraft();});
   const indicator=document.createElement("div");indicator.id="autosaveIndicator";indicator.className="autosave-indicator hidden";indicator.textContent="✓ AUTOMATISCH GESPEICHERT";$("gamePanel").appendChild(indicator);
   const marker=document.createElement("div");marker.id="questWorldMarker";marker.className="world-prompt hidden";$("gamePanel").appendChild(marker);
+  const heat=document.createElement("div");heat.id="desertHeatIndicator";heat.className="desert-heat hidden";heat.textContent="☀ HITZE 0%";$("gamePanel").appendChild(heat);
   updateSaveUi();updateQuestHud();api.renderInventory();
 }
 
 const exported={
-  version:"0.15",recipes,worldObjects,runtime,collisionAt,nearbyInteraction,interact,drawGround,renderables,drawRenderable,drawOverlay,
+  version:"0.18",recipes,worldObjects,runtime,collisionAt,nearbyInteraction,interact,drawGround,renderables,drawRenderable,drawOverlay,
   frameDt,cameraOffset,update,dodge,isRolling:()=>!!runtime.roll,performPlayerStrike,useEquippedItem,useConsumable,onAnimalDamaged,updateAnimalSocial,sound,
-  onGameStarted,saveNow,readSlot,loadSlot,snapshot,restoreSnapshot,inventoryCount,removeInventory,weatherType,advanceQuestFromInventory
+  onGameStarted,saveNow,readSlot,loadSlot,snapshot,restoreSnapshot,inventoryCount,removeInventory,weatherType,desertMovementMultiplier,advanceQuestFromInventory
 };
 window.__ARCHIPELAGO_V015__=exported;
 bindUi();

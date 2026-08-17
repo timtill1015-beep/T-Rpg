@@ -27,17 +27,25 @@ registerArtistDefinitions("characters",[
   {id:"npc_borin",label:"Borin · Händler",width:16,height:24,scale:3,runtime:"npc",guide:"player",binding:"v015:npc",animations:["idle","talk"]},
   {id:"bandit",label:"Bandit",width:16,height:24,scale:3,runtime:"bandit",guide:"player",binding:"v015:bandit",animations:["idle","walk","windup","attack","hurt","dead"]}
 ]);
+registerArtistDefinitions("characters",[
+  ["elara","Dr. Elara Voss"],["tova","Tova Rune"],["njal","Njal Rune"],["sela","Sela Marr"],["orik","Orik Vael"],["iven","Iven Vael"]
+].map(([variant,label])=>({id:"npc_eis_"+variant,label:"Eiswacht · "+label,width:16,height:24,scale:3,runtime:"npc",variant,guide:"player",binding:"v018:eiswacht-resident",animations:["idle","walk","talk"]})));
 registerArtistDefinitions("animals",[
   {id:"chicken",label:"Huhn · Basis",width:16,height:16,scale:2,runtime:"chicken",animations:["idle","walk","panic","dead"]},
   {id:"boar",label:"Wildschwein · Basis",width:22,height:18,scale:3,runtime:"boar",animations:["idle","walk","windup","charge","recover","dead"]},
   {id:"horse",label:"Pferd · Basis",width:30,height:28,scale:2,runtime:"horse",animations:["idle","walk","gallop","dead"]},
-  {id:"crow",label:"Rabe · Flug",width:18,height:16,scale:2,runtime:"crow",animations:["fly"]}
+  {id:"crow",label:"Rabe · Flug",width:18,height:16,scale:2,runtime:"crow",animations:["fly"]},
+  {id:"desertLizard",label:"Wüstenechse · Basis",width:22,height:14,scale:2,runtime:"desertLizard",animations:["idle","walk","panic","dead"]},
+  {id:"jackal",label:"Wüstenschakal · Basis",width:28,height:22,scale:2,runtime:"jackal",animations:["idle","walk","windup","charge","dead"]},
+  {id:"eisDog",label:"Eiswacht · Murr",width:24,height:18,scale:2,runtime:"eisDog",guide:"eisDog",binding:"v018:eiswacht-dog",animations:["idle","walk","sleep"]}
 ]);
 registerArtistDefinitions("variants",[
   ...[["white","Weiß"],["brown","Braun"],["black","Schwarz"]].map(([variant,label])=>({id:"chicken_"+variant,label:"Huhn · "+label,width:16,height:16,scale:2,runtime:"chicken",variant,base:"chicken",guide:"chicken",animations:["idle","walk","panic","dead"]})),
   ...[["forest","Wald"],["dark","Dunkel"],["russet","Rotbraun"]].map(([variant,label])=>({id:"boar_"+variant,label:"Wildschwein · "+label,width:22,height:18,scale:3,runtime:"boar",variant,base:"boar",guide:"boar",animations:["idle","walk","windup","charge","recover","dead"]})),
   ...[["bay","Brauner"],["black","Rappe"],["chestnut","Fuchs"],["grey","Schimmel"],["palomino","Palomino"],["pinto","Schecke"]].map(([variant,label])=>({id:"horse_"+variant,label:"Pferd · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]})),
-  ...[["warmblood","Warmblut"],["arabian","Araber"],["draft","Kaltblut"],["pony","Pony"]].map(([variant,label])=>({id:"horse_breed_"+variant,label:"Pferderasse · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]}))
+  ...[["warmblood","Warmblut"],["arabian","Araber"],["draft","Kaltblut"],["pony","Pony"]].map(([variant,label])=>({id:"horse_breed_"+variant,label:"Pferderasse · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]})),
+  ...[["sand","Sand"],["red","Rotfels"],["salt","Salz"]].map(([variant,label])=>({id:"desertLizard_"+variant,label:"Wüstenechse · "+label,width:22,height:14,scale:2,runtime:"desertLizard",variant,base:"desertLizard",guide:"desertLizard",animations:["idle","walk","panic","dead"]})),
+  ...[["gold","Gold"],["ashen","Aschgrau"],["dark","Dunkel"]].map(([variant,label])=>({id:"jackal_"+variant,label:"Wüstenschakal · "+label,width:28,height:22,scale:2,runtime:"jackal",variant,base:"jackal",guide:"jackal",animations:["idle","walk","windup","charge","dead"]}))
 ]);
 registerArtistDefinitions("hair",[
   ["tousled","Zerzaust"],["bob","Bob"],["braid","Zopf"],["mohawk","Irokese"],["long","Lang"],
@@ -46,17 +54,19 @@ registerArtistDefinitions("hair",[
 registerArtistDefinitions("items",[
   {id:"item_ironSword",label:"Eisenschwert",width:16,height:12,scale:2,runtime:"item",variant:"ironSword",guide:"sword",animations:["idle","swing"]},
   {id:"item_woodsmanAxe",label:"Holzfälleraxt",width:16,height:12,scale:2,runtime:"item",variant:"woodsmanAxe",guide:"axe",animations:["idle","swing"]},
-  ...[["rawChicken","Rohes Huhn","meat"],["rawPork","Rohes Wild","meat"],["feather","Feder","feather"],["boarHide","Tierhaut","hide"],["tusk","Hauer","tusk"],["bone","Knochen","bone"],["wood","Holz","wood"],["coin","Münze","coin"],["cookedChicken","Gebratenes Huhn","meat"],["cookedPork","Gebratenes Wild","meat"],["fieldBandage","Feldverband","hide"],["leatherVest","Lederweste","hide"]]
+  ...[["rawChicken","Rohes Huhn","meat"],["rawPork","Rohes Wild","meat"],["rawGame","Rohes Wüstenwild","meat"],["rawArcticChar","Roher Eisling","fish"],["smokedArcticChar","Geräucherter Eisling","fish"],["frostTea","Frostblütentee","potion"],["auroraShard","Auroraprisma","crystal"],["auroraLantern","Laterne der Weißnacht","lantern"],["jackalPelt","Schakalfell","hide"],["lizardScale","Echsenhaut","hide"],["feather","Feder","feather"],["boarHide","Tierhaut","hide"],["tusk","Hauer","tusk"],["bone","Knochen","bone"],["wood","Holz","wood"],["coin","Münze","coin"],["cookedChicken","Gebratenes Huhn","meat"],["cookedPork","Gebratenes Wild","meat"],["cookedGame","Gebratenes Wüstenwild","meat"],["fieldBandage","Feldverband","hide"],["leatherVest","Lederweste","hide"]]
     .map(([variant,label,guide])=>({id:"item_"+variant,label,width:16,height:16,scale:2,runtime:"item",variant,guide,animations:["idle"]}))
 ]);
 registerArtistDefinitions("items",[
-  {id:"item_huntingSpear",label:"Jagdspeer",width:20,height:12,scale:2,runtime:"item",variant:"huntingSpear",guide:"spear",binding:"drawHeldItem",animations:["idle","swing"]}
+  {id:"item_huntingSpear",label:"Jagdspeer",width:20,height:12,scale:2,runtime:"item",variant:"huntingSpear",guide:"spear",binding:"drawHeldItem",animations:["idle","swing"]},
+  {id:"item_huntingBow",label:"Jagdbogen",width:18,height:18,scale:2,runtime:"item",variant:"huntingBow",guide:"bow",binding:"drawHeldItem",animations:["idle","draw"]},
+  {id:"item_arrow",label:"Jagdpfeil",width:20,height:8,scale:2,runtime:"item",variant:"arrow",guide:"arrow",binding:"v016:projectile",animations:["idle","flight"]}
 ]);
 
 const artistTerrainPalettes={
   deepWater:["#12374f","#22526b"],water:["#1e526b","#397b8c"],shallow:["#438091","#75a8ae"],river:["#4b91a5","#9bc5c6"],
   packIce:["#b9d7d7","#e1eeee"],glacier:["#d8e8e5","#f4fbf8"],tundra:["#7e927e","#aab6a1"],beach:["#cdb36b","#ead18a"],
-  desert:["#c59a50","#e4bd6e"],oasis:["#4f8552","#80aa65"],plains:["#718c4f","#9bae68"],forest:["#365f40","#5e8151"],
+  desert:["#c59a50","#e4bd6e"],redDesert:["#a9683f","#d58c58"],saltFlat:["#d8cfad","#f2ead2"],drySteppe:["#9c8748","#c1a65e"],badlands:["#865647","#b87a5c"],oasis:["#4f8552","#80aa65"],plains:["#718c4f","#9bae68"],forest:["#365f40","#5e8151"],
   jungle:["#285237","#4c7649"],swamp:["#53694a","#7b855e"],rock:["#777568","#aaa594"],mountain:["#545b5c","#858b89"],snow:["#d9ded7","#f2f4ef"]
 };
 registerArtistDefinitions("terrain",Object.entries(artistTerrainPalettes).map(([biome,palette])=>({
@@ -82,7 +92,7 @@ registerArtistDefinitions("structures",Object.entries(structureLabels).map(([cod
   id:"structure_"+code,label:"Bau-Block · "+label,width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#4b3b34","#a8875c"],variant:code,animations:["idle"]
 })));
 
-const artistPropDefinitions={boulder:[2,2,"Fels"],standingStone:[1,2,"Menhir"],sign:[1,2,"Wegweiser"],milestone:[1,2,"Meilenstein"],wagon:[3,2,"Wagen"],handcart:[2,2,"Handkarren"],supplies:[2,2,"Vorräte"],lantern:[1,2,"Laterne"],shrine:[2,2,"Schrein"],camp:[2,1,"Lager"],log:[3,1,"Baumstamm"],rubble:[2,1,"Trümmer"],notice:[2,2,"Anschlagtafel"]};
+const artistPropDefinitions={boulder:[2,2,"Fels"],standingStone:[1,2,"Menhir"],sign:[1,2,"Wegweiser"],milestone:[1,2,"Meilenstein"],wagon:[3,2,"Wagen"],handcart:[2,2,"Handkarren"],supplies:[2,2,"Vorräte"],lantern:[1,2,"Laterne"],shrine:[2,2,"Schrein"],camp:[2,1,"Lager"],log:[3,1,"Baumstamm"],rubble:[2,1,"Trümmer"],notice:[2,2,"Anschlagtafel"],sunObelisk:[2,3,"Sonnenobelisk"],caravanWreck:[3,2,"Karawanenwrack"],boneField:[2,1,"Knochenfeld"],shadeCanopy:[3,2,"Schattensegel"]};
 registerArtistDefinitions("props",Object.entries(artistPropDefinitions).map(([variant,[w,h,label]])=>({
   id:"prop_"+variant,label,width:w*8,height:h*8,scale:2,runtime:"prop",variant,guide:"prop",animations:["idle"]
 })));
@@ -93,8 +103,18 @@ registerArtistDefinitions("props",[
   {id:"prop_hut",label:"Dorfhütte",width:32,height:24,scale:2,runtime:"v015prop",variant:"hut",guide:"prop",binding:"v015:world",animations:["idle"]},
   {id:"prop_cave",label:"Höhleneingang",width:32,height:24,scale:2,runtime:"v015prop",variant:"cave",guide:"prop",binding:"v015:world",animations:["idle"]},
   {id:"prop_banditTent",label:"Banditenzelt",width:32,height:24,scale:2,runtime:"v015prop",variant:"banditTent",guide:"prop",binding:"v015:world",animations:["idle"]},
-  {id:"prop_lootChest",label:"Beutetruhe",width:16,height:16,scale:2,runtime:"v015prop",variant:"lootChest",guide:"prop",binding:"v015:world",animations:["idle","open"]}
+  {id:"prop_lootChest",label:"Beutetruhe",width:16,height:16,scale:2,runtime:"v015prop",variant:"lootChest",guide:"prop",binding:"v015:world",animations:["idle","open"]},
+  {id:"prop_desertWell",label:"Wüsten-Tiefbrunnen",width:24,height:20,scale:2,runtime:"v015prop",variant:"desertWell",guide:"prop",binding:"v017:desert",animations:["idle","water"]},
+  {id:"prop_caravan",label:"Salzkarawane",width:36,height:24,scale:2,runtime:"v015prop",variant:"caravan",guide:"prop",binding:"v017:desert",animations:["idle"]},
+  {id:"prop_sunAltar",label:"Wüstenglas-Altar",width:24,height:28,scale:2,runtime:"v015prop",variant:"sunAltar",guide:"prop",binding:"v017:desert",animations:["idle","glow"]}
 ]);
+const eiswachtPropDefinitions={
+  longhouse:[54,36,"Langhaus"],observatory:[41,38,"Observatorium"],workshop:[44,34,"Werkhof"],clinic:[38,30,"Wärmestube"],greenhouse:[38,29,"Frostgewächshaus"],smokehouse:[37,30,"Räucherhaus"],archive:[36,29,"Archiv"],hut:[34,27,"Wohnhütte"],beacon:[29,49,"Nordlicht-Leuchtfeuer"],
+  generator:[24,21,"Dampfgenerator"],iceWell:[24,21,"Blaues Eisbecken"],memorial:[24,24,"Weißnacht-Denkmal"],fishRack:[28,22,"Fischgestell"],sled:[30,20,"Expeditionsschlitten"],weatherMast:[24,30,"Wetterfahne"],bell:[24,24,"Schichtglocke"],fishingHole:[24,16,"Eisloch"],surveyMarker:[24,24,"Aurora-Peilstein"],lamp:[16,24,"Frostlaterne"],gatePost:[16,24,"Torpfosten"]
+};
+registerArtistDefinitions("props",Object.entries(eiswachtPropDefinitions).map(([variant,[width,height,label]])=>({
+  id:"prop_eis_"+variant,label:"Eiswacht · "+label,width,height,scale:2,runtime:"v018prop",variant,guide:"prop",binding:"v018:eiswacht",animations:variant==="beacon"?["idle","lit"]:["idle"]
+})));
 
 function paintArtistRect(frame,x,y,width,height,color){
   for(let py=y;py<y+height;py++) for(let px=x;px<x+width;px++) frame[px+","+py]=color;
@@ -125,6 +145,18 @@ function createArtistGuideLayers(id){
     paintArtistRect(shadow,3,13,12,1,"#08101477");
     paintArtistRect(body,4,6,10,6,"#20272a");paintArtistRect(body,10,3,5,5,"#151b1e");paintArtistRect(body,3,7,6,3,"#333a3c");paintArtistRect(body,7,12,1,3,"#352a24");paintArtistRect(body,11,12,1,3,"#352a24");
     paintArtistRect(details,15,5,2,1,"#6d5940");paintArtistRect(details,13,5,1,1,"#d6c688");paintArtistRect(details,5,8,6,1,"#4b5354");
+  }else if(id==="desertLizard"){
+    paintArtistRect(shadow,2,11,18,1,"#08101466");
+    paintArtistRect(body,5,6,10,5,"#b78c50");paintArtistRect(body,14,5,6,5,"#b78c50");paintArtistRect(body,2,8,5,2,"#6b5c36");
+    paintArtistRect(details,7,6,6,1,"#dfb96d");paintArtistRect(details,18,6,1,1,"#131915");paintArtistRect(details,6,10,4,1,"#6b5c36");paintArtistRect(details,13,10,4,1,"#6b5c36");
+  }else if(id==="jackal"){
+    paintArtistRect(shadow,2,19,23,2,"#08101477");
+    paintArtistRect(body,3,9,15,8,"#aa7742");paintArtistRect(body,16,6,7,8,"#aa7742");paintArtistRect(body,21,9,6,4,"#aa7742");paintArtistRect(body,5,16,3,5,"#5a402c");paintArtistRect(body,14,16,3,5,"#5a402c");
+    paintArtistRect(details,6,9,8,2,"#d2a15f");paintArtistRect(details,17,2,3,6,"#5a402c");paintArtistRect(details,22,2,3,6,"#5a402c");paintArtistRect(details,24,8,1,1,"#151817");paintArtistRect(details,26,11,2,1,"#151817");paintArtistRect(details,0,9,5,3,"#5a402c");
+  }else if(id==="eisDog"){
+    paintArtistRect(shadow,2,15,20,2,"#08101466");
+    paintArtistRect(body,3,7,14,8,"#5d554c");paintArtistRect(body,15,5,7,7,"#423d38");paintArtistRect(body,5,14,3,4,"#403b37");paintArtistRect(body,14,14,3,4,"#403b37");
+    paintArtistRect(details,1,7,5,3,"#83786a");paintArtistRect(details,16,2,2,5,"#332f2c");paintArtistRect(details,20,2,2,5,"#332f2c");paintArtistRect(details,20,7,1,1,"#d9c96c");
   }else if(id==="hair"){
     paintArtistRect(body,3,2,10,4,"#3a2418");paintArtistRect(body,3,5,3,8,"#3a2418");paintArtistRect(body,10,5,3,8,"#3a2418");
     paintArtistRect(details,5,1,3,3,"#62402a");paintArtistRect(details,9,3,3,2,"#281912");
@@ -136,6 +168,11 @@ function createArtistGuideLayers(id){
     paintArtistRect(details,3,8,7,1,"#aa7442");paintArtistRect(details,9,4,5,2,"#a8afaa");
   }else if(id==="spear"){
     paintArtistRect(body,1,8,15,2,"#855b35");paintArtistRect(body,15,6,3,6,"#c6d0cc");paintArtistRect(details,18,7,2,4,"#eef2e9");
+  }else if(id==="bow"){
+    paintArtistRect(body,12,2,2,3,"#96683b");paintArtistRect(body,14,4,2,4,"#96683b");paintArtistRect(body,15,7,2,4,"#96683b");paintArtistRect(body,14,10,2,4,"#96683b");paintArtistRect(body,12,13,2,3,"#96683b");paintArtistRect(body,10,8,5,2,"#715033");
+    for(let y=4;y<=13;y++) paintArtistRect(details,11,y,1,1,"#ddd1aa");
+  }else if(id==="arrow"){
+    paintArtistRect(body,2,3,15,2,"#87603a");paintArtistRect(body,16,2,3,4,"#d9e0dc");paintArtistRect(details,1,1,4,2,"#d8d1ba");paintArtistRect(details,1,5,4,2,"#d8d1ba");
   }else if(definition?.kind==="tile"){
     const palette=definition.palette||["#4d5b55","#83927d"];
     paintArtistRect(body,0,0,definition.width,definition.height,palette[0]);
@@ -146,7 +183,7 @@ function createArtistGuideLayers(id){
     paintArtistRect(body,2,Math.max(1,Math.floor(definition.height*.3)),Math.max(2,definition.width-4),Math.max(2,Math.ceil(definition.height*.62)),"#6e4728");
     paintArtistRect(details,3,Math.max(1,Math.floor(definition.height*.3)+1),Math.max(1,definition.width-6),2,"#a47a48");
   }else{
-    const colours={meat:["#a84b43","#efb59c"],feather:["#ddd6bd","#8f8877"],hide:["#74513b","#a07a59"],tusk:["#d9ceb0","#f2ead1"],bone:["#d9d0b5","#f1ead3"]}[id]||["#727b72","#b6c0b2"];
+    const colours={meat:["#a84b43","#efb59c"],feather:["#ddd6bd","#8f8877"],hide:["#74513b","#a07a59"],tusk:["#d9ceb0","#f2ead1"],bone:["#d9d0b5","#f1ead3"],fish:["#668f96","#bed6d0"],potion:["#4f7f69","#b9ddd3"],crystal:["#5ca579","#c6f4d0"],lantern:["#6f5637","#74d49a"]}[id]||["#727b72","#b6c0b2"];
     paintArtistRect(body,3,4,10,9,colours[0]);paintArtistRect(details,5,5,5,3,colours[1]);
   }
   return [{id:"shadow",name:"Schatten",visible:true,opacity:1,frame:shadow},{id:"body",name:"Körper",visible:true,opacity:1,frame:body},{id:"details",name:"Details",visible:true,opacity:1,frame:details}];
@@ -163,13 +200,13 @@ function prepareArtistGuideFrame(id,layerId,animation,source){
 }
 
 function defaultArtistMeta(definition){
-  const characterLike=["player","npc","bandit","chicken","boar","horse","crow"].includes(definition.runtime);
+  const characterLike=["player","npc","bandit","chicken","boar","horse","crow","desertLizard","jackal","eisDog"].includes(definition.runtime);
   return {
     anchor:{x:Math.floor(definition.width/2),y:definition.height},
     hitbox:{width:Math.max(2,Math.round(definition.width*(characterLike ? .46 : .72))),height:Math.max(2,Math.round(definition.height*(characterLike ? .32 : .58)))},
     hand:{x:Math.round(definition.width*.72),y:Math.round(definition.height*.56)},
     groundY:definition.height,
-    binding:definition.binding||({player:"drawCharacter",chicken:"drawChicken",boar:"drawBoar",horse:"drawHorse",crow:"drawCrow",hair:"drawHair",item:"drawHeldItem",tile:"drawTile",prop:"drawRoadDecoration"}[definition.runtime]||"runtime")
+    binding:definition.binding||({player:"drawCharacter",chicken:"drawChicken",boar:"drawBoar",horse:"drawHorse",crow:"drawCrow",desertLizard:"drawDesertLizard",jackal:"drawJackal",eisDog:"v018:drawDog",hair:"drawHair",item:"drawHeldItem",tile:"drawTile",prop:"drawRoadDecoration"}[definition.runtime]||"runtime")
   };
 }
 
@@ -406,11 +443,13 @@ function artistAnimationForEntity(assetId,entity){
   }
   if(runtime==="crow") return "fly";
   if(entity.status&&entity.status!=="alive") return "dead";
-  if(runtime==="boar"&&entity.attackPhase==="windup") return "windup";
-  if(runtime==="boar"&&entity.attackPhase==="charge") return "charge";
+  if((runtime==="boar"||runtime==="jackal")&&entity.attackPhase==="windup") return "windup";
+  if((runtime==="boar"||runtime==="jackal")&&entity.attackPhase==="charge") return "charge";
   if(runtime==="boar"&&entity.attackPhase==="recover") return "recover";
-  if(runtime==="chicken"&&entity.fleeUntil>state.elapsed) return "panic";
+  if((runtime==="chicken"||runtime==="desertLizard")&&entity.fleeUntil>state.elapsed) return "panic";
   if(runtime==="horse"&&entity.gaitMode==="gallop") return "gallop";
+  if(runtime==="eisDog"&&entity.activity?.includes("Ofen")) return "sleep";
+  if(runtime==="eisDog") return entity.moving?"walk":"idle";
   return entity.gaitMode&&entity.gaitMode!=="idle"?"walk":"idle";
 }
 
@@ -428,9 +467,21 @@ function artistVariantAssetId(assetId,entity){
 
 function artistAssetEnabled(assetId){return artistAssetPack.assets[assetId]?.enabled===true;}
 
+function artistStableHash(value){
+  let hash=2166136261;
+  for(const char of String(value)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619);}
+  return hash>>>0;
+}
+
 function artistFrameForEntity(asset,animation,entity){
   const track=asset.animations[animation];
   if(!track||track.frames<=1) return 0;
+  // Dead-animation frames are corpse variants, not a looping animation.
+  // Artists can paint several body poses and each carcass keeps one frame.
+  if(animation==="dead"){
+    const pose=Number(entity?.corpsePose);
+    return Math.abs(Number.isFinite(pose)?pose:artistStableHash(entity?.id||"corpse"))%track.frames;
+  }
   if(animation==="attack"&&Number.isFinite(entity.actionProgress)) return Math.min(track.frames-1,Math.floor(entity.actionProgress*track.frames));
   if(Number.isFinite(entity.gait)&&["walk","panic","charge","gallop","fly"].includes(animation)){
     const cycle=((entity.gait%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
@@ -610,7 +661,7 @@ function drawArtistPreview(timestamp=performance.now()){
   const frameIndex=Math.floor((timestamp-assetEditorState.previewStartedAt)/1000*track.fps)%track.frames;
   const scenes={
     forest:["#355b5e","#31533d","#1d382d"],village:["#587070","#8e7c55","#59462f"],
-    combat:["#353c45","#54423d","#2a2523"],inventory:["#0c1b1f","#17292b","#0b1417"]
+    desert:["#c98453","#c59a50","#7f5738"],combat:["#353c45","#54423d","#2a2523"],inventory:["#0c1b1f","#17292b","#0b1417"]
   };
   const scene=scenes[assetEditorState.scene]||scenes.forest;
   target.fillStyle=scene[0];target.fillRect(0,0,preview.width,preview.height);
@@ -618,6 +669,8 @@ function drawArtistPreview(timestamp=performance.now()){
   target.fillStyle=scene[2];for(let x=0;x<preview.width;x+=16) target.fillRect(x,Math.round(preview.height*.77)+(x/16%2)*4,12,4);
   if(assetEditorState.scene==="village"){
     target.fillStyle="#5b3c2a";target.fillRect(18,82,58,78);target.fillStyle="#a56a43";target.fillRect(10,68,74,24);target.fillStyle="#c6a55e";target.fillRect(40,116,15,44);
+  }else if(assetEditorState.scene==="desert"){
+    target.fillStyle="#a9683f";target.fillRect(0,132,preview.width,28);target.fillStyle="#dfbb72";target.fillRect(18,118,98,8);target.fillRect(126,104,92,7);target.fillStyle="#386a43";target.fillRect(28,90,7,49);target.fillRect(19,101,12,7);target.fillRect(35,109,12,7);
   }else if(assetEditorState.scene==="combat"){
     target.fillStyle="#441f20";target.fillRect(16,164,46,5);target.fillStyle="#a4513f";target.fillRect(22,160,24,4);
   }else if(assetEditorState.scene==="inventory"){

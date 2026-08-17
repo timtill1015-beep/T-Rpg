@@ -28,17 +28,17 @@ const DROWNING_DAMAGE = 28;
 // camera crosses a block boundary, only the newly exposed row/column is drawn;
 // the existing surface is shifted into a second reusable canvas.
 const TERRAIN_TILE_PIXELS = Math.round(TILE_METERS * VIEW_SCALE);
-const TERRAIN_CACHE_LIMIT = 70000;
-const VISUAL_CACHE_LIMIT = 36000;
+const TERRAIN_CACHE_LIMIT = 32000;
+const VISUAL_CACHE_LIMIT = 18000;
 // Large enough to keep deterministic tree object identity during broad scans,
 // still bounded so exploring the entire 20 km world cannot grow forever.
-const TREE_CACHE_LIMIT = 120000;
-const ROAD_DECOR_CACHE_LIMIT = 24000;
-const ROAD_DECOR_CELL_CACHE_LIMIT = 64000;
+const TREE_CACHE_LIMIT = 52000;
+const ROAD_DECOR_CACHE_LIMIT = 12000;
+const ROAD_DECOR_CELL_CACHE_LIMIT = 28000;
 const EFFECT_LIMIT = 360;
 const GROUND_DECAL_LIMIT = 228;
 const BLOOD_DECALS_PER_CELL = 32;
-const CROW_ACTIVE_LIMIT = 72;
+const CROW_ACTIVE_LIMIT = 40;
 const SKY_SHADOW_LIMIT = 10;
 const UI_UPDATE_MS = 100;
 const INVENTORY_COLUMNS = 10;
@@ -46,11 +46,14 @@ const INVENTORY_ROWS = 6;
 const TREE_HIT_RANGE = TILE_METERS * 2.8;
 const TREE_SPLIT_HITS = 3;
 const ANIMAL_CELL_TILES = 18;
-const ANIMAL_CACHE_LIMIT = 32000;
-const ANIMAL_ACTIVE_RADIUS = 520;
+const ANIMAL_STATE_CACHE_LIMIT = 6400;
+const ANIMAL_CELL_CACHE_LIMIT = 1800;
+const ANIMAL_ACTIVE_RADIUS = 420;
 const ANIMAL_HIT_RANGE = TILE_METERS * 2.75;
 const ANIMAL_CROWD_CELL_METERS = TILE_METERS * 1.5;
 const ANIMAL_CROWD_STEP = 1 / 30;
+const ANIMAL_ACTIVE_BUCKET_METERS = TILE_METERS * 4;
+const ANIMAL_SPAWN_BUCKET_METERS = TILE_METERS * 4;
 // A corpse now has to be visibly within reach before it can be grabbed. This
 // is exactly half of the previous 2.8-block interaction tolerance.
 const CORPSE_DRAG_RANGE = TILE_METERS * 1.4;
@@ -63,9 +66,11 @@ const BLOOD_CELL_METERS = TILE_METERS * 8;
 // drag marks both spend from it, so a body can taper naturally without an
 // arbitrary timer suddenly switching every blood effect off.
 const corpseBloodCatalog = {
-  chicken:{capacity:.78,poolBase:1.45,poolSpread:4.8},
-  boar:{capacity:3.25,poolBase:2.15,poolSpread:6.9},
-  horse:{capacity:4.7,poolBase:2.45,poolSpread:7.8}
+  chicken:{capacity:.72,poolBase:1.05,poolSpread:3.6,poolAspect:.38,bodyOffset:.55,spray:"#9b2924",fresh:"#761d1d",deep:"#481315"},
+  boar:{capacity:3.45,poolBase:1.75,poolSpread:7.2,poolAspect:.33,bodyOffset:1.25,spray:"#8b201d",fresh:"#651719",deep:"#3e1013"},
+  horse:{capacity:4.85,poolBase:2.05,poolSpread:8.4,poolAspect:.29,bodyOffset:1.75,spray:"#9a2722",fresh:"#70191a",deep:"#451114"},
+  desertLizard:{capacity:.42,poolBase:.72,poolSpread:2.5,poolAspect:.45,bodyOffset:.35,spray:"#8d2922",fresh:"#691b1a",deep:"#401214"},
+  jackal:{capacity:1.82,poolBase:1.35,poolSpread:5.4,poolAspect:.34,bodyOffset:.85,spray:"#94251e",fresh:"#6b1818",deep:"#421012"}
 };
 
 const snapToGrid = (value) => Math.round(value / TILE_METERS) * TILE_METERS;
@@ -120,7 +125,10 @@ const itemCatalog = {
   feather:{name:"Feder",short:"Federn",category:"resource",width:1,height:1,maxStack:12,icon:"feather",description:"Leichtes Material für Pfeile, Kleidung und Handwerk."},
   boarHide:{name:"Wildschweinhaut",short:"Tierhaut",category:"resource",width:2,height:2,maxStack:2,icon:"hide",description:"Robuste Haut, aus der später Leder und Rüstung entstehen können."},
   tusk:{name:"Hauer",short:"Hauer",category:"resource",width:1,height:2,maxStack:4,icon:"tusk",description:"Ein harter Wildschweinhauer für Werkzeuge oder Trophäen."},
-  bone:{name:"Knochen",short:"Knochen",category:"resource",width:1,height:2,maxStack:5,icon:"bone",description:"Ein stabiler Knochen für spätere Rezepte und Werkzeuge."}
+  bone:{name:"Knochen",short:"Knochen",category:"resource",width:1,height:2,maxStack:5,icon:"bone",description:"Ein stabiler Knochen für spätere Rezepte und Werkzeuge."},
+  rawGame:{name:"Rohes Wüstenwild",short:"Wild roh",category:"resource",width:2,height:1,maxStack:4,icon:"meatRed",description:"Mageres Fleisch aus der heißen Südregion. Vor dem Essen braten."},
+  jackalPelt:{name:"Schakalfell",short:"Schakalfell",category:"resource",width:2,height:2,maxStack:3,icon:"hide",description:"Leichtes, dichtes Fell eines Wüstenschakals."},
+  lizardScale:{name:"Echsenhaut",short:"Echsenhaut",category:"resource",width:1,height:1,maxStack:8,icon:"hide",description:"Hitzefeste Schuppenhaut einer Wüstenechse."}
 };
 
 // Species, behaviour, body size and harvesting are catalog-driven. New fauna
@@ -128,23 +136,35 @@ const itemCatalog = {
 const animalCatalog = {
   chicken:{
     name:"Huhn",corpseName:"Hühnerkadaver",maxHealth:30,radius:2.1,walkSpeed:8.5,runSpeed:20,
-    habitats:["plains","forest","oasis"],spawnChance:.48,group:[2,4],timidRange:34,
+    habitats:["plains","forest","oasis"],spawnChance:.36,group:[2,3],timidRange:34,
     loot:[{itemId:"rawChicken",quantity:2},{itemId:"feather",quantity:3},{itemId:"bone",quantity:1}]
   },
   boar:{
     name:"Wildschwein",corpseName:"Wildschweinkadaver",maxHealth:105,radius:3.8,walkSpeed:10,runSpeed:24,
-    habitats:["forest","plains","swamp","jungle"],spawnChance:.31,group:[1,2],timidRange:16,
+    habitats:["forest","plains","swamp","jungle"],spawnChance:.25,group:[1,2],timidRange:16,
+    hostile:true,aggroRange:0,attackDamage:14,attackBleed:.72,chargeSpeedMultiplier:2.9,
     loot:[{itemId:"rawPork",quantity:2},{itemId:"rawPork",quantity:2},{itemId:"boarHide",quantity:1},{itemId:"tusk",quantity:2},{itemId:"bone",quantity:2}]
   },
   horse:{
     name:"Pferd",corpseName:"Pferd",maxHealth:180,radius:5.2,walkSpeed:13,runSpeed:29,
-    habitats:["plains","forest","oasis","desert","beach","tundra"],spawnChance:.14,group:[1,3],timidRange:42,
+    habitats:["plains","forest","oasis","desert","redDesert","saltFlat","drySteppe","badlands","beach","tundra"],spawnChance:.075,group:[1,2],timidRange:42,
     mountable:true,invulnerable:true,loot:[]
   },
   crow:{
     name:"Rabe",corpseName:"Rabe",maxHealth:12,radius:1.2,walkSpeed:0,runSpeed:34,
     habitats:["forest","jungle","swamp","plains","tundra"],spawnChance:0,group:[0,0],timidRange:42,
     ambient:true,invulnerable:true,loot:[]
+  },
+  desertLizard:{
+    name:"Wüstenechse",corpseName:"Echsenkadaver",maxHealth:24,radius:1.45,walkSpeed:7,runSpeed:26,
+    habitats:["desert","redDesert","saltFlat","drySteppe","badlands"],spawnChance:.095,group:[1,2],timidRange:31,timid:true,
+    loot:[{itemId:"rawGame",quantity:1},{itemId:"lizardScale",quantity:2}]
+  },
+  jackal:{
+    name:"Wüstenschakal",corpseName:"Schakalkadaver",maxHealth:78,radius:3.25,walkSpeed:11,runSpeed:27,
+    habitats:["desert","redDesert","drySteppe","badlands"],spawnChance:.045,group:[2,3],timidRange:0,
+    hostile:true,aggroRange:46,attackDamage:9,attackBleed:.38,chargeSpeedMultiplier:2.15,
+    loot:[{itemId:"rawGame",quantity:2},{itemId:"jackalPelt",quantity:1},{itemId:"bone",quantity:1}]
   }
 };
 
@@ -201,6 +221,8 @@ const state = {
   camera: {x:10000,y:10000},
   effects: [],
   effectSerial:0,
+  effectMaintenanceTimer:0,
+  effectMaintenanceDue:false,
   nextSkyShadowAt:9,
   footstepDistance: 0,
   horseTrackDistance:0,
@@ -226,6 +248,7 @@ const state = {
     walkTime: 0,
     health: 100,
     stamina: 100,
+    heat:0,
     swimming: false,
     drowning: false,
     heldItem:"ironSword",
@@ -332,6 +355,10 @@ const palette = {
   tundra: "#7e927e",
   beach: "#cdb36b",
   desert: "#c59a50",
+  redDesert: "#a9683f",
+  saltFlat: "#d8cfad",
+  drySteppe: "#9c8748",
+  badlands: "#865647",
   oasis: "#4f8552",
   plains: "#718c4f",
   forest: "#365f40",
@@ -351,7 +378,11 @@ const biomeNames = {
   glacier: "Polargletscher",
   tundra: "Frosttundra",
   beach: "Dünenküste",
-  desert: "Sonnenwüste",
+  desert: "Goldene Dünen",
+  redDesert: "Rote Tafelwüste",
+  saltFlat: "Salzpfanne",
+  drySteppe: "Dornsteppe",
+  badlands: "Schluchtenland",
   oasis: "Oasengarten",
   plains: "Grasland",
   forest: "Alter Wald",
@@ -408,7 +439,9 @@ const routes = [
   [[0.48,0.58],[0.47,0.63],[0.44,0.67]],
   [[0.43,0.56],[0.39,0.50],[0.38,0.46]],
   [[0.24,0.27],[0.31,0.20],[0.405,0.125]],
-  [[0.765,0.727],[0.71,0.78],[0.635,0.845],[0.49,0.875],[0.335,0.865]]
+  [[0.765,0.727],[0.71,0.78],[0.635,0.845],[0.49,0.875],[0.335,0.865]],
+  [[0.49,0.875],[0.385,0.835],[0.245,0.842]],
+  [[0.635,0.845],[0.72,0.825],[0.81,0.855]]
 ];
 
 const landmarks = [
@@ -419,9 +452,12 @@ const landmarks = [
   {x:snapToGrid(WORLD_SIZE*.242),y:snapToGrid(WORLD_SIZE*.271),name:"Nordwacht",short:"Nordwacht",type:"town"},
   {x:snapToGrid(WORLD_SIZE*.756),y:snapToGrid(WORLD_SIZE*.286),name:"Ruinen von Königsfall",short:"Königsfall",type:"ruin"},
   {x:snapToGrid(WORLD_SIZE*.765),y:snapToGrid(WORLD_SIZE*.727),name:"Südmark",short:"Südmark",type:"town"},
-  {x:snapToGrid(WORLD_SIZE*.405),y:snapToGrid(WORLD_SIZE*.125),name:"Forscherdorf Eiswacht",short:"Eiswacht",type:"town"},
+  {id:"eiswacht",x:snapToGrid(WORLD_SIZE*.405),y:snapToGrid(WORLD_SIZE*.125),name:"Forscherdorf Eiswacht",short:"Eiswacht",type:"town",settlement:"eiswacht"},
   {x:snapToGrid(WORLD_SIZE*.635),y:snapToGrid(WORLD_SIZE*.845),name:"Oase von Sahra",short:"Oase Sahra",type:"town"},
-  {x:snapToGrid(WORLD_SIZE*.335),y:snapToGrid(WORLD_SIZE*.865),name:"Versunkene Sonnenuhr",short:"Sonnenuhr",type:"ruin"}
+  {x:snapToGrid(WORLD_SIZE*.335),y:snapToGrid(WORLD_SIZE*.865),name:"Versunkene Sonnenuhr",short:"Sonnenuhr",type:"ruin"},
+  {x:snapToGrid(WORLD_SIZE*.490),y:snapToGrid(WORLD_SIZE*.875),name:"Karawanserei Qadim",short:"Qadim",type:"town"},
+  {x:snapToGrid(WORLD_SIZE*.245),y:snapToGrid(WORLD_SIZE*.842),name:"Salzkloster Miraj",short:"Salzkloster",type:"ruin"},
+  {x:snapToGrid(WORLD_SIZE*.810),y:snapToGrid(WORLD_SIZE*.855),name:"Observatorium im Glasmeer",short:"Glasmeer",type:"ruin"}
 ];
 
 const terrainCache = new Map();
@@ -432,6 +468,9 @@ const treePlotCache = new Map();
 const treePhysicsStates = new Map();
 const animalCellCache = new Map();
 const animalStates = new Map();
+const animalSpawnBuckets = new Map();
+let activeAnimalBuckets = new Map();
+let activeAnimalIndex = {x:NaN,y:NaN,radius:0};
 const roadDecorPlotCache = new Map();
 const roadDecorCellCache = new Map();
 const terrainFrameCache = {canvas:null,scratch:null,anchorX:NaN,anchorY:NaN,width:0,height:0,columns:0,rows:0,displayRevision:-1};
@@ -730,10 +769,17 @@ function terrainAt(x,y){
   else if(latitude<.205) biome=h>.57?"glacier":"tundra";
   else if(latitude>.765){
     const oasisNoise=valueNoise(x+420,y-180,680,388);
+    const desertMass=valueNoise(x-1180,y+760,1480,741);
+    const saltNoise=valueNoise(x+360,y-1320,940,743);
+    const canyonNoise=valueNoise(x-910,y-430,720,749);
     const forcedOasis=Math.hypot(x-WORLD_SIZE*.635,y-WORLD_SIZE*.845)<WORLD_SIZE*.024;
     if(h>.66) biome="mountain";
-    else if(h>.57) biome="rock";
+    else if(h>.59) biome=canyonNoise>.43?"badlands":"rock";
     else if(forcedOasis||(moisture>.64&&oasisNoise>.56)) biome="oasis";
+    else if(moisture>.555) biome="drySteppe";
+    else if(saltNoise>.62&&moisture<.47&&h<.43) biome="saltFlat";
+    else if(desertMass>.58) biome="redDesert";
+    else if(canyonNoise>.67&&h>.43) biome="badlands";
     else biome="desert";
   }else if(h>0.68 && temp<0.55) biome="snow";
   else if(h>0.60) biome="mountain";
@@ -833,7 +879,11 @@ function tileDecoration(x,y,biome){
   if((biome==="river"||biome==="oasis") && r>0.80) return r>.94?"lilies":"reeds";
   if((biome==="tundra"||biome==="glacier") && r>.82) return r>.95?"iceCrystal":"snowTuft";
   if(biome==="packIce" && r>.90) return "iceCrack";
-  if(biome==="desert" && r>.82) return r>.96?"bones":"duneGrass";
+  if(biome==="desert" && r>.76) return r>.955?"bones":r>.88?"duneGrass":"duneRipple";
+  if(biome==="redDesert" && r>.75) return r>.94?"sunStone":r>.85?"thorn":"redPebbles";
+  if(biome==="saltFlat" && r>.69) return r>.96?"saltCrystal":"saltCrack";
+  if(biome==="drySteppe" && r>.70) return r>.93?"desertFlowers":r>.82?"thorn":"duneGrass";
+  if(biome==="badlands" && r>.73) return r>.94?"bones":r>.84?"sunStone":"redPebbles";
   if(biome==="shallow" && r>.94) return "fish";
   return null;
 }
@@ -918,6 +968,46 @@ function drawDecoration(target,kind,px,py,size){
     ctx.fillRect(px-size*.20,py,size*.38,size*.055);
     ctx.fillRect(px-size*.23,py-size*.04,size*.08,size*.12);
     ctx.fillRect(px+size*.14,py-size*.04,size*.08,size*.12);
+  }else if(kind==="duneRipple"){
+    ctx.fillStyle="rgba(112,76,30,.24)";
+    ctx.fillRect(px-size*.32,py-size*.10,size*.24,size*.035);
+    ctx.fillRect(px-size*.04,py,size*.35,size*.035);
+    ctx.fillRect(px-size*.24,py+size*.12,size*.22,size*.035);
+  }else if(kind==="redPebbles"){
+    ctx.fillStyle="#6f4438";
+    ctx.fillRect(px-size*.24,py-size*.05,size*.10,size*.07);
+    ctx.fillStyle="#c17a4c";
+    ctx.fillRect(px+size*.06,py+size*.08,size*.14,size*.08);
+    ctx.fillRect(px-size*.02,py-size*.16,size*.07,size*.06);
+  }else if(kind==="sunStone"){
+    ctx.fillStyle="#5d3f39";
+    ctx.fillRect(px-size*.18,py-size*.03,size*.36,size*.16);
+    ctx.fillStyle="#c58350";
+    ctx.fillRect(px-size*.11,py-size*.11,size*.22,size*.10);
+  }else if(kind==="saltCrack"){
+    ctx.fillStyle="rgba(104,104,89,.42)";
+    ctx.fillRect(px-size*.28,py,size*.24,size*.025);
+    ctx.fillRect(px-size*.05,py,size*.025,size*.17);
+    ctx.fillRect(px-size*.03,py+size*.14,size*.24,size*.025);
+    ctx.fillRect(px+size*.15,py+size*.02,size*.025,size*.12);
+  }else if(kind==="saltCrystal"){
+    ctx.fillStyle="#f1ead1";
+    ctx.fillRect(px-size*.05,py-size*.24,size*.10,size*.32);
+    ctx.fillStyle="#b9c6bd";
+    ctx.fillRect(px-size*.13,py-size*.08,size*.08,size*.18);
+    ctx.fillRect(px+size*.06,py-size*.13,size*.07,size*.23);
+  }else if(kind==="thorn"){
+    ctx.fillStyle="#5e5d31";
+    ctx.fillRect(px-size*.21,py-size*.02,size*.42,size*.055);
+    ctx.fillRect(px-size*.10,py-size*.16,size*.055,size*.32);
+    ctx.fillRect(px+size*.08,py-size*.12,size*.055,size*.26);
+  }else if(kind==="desertFlowers"){
+    ctx.fillStyle="#68743c";
+    ctx.fillRect(px-size*.02,py-size*.12,size*.035,size*.25);
+    ctx.fillStyle="#d79551";
+    ctx.fillRect(px-size*.12,py-size*.10,size*.10,size*.08);
+    ctx.fillStyle="#e0c05e";
+    ctx.fillRect(px+size*.05,py-size*.19,size*.11,size*.09);
   }else if(kind==="fish"){
     const swim=(state.elapsed*7+px*.01)%1;
     ctx.fillStyle="rgba(224,237,218,.48)";
@@ -1062,8 +1152,8 @@ function nearLandmarkGrid(gx,gy,padding=0){
   for(const landmark of landmarks){
     const lx=Math.round(landmark.x/TILE_METERS);
     const ly=Math.round(landmark.y/TILE_METERS);
-    const rx=landmark.type==="town"?8:6;
-    const ry=landmark.type==="town"?7:6;
+    const rx=landmark.settlement==="eiswacht"?20:landmark.type==="town"?8:6;
+    const ry=landmark.settlement==="eiswacht"?20:landmark.type==="town"?7:6;
     if(Math.abs(gx-lx)<=rx+padding && Math.abs(gy-ly)<=ry+padding) return true;
   }
   return false;
@@ -1104,6 +1194,18 @@ function treeForPlot(plotX,plotY){
   }else if(terrain.biome==="desert"){
     chance=.18;
     kind=speciesSeed>.76?"acacia":"cactus";
+  }else if(terrain.biome==="drySteppe"){
+    chance=.34;
+    kind=speciesSeed>.58?"acacia":speciesSeed>.20?"cactus":"dead";
+  }else if(terrain.biome==="redDesert"){
+    chance=.12;
+    kind=speciesSeed>.70?"acacia":"cactus";
+  }else if(terrain.biome==="badlands"){
+    chance=.08;
+    kind=speciesSeed>.80?"dead":"cactus";
+  }else if(terrain.biome==="saltFlat"){
+    chance=.025;
+    kind="dead";
   }else if(terrain.biome==="oasis"){
     chance=.79;
     kind=speciesSeed>.42?"palm":"acacia";
@@ -1321,7 +1423,11 @@ const roadAssetCatalog = {
   camp:{w:2,h:1,solid:[[0,0]],label:"Verlassenes Lager ansehen",message:"Die kalte Feuerstelle und der zusammengerollte Schlafsack sind noch trocken."},
   log:{w:3,h:1,solid:[[0,0],[1,0],[2,0]],label:"Gefallenen Stamm untersuchen",message:"Unter der morschen Rinde krabbeln winzige Käfer."},
   rubble:{w:2,h:1,solid:[[0,0],[1,0]],label:"Trümmer untersuchen",message:"Rad, Achse und Steine stammen wohl von einem alten Unfall."},
-  notice:{w:2,h:2,solid:[[0,1],[1,1]],label:"Anschlagtafel lesen",message:"Regen hat die meisten Aushänge unlesbar gemacht."}
+  notice:{w:2,h:2,solid:[[0,1],[1,1]],label:"Anschlagtafel lesen",message:"Regen hat die meisten Aushänge unlesbar gemacht."},
+  sunObelisk:{w:2,h:3,solid:[[0,1],[1,1],[0,2],[1,2]],label:"Sonnenobelisk entziffern",message:"Die Kerben beschreiben einen Weg von Oase zu Oase."},
+  caravanWreck:{w:3,h:2,solid:[[0,0],[1,0],[2,0],[0,1],[1,1],[2,1]],label:"Karawanenwrack durchsuchen",message:"Sand hat die Ladung verschluckt, doch frische Schakalspuren führen weiter."},
+  boneField:{w:2,h:1,solid:[[0,0],[1,0]],label:"Knochenfeld untersuchen",message:"Gebleichte Rippen markieren eine uralte Route durch die Dünen."},
+  shadeCanopy:{w:3,h:2,solid:[[0,1],[2,1]],label:"Unterstand untersuchen",message:"Der zerrissene Stoff spendet noch einen schmalen Streifen Schatten."}
 };
 
 const roadAssetKinds = [
@@ -1331,7 +1437,7 @@ const roadAssetKinds = [
 
 function chooseRoadAssetKind(seed,biome){
   let pool=roadAssetKinds;
-  if(biome==="desert") pool=["standingStone","sign","milestone","wagon","supplies","camp","rubble","notice"];
+  if(["desert","redDesert","saltFlat","drySteppe","badlands"].includes(biome)) pool=["sunObelisk","caravanWreck","boneField","shadeCanopy","standingStone","supplies","camp","rubble"];
   else if(["tundra","glacier","snow"].includes(biome)) pool=["boulder","standingStone","sign","milestone","wagon","lantern","shrine","rubble"];
   else if(["forest","jungle","swamp"].includes(biome)) pool=["boulder","sign","handcart","supplies","lantern","shrine","camp","log","notice"];
   return pool[Math.floor(seed*pool.length)%pool.length];
@@ -1497,6 +1603,19 @@ function drawRoadDecoration(asset,camX,camY){
     pixelRect(1,5,2,11,woodDark);pixelRect(13,5,2,11,woodDark);pixelRect(1,3,14,9,wood);
     pixelRect(2,4,12,1,woodLight);pixelRect(4,6,3,4,"#d4c9a6");pixelRect(9,6,3,3,"#bfae86");
     pixelRect(5,7,1,1,"#7d6848");pixelRect(10,7,1,1,"#7d6848");
+  }else if(asset.kind==="sunObelisk"){
+    pixelRect(2,7,12,17,"#523a35");pixelRect(3,3,10,20,"#9c6448");pixelRect(5,1,6,4,"#d39258");
+    pixelRect(6,7,4,4,"#e7b65d");pixelRect(7,8,2,2,"#fff0a1");pixelRect(5,15,1,5,"#4d3532");pixelRect(10,12,1,7,"#4d3532");
+  }else if(asset.kind==="caravanWreck"){
+    pixelRect(1,7,20,8,"#4b3025");pixelRect(3,5,17,7,"#8b5b38");pixelRect(5,4,13,2,"#c28b50");
+    pixelRect(2,11,7,5,"#35251f");pixelRect(15,10,7,6,"#35251f");pixelRect(4,12,3,3,"#a87947");pixelRect(17,11,3,3,"#a87947");
+    pixelRect(19,4,5,2,"#755035");pixelRect(22,2,2,7,"#4d3426");
+  }else if(asset.kind==="boneField"){
+    pixelRect(1,5,14,2,"#d8cfb0");pixelRect(3,3,2,5,"#f0e7c9");pixelRect(8,2,2,5,"#c9bea0");pixelRect(12,4,3,2,"#efe4c6");
+    pixelRect(2,2,2,2,"#e6dcc0");pixelRect(9,1,2,2,"#e6dcc0");pixelRect(14,3,2,2,"#b9ad91");
+  }else if(asset.kind==="shadeCanopy"){
+    pixelRect(1,13,2,3,"#4e3426");pixelRect(21,13,2,3,"#4e3426");pixelRect(2,2,2,13,"#60422e");pixelRect(20,2,2,13,"#60422e");
+    pixelRect(3,3,18,6,"#805a43");pixelRect(4,2,16,5,"#bd875d");pixelRect(7,5,10,2,"#d0a06f");pixelRect(11,7,2,7,"#4f372b");
   }
   ctx.restore();
 }
@@ -1673,9 +1792,15 @@ const ruinBlocks = [
   "..S...S.."
 ];
 
+function landmarkStructurePattern(landmark){
+  if(landmark.settlement==="eiswacht") return null;
+  return landmark.type==="town"?townBlocks:ruinBlocks;
+}
+
 function structureAtGrid(gx,gy){
   for(const landmark of landmarks){
-    const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+    const pattern=landmarkStructurePattern(landmark);
+    if(!pattern) continue;
     const originGX=Math.round(landmark.x/TILE_METERS)-Math.floor(pattern[0].length/2);
     const originGY=Math.round(landmark.y/TILE_METERS)-Math.floor(pattern.length/2);
     const column=gx-originGX;
@@ -2034,8 +2159,8 @@ function horseVariantFor(cellX,cellY,index){
 
 function cacheAnimalState(id,animal){
   animalStates.set(id,animal);
-  if(animalStates.size<=ANIMAL_CACHE_LIMIT) return animal;
-  const target=Math.max(1,Math.ceil(ANIMAL_CACHE_LIMIT*.12));
+  if(animalStates.size<=ANIMAL_STATE_CACHE_LIMIT) return animal;
+  const target=Math.max(1,Math.ceil(ANIMAL_STATE_CACHE_LIMIT*.12));
   let removed=0;
   for(const [candidateId,candidate] of animalStates){
     const protectedState=candidateId.startsWith("starter-horse:")||candidate.owned||candidateId===state.draggingAnimalId||candidateId===state.mountedHorseId;
@@ -2052,12 +2177,14 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
   const existing=animalStates.get(id);
   if(existing) return existing;
   const meta=animalCatalog[species];
-  const headingSeeds={chicken:8201,boar:8202,horse:8203};
+  const headingSeeds={chicken:8201,boar:8202,horse:8203,desertLizard:8204,jackal:8205};
   const heading=hash2(cellX+index*3,cellY-index*5,headingSeeds[species]||8201)*Math.PI*2;
   const horseVariant=species==="horse"?horseVariantFor(cellX,cellY,index):null;
   const appearanceVariant=species==="chicken"
     ?["white","brown","black"][Math.floor(hash2(cellX+index,cellY,8207)*3)]
-    :species==="boar"?["forest","dark","russet"][Math.floor(hash2(cellX,cellY-index,8208)*3)]:null;
+    :species==="boar"?["forest","dark","russet"][Math.floor(hash2(cellX,cellY-index,8208)*3)]
+      :species==="desertLizard"?["sand","red","salt"][Math.floor(hash2(cellX-index,cellY,8209)*3)]
+        :species==="jackal"?["gold","ashen","dark"][Math.floor(hash2(cellX,cellY+index,8213)*3)]:null;
   const animal={
     id,species,originCellX:cellX,originCellY:cellY,
     x:point.x,y:point.y,homeX:point.x,homeY:point.y,
@@ -2068,7 +2195,7 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
     hitFlash:0,fleeUntil:0,aggressionUntil:0,attackCooldown:0,
     attackPhase:"idle",attackTimer:0,attackHitDone:false,dashHeading:heading,telegraphParticleTimer:0,chargeParticleTimer:0,
     bloodLevel:0,corpseDamage:0,harvestCount:0,lootQueue:null,
-    angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,
+    angle:0,angularVelocity:0,ragdollPhase:hash2(cellX,index,8212)*Math.PI*2,corpsePose:Math.floor(hash2(cellX+index,cellY-index,8214)*3),
     deadAt:null,bloodTrailDistance:0,bloodReserve:0,bloodCapacity:0,bloodReleased:0,
     bloodRestTimer:0,bloodPoolEffectId:null,
     variant:appearanceVariant,
@@ -2145,7 +2272,7 @@ function animalsForCell(cellX,cellY){
   if(animalCellCache.has(key)) return animalCellCache.get(key);
   const animals=[];
   for(const [species,meta] of Object.entries(animalCatalog)){
-    const speciesSeed=species==="boar"?8302:species==="horse"?8303:8301;
+    const speciesSeed={chicken:8301,boar:8302,horse:8303,desertLizard:8304,jackal:8305}[species]||8310+stableTextHash(species)%300;
     if(hash2(cellX,cellY,speciesSeed)>meta.spawnChance) continue;
     const amount=meta.group[0]+Math.floor(hash2(cellX,cellY,speciesSeed+1)*(meta.group[1]-meta.group[0]+1));
     for(let index=0;index<amount;index++){
@@ -2153,7 +2280,11 @@ function animalsForCell(cellX,cellY){
       if(point) animals.push(createAnimalState(species,cellX,cellY,index,point));
     }
   }
-  return cacheValue(animalCellCache,key,animals,ANIMAL_CACHE_LIMIT);
+  return cacheValue(animalCellCache,key,animals,ANIMAL_CELL_CACHE_LIMIT);
+}
+
+function clearAnimalRuntimeCaches(){
+  animalCellCache.clear();animalStates.clear();animalSpawnBuckets.clear();activeAnimalBuckets=new Map();activeAnimalIndex={x:NaN,y:NaN,radius:0};
 }
 
 function animalsInRect(left,top,right,bottom){
@@ -2313,12 +2444,12 @@ function resolveAnimalCrowding(animals,dt){
       const penetration=minimum-distance;
       // Remove almost the complete penetration in a bounded step. The old
       // half-correction let both AIs walk back into the same pixels every
-      // frame, which looked like texture flicker. A charging boar stays on its
+      // frame, which looked like texture flicker. A charging animal stays on its
       // committed line and displaces the other body instead.
       const maxCorrection=Math.max(.55,dt*110);
       const correction=Math.min(penetration+.06,maxCorrection);
-      const animalMobility=animal.species==="boar"&&animal.attackPhase==="charge"?0:(animal.owned ? 0.42 : 1);
-      const otherMobility=other.species==="boar"&&other.attackPhase==="charge"?0:(other.owned ? 0.42 : 1);
+      const animalMobility=animalCatalog[animal.species]?.hostile&&animal.attackPhase==="charge"?0:(animal.owned ? 0.42 : 1);
+      const otherMobility=animalCatalog[other.species]?.hostile&&other.attackPhase==="charge"?0:(other.owned ? 0.42 : 1);
       const mobilityTotal=animalMobility+otherMobility||1;
       const animalShare=animalMobility/mobilityTotal;
       const otherShare=otherMobility/mobilityTotal;
@@ -2342,15 +2473,18 @@ function resolveAnimalCrowding(animals,dt){
 
 function injurePlayerFromBoar(animal){
   if(animal.attackPhase!=="charge"||animal.attackHitDone||state.dead) return;
+  const meta=animalCatalog[animal.species]||animalCatalog.boar;
   animal.attackHitDone=true;
-  state.player.health=Math.max(0,state.player.health-14);
-  applyPlayerBleed(.72,9,1.15);
+  const damage=meta.attackDamage||14;
+  const bleed=meta.attackBleed||.72;
+  state.player.health=Math.max(0,state.player.health-damage);
+  applyPlayerBleed(bleed,animal.species==="jackal"?6:9,animal.species==="jackal"?.65:1.15);
   const dx=state.player.x-animal.x;
   const dy=state.player.y-animal.y;
   const length=Math.hypot(dx,dy)||1;
   for(let i=0;i<5;i++) addEffect({type:"dust",layer:"ground",x:state.player.x,y:state.player.y,life:.4+Math.random()*.25,size:.55,vx:dx/length*5+(Math.random()-.5)*4,vy:dy/length*5+(Math.random()-.5)*4});
-  showToast("Keiler-Dash · -14 Leben · BLUTUNG",1700);
-  if(state.player.health<=0) killPlayer("Von einem Wildschwein niedergerannt");
+  showToast((animal.species==="jackal"?"Schakal-Angriff":"Keiler-Dash")+" · -"+damage+" Leben · BLUTUNG",1700);
+  if(state.player.health<=0) killPlayer(animal.species==="jackal"?"Von einem Schakalrudel überwältigt":"Von einem Wildschwein niedergerannt");
 }
 
 function applyPlayerBleed(intensity,duration,volume){
@@ -2445,8 +2579,10 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
       animal.attackTimer=1.18;
       animal.dashHeading=Math.atan2(dy,dx);
       animal.heading=animal.dashHeading;
-      animal.vx=Math.cos(animal.dashHeading)*meta.runSpeed*2.9;
-      animal.vy=Math.sin(animal.dashHeading)*meta.runSpeed*2.9;
+      const chargeMultiplier=meta.chargeSpeedMultiplier||2.9;
+      animal.vx=Math.cos(animal.dashHeading)*meta.runSpeed*chargeMultiplier;
+      animal.vy=Math.sin(animal.dashHeading)*meta.runSpeed*chargeMultiplier;
+      return meta.runSpeed*chargeMultiplier;
     }
     return 0;
   }
@@ -2456,7 +2592,7 @@ function updateBoarAttack(animal,dt,dx,dy,distance,meta){
     if(animal.chargeParticleTimer<=0){animal.chargeParticleTimer=.045;emitBoarChargeWind(animal);}
     animal.attackDamageActive=animal.attackTimer<=1.11&&animal.attackTimer>=.08;
     if(animal.attackTimer<=0){animal.attackPhase="recover";animal.attackTimer=.78;}
-    return meta.runSpeed*2.9;
+    return meta.runSpeed*(meta.chargeSpeedMultiplier||2.9);
   }
   if(animal.attackTimer<=0){
     animal.attackPhase="idle";
@@ -2484,6 +2620,7 @@ function updateLivingAnimal(animal,dt){
   const distance=Math.hypot(dx,dy)||1;
   window.__ARCHIPELAGO_V015__?.updateAnimalSocial?.(animal,dt,distance);
   let speed=meta.walkSpeed;
+  if(meta.hostile&&meta.aggroRange>0&&distance<meta.aggroRange) animal.aggressionUntil=Math.max(animal.aggressionUntil,state.elapsed+3.5);
 
   if(animal.species==="horse"&&animal.owned){
     const facing=directionVector(state.player.dir);
@@ -2497,9 +2634,9 @@ function updateLivingAnimal(animal,dt){
       speed=followDistance>HORSE_FOLLOW_DISTANCE*1.65?meta.runSpeed:Math.min(meta.walkSpeed,followDistance*2.2);
     }else speed=0;
     animal.wanderTimer=1;
-  }else if(animal.species==="boar"&&(animal.attackPhase!=="idle"||animal.aggressionUntil>state.elapsed&&distance<190)){
+  }else if(meta.hostile&&(animal.attackPhase!=="idle"||animal.aggressionUntil>state.elapsed&&distance<190)){
     speed=updateBoarAttack(animal,dt,dx,dy,distance,meta)??0;
-  }else if(animal.fleeUntil>state.elapsed||((animal.species==="chicken"||animal.species==="horse"&&!animal.owned)&&distance<meta.timidRange)){
+  }else if(animal.fleeUntil>state.elapsed||((animal.species==="chicken"||animal.species==="desertLizard"||animal.species==="horse"&&!animal.owned)&&distance<meta.timidRange)){
     animal.heading=Math.atan2(-dy,-dx)+(hash2(Math.floor(state.elapsed*4),animal.originCellY,8420)-.5)*.36;
     speed=meta.runSpeed;
   }else{
@@ -2518,7 +2655,7 @@ function updateLivingAnimal(animal,dt){
     if(animal.idleUntil>state.elapsed) speed=0;
   }
 
-  const charging=animal.species==="boar"&&animal.attackPhase==="charge";
+  const charging=meta.hostile&&animal.attackPhase==="charge";
   if(charging){
     // A dash is a committed impulse, not ordinary steering. Feeding it
     // through the roaming lerp was the root cause of stationary charges.
@@ -2572,7 +2709,8 @@ function corpseBloodReleaseRate(animal){
   const capacity=Math.max(.001,animal.bloodCapacity||corpseBloodProfile(animal).capacity);
   const remaining=Math.max(0,Math.min(1,(animal.bloodReserve||0)/capacity));
   const age=Math.max(0,state.elapsed-(animal.deadAt??state.elapsed));
-  return capacity*(.0022+.025*Math.exp(-age/34))*Math.pow(remaining,.68);
+  // Strong initial loss, then a long finite tail instead of a hard cutoff.
+  return capacity*(.0012+.16*Math.exp(-age/9)+.032*Math.exp(-age/58))*Math.pow(remaining,.62);
 }
 
 function spendCorpseBlood(animal,amount){
@@ -2596,11 +2734,11 @@ function emitCorpseDragBlood(animal,flow){
   const amount=spendCorpseBlood(animal,(animal.bloodCapacity||profile.capacity)*(.0016+.0042*flow));
   if(amount<=0) return;
   const mainSize=2.05+flow*1.85+(animal.species==="boar"?.55:animal.species==="horse"?.8:0);
-  addBloodWorldEffect(animal.x+(Math.random()-.5)*1.5,animal.y+(Math.random()-.5)*1.5,mainSize,250+flow*170,"#581517");
+  addBloodWorldEffect(animal.x+(Math.random()-.5)*1.5,animal.y+(Math.random()-.5)*1.5,mainSize,250+flow*170,profile.fresh||"#581517");
   const satellites=flow>.62?2:1;
   for(let index=0;index<satellites;index++) addBloodWorldEffect(
     animal.x+(Math.random()-.5)*4.2,animal.y+(Math.random()-.5)*3.2,
-    .9+flow*.85+Math.random()*.65,190+flow*120,index?"#741b1a":"#641719"
+    .9+flow*.85+Math.random()*.65,190+flow*120,index?(profile.spray||"#741b1a"):(profile.deep||"#641719")
   );
 }
 
@@ -2688,6 +2826,7 @@ function updateAnimals(dt){
 }
 
 function emitBlood(animal,count=5,impact=null){
+  const profile=corpseBloodProfile(animal);
   const direction=impact||{x:animal.x-state.player.x,y:animal.y-state.player.y};
   const length=Math.hypot(direction.x,direction.y)||1;
   const nx=direction.x/length;
@@ -2697,13 +2836,13 @@ function emitBlood(animal,count=5,impact=null){
     type:"blood",layer:"air",x:animal.x+(Math.random()-.5)*3,y:animal.y+(Math.random()-.5)*3,
     life:.8+Math.random()*.9,size:.68+Math.random()*1.05,
     vx:nx*(8+Math.random()*12)+(Math.random()-.5)*7,vy:ny*(7+Math.random()*10)-6-Math.random()*7,
-    color:index%3===0?"#8f211d":"#5f1718"
+    color:index%3===0?(profile.spray||"#8f211d"):(profile.deep||"#5f1718")
   });
   const stains=Math.max(2,Math.ceil(count*.36));
   for(let index=0;index<stains;index++) addBloodWorldEffect(
     animal.x+nx*(2+Math.random()*5)+(Math.random()-.5)*2,
     animal.y+ny*(2+Math.random()*5)+(Math.random()-.5)*2,
-    .9+Math.random()*.95,130+Math.random()*90,index%2?"#571718":"#771c1b"
+    .9+Math.random()*.95,130+Math.random()*90,index%2?(profile.deep||"#571718"):(profile.fresh||"#771c1b")
   );
 }
 
@@ -2733,8 +2872,9 @@ function killAnimal(animal,damage){
   animal.angularVelocity=(hash2(Math.floor(animal.x),Math.floor(animal.y),8501)-.5)*5;
   animal.angle=0;
   prepareAnimalLoot(animal);
-  createCorpseBloodPool(animal);
-  spendCorpseBlood(animal,animal.bloodCapacity*.035);
+  const pool=createCorpseBloodPool(animal);
+  const firstGush=spendCorpseBlood(animal,animal.bloodCapacity*.16);
+  if(pool) pool.bloodAmount=(pool.bloodAmount||0)+firstGush;
   emitBlood(animal,animal.species==="boar"?15:animal.species==="horse"?18:9);
   showToast(animalCatalog[animal.species].name+" erlegt · der Kadaver kann gezogen und zerlegt werden",2600);
 }
@@ -2773,15 +2913,15 @@ function damageAnimal(animal,damage,itemId){
   animal.health=Math.max(0,animal.health-damage);
   animal.hitFlash=.18;
   animal.bloodLevel=Math.min(1.25,Math.max(animal.bloodLevel,(animal.maxHealth-animal.health)/animal.maxHealth));
-  emitBlood(animal,animal.species==="boar"?7:4);
+  emitBlood(animal,animalCatalog[animal.species]?.hostile?7:4);
   if(animal.health<=0){
     killAnimal(animal,damage);
-  }else if(animal.species==="boar"){
+  }else if(animalCatalog[animal.species]?.hostile){
     animal.aggressionUntil=state.elapsed+7;
-    showToast("Wildschwein · "+Math.ceil(animal.health)+" / "+animal.maxHealth+" Leben",1100);
+    showToast(animalCatalog[animal.species].name+" · "+Math.ceil(animal.health)+" / "+animal.maxHealth+" Leben",1100);
   }else{
     animal.fleeUntil=state.elapsed+5;
-    showToast("Huhn · "+Math.ceil(animal.health)+" / "+animal.maxHealth+" Leben",1000);
+    showToast(animalCatalog[animal.species].name+" · "+Math.ceil(animal.health)+" / "+animal.maxHealth+" Leben",1000);
   }
   window.__ARCHIPELAGO_V015__?.onAnimalDamaged?.(animal,damage,itemId);
   return true;
@@ -2823,9 +2963,10 @@ function drawChicken(animal,x,y){
     // Dead limbs stay on whole pixels. Vector rotation and stroked diagonal
     // lines were the remaining source of soft animal edges.
     const flop=Math.round(Math.sin(animal.ragdollPhase));
-    ctx.fillStyle=animal.hitFlash>0?"#f1bbb3":"#d8cfad";ctx.fillRect(-4*u,-3*u,8*u,5*u);
+    const pose=animal.corpsePose||0;
+    ctx.fillStyle=animal.hitFlash>0?"#f1bbb3":"#d8cfad";ctx.fillRect((-4+pose-1)*u,(-3+(pose===2?1:0))*u,8*u,5*u);
     drawAnimalBloodMarks(ctx,animal,u);
-    ctx.fillStyle="#e1d8b9";ctx.fillRect((3+flop)*u,-2*u,4*u,4*u);
+    ctx.fillStyle="#e1d8b9";ctx.fillRect((3+flop+pose-1)*u,(-2+(pose===1?1:0))*u,4*u,4*u);
     ctx.fillStyle="#d7a73a";ctx.fillRect((7+flop)*u,-u,2*u,u);
     ctx.fillStyle="#24201b";ctx.fillRect((5+flop)*u,-u,2*u,Math.max(1,u/2));
     ctx.fillStyle="#987136";ctx.fillRect((-3-flop)*u,u,u,3*u);ctx.fillRect((2+flop)*u,u,u,3*u);
@@ -2858,9 +2999,10 @@ function drawBoar(animal,x,y){
     drawAnimalBloodMarks(ctx,animal,u);
   }else{
     const flop=Math.round(Math.sin(animal.ragdollPhase));
-    ctx.fillStyle=animal.hitFlash>0?"#9d554c":"#564034";ctx.fillRect(-6*u,-4*u,11*u,6*u);
+    const pose=animal.corpsePose||0;
+    ctx.fillStyle=animal.hitFlash>0?"#9d554c":"#564034";ctx.fillRect((-6+pose-1)*u,(-4+(pose===2?1:0))*u,11*u,6*u);
     drawAnimalBloodMarks(ctx,animal,u);
-    ctx.fillStyle="#453129";ctx.fillRect((4+flop)*u,-3*u,5*u,5*u);
+    ctx.fillStyle="#453129";ctx.fillRect((4+flop+pose-1)*u,(-3+(pose===1?1:0))*u,5*u,5*u);
     ctx.fillStyle="#d5c49a";ctx.fillRect((8+flop)*u,u,3*u,u);
     ctx.fillStyle="#211b18";ctx.fillRect((6+flop)*u,0,2*u,Math.max(1,u/2));
     ctx.fillStyle="#34251f";
@@ -2991,12 +3133,62 @@ function drawCrow(crow,x,y){
   ctx.restore();
 }
 
+function drawDesertLizard(animal,x,y){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("desertLizard",animal,ctx,x,y)) return;
+  const u=2;
+  const flip=animalDirection(animal)==="left"?-1:1;
+  const coats={sand:["#b8894f","#dfb86c"],red:["#8f4e39","#c8754d"],salt:["#aaa58d","#ddd3b5"]};
+  const coat=coats[animal.variant]||coats.sand;
+  const step=animal.gaitMode==="idle"?0:(Math.sin(animal.gait)>.1?1:-1);
+  const pose=animal.corpsePose||0;
+  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.scale(flip,1);
+  ctx.fillStyle="rgba(0,0,0,.25)";ctx.fillRect(-7*u,1*u,14*u,1*u);
+  if(animal.status==="alive"){
+    ctx.fillStyle=animal.hitFlash>0?"#e7a087":coat[0];ctx.fillRect(-5*u,-3*u,9*u,4*u);ctx.fillRect(3*u,-4*u,4*u,3*u);
+    ctx.fillStyle=coat[1];ctx.fillRect(-4*u,-3*u,6*u,u);ctx.fillRect(-7*u,-2*u,3*u,u);ctx.fillRect(-9*u,-u,3*u,u);
+    ctx.fillStyle="#181b18";ctx.fillRect(5*u,(blinkClosed(animal)?-2:-3)*u,u,u);
+    ctx.fillStyle=coat[0];ctx.fillRect((-3-step)*u,u,2*u,2*u);ctx.fillRect((2+step)*u,u,2*u,2*u);
+  }else{
+    ctx.fillStyle=coat[0];ctx.fillRect((-5+pose)*u,-2*u,10*u,3*u);ctx.fillRect((4+pose)*u,-u,4*u,2*u);
+    ctx.fillStyle=coat[1];ctx.fillRect((-8+pose)*u,0,4*u,u);ctx.fillStyle="#25201b";ctx.fillRect((6+pose)*u,0,2*u,Math.max(1,u/2));
+  }
+  drawAnimalBloodMarks(ctx,animal,u);ctx.restore();
+}
+
+function drawJackal(animal,x,y){
+  if(typeof drawArtistSpriteOverride==="function"&&drawArtistSpriteOverride("jackal",animal,ctx,x,y)) return;
+  const u=2;
+  const flip=animalDirection(animal)==="left"?-1:1;
+  const coats={gold:["#a7753e","#d3a45f","#5b3c28"],ashen:["#77756d","#aaa69a","#45443f"],dark:["#413c38","#68615a","#262321"]};
+  const coat=coats[animal.variant]||coats.gold;
+  const step=animal.gaitMode==="idle"?0:(Math.sin(animal.gait)>.1?1:-1);
+  const lowered=animal.attackPhase==="windup"?2:animal.attackPhase==="charge"?1:0;
+  const pose=animal.corpsePose||0;
+  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.scale(flip,1);
+  ctx.fillStyle="rgba(0,0,0,.28)";ctx.fillRect(-7*u,2*u,14*u,2*u);
+  if(animal.status==="alive"){
+    ctx.fillStyle=animal.hitFlash>0?"#b96e61":coat[0];ctx.fillRect(-6*u,-5*u,10*u,6*u);ctx.fillRect(2*u,(-7+lowered)*u,5*u,5*u);
+    ctx.fillStyle=coat[1];ctx.fillRect(-4*u,-5*u,6*u,2*u);ctx.fillRect(5*u,(-5+lowered)*u,4*u,3*u);
+    ctx.fillStyle=coat[2];ctx.fillRect(-8*u,-4*u,3*u,2*u);ctx.fillRect(-10*u,-5*u,3*u,2*u);ctx.fillRect(8*u,(-3+lowered)*u,2*u,u);
+    ctx.fillRect(3*u,(-9+lowered)*u,2*u,3*u);ctx.fillRect(6*u,(-9+lowered)*u,2*u,3*u);
+    ctx.fillStyle="#171916";ctx.fillRect(6*u,(blinkClosed(animal)?-4:-6+lowered)*u,u,u);
+    ctx.fillStyle=coat[2];ctx.fillRect((-4-step)*u,u,2*u,4*u);ctx.fillRect((2+step)*u,u,2*u,4*u);
+  }else{
+    ctx.fillStyle=coat[0];ctx.fillRect((-6+pose)*u,-3*u,12*u,5*u);ctx.fillRect((4+pose)*u,-2*u,5*u,4*u);
+    ctx.fillStyle=coat[1];ctx.fillRect((-4+pose)*u,-3*u,7*u,u);ctx.fillStyle=coat[2];ctx.fillRect((8+pose)*u,u,2*u,Math.max(1,u/2));
+    ctx.fillRect((-4-pose)*u,2*u,3*u,2*u);ctx.fillRect((2+pose)*u,2*u,3*u,2*u);
+  }
+  drawAnimalBloodMarks(ctx,animal,u);ctx.restore();
+}
+
 function drawAnimal(animal,camX,camY){
   const x=(animal.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(animal.y-camY)*VIEW_SCALE+canvas.height/2;
   if(animal.species==="crow") drawCrow(animal,x,y);
   else if(animal.species==="horse") drawHorse(animal,x,y);
   else if(animal.species==="boar") drawBoar(animal,x,y);
+  else if(animal.species==="desertLizard") drawDesertLizard(animal,x,y);
+  else if(animal.species==="jackal") drawJackal(animal,x,y);
   else drawChicken(animal,x,y);
 }
 
@@ -3128,7 +3320,8 @@ function drawLandmarkGround(landmark,camX,camY){
   const x=(landmark.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(landmark.y-camY)*VIEW_SCALE+canvas.height/2;
   if(x<-220||x>canvas.width+220||y<-220||y>canvas.height+220) return;
-  const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+  const pattern=landmarkStructurePattern(landmark);
+  if(!pattern) return;
   const originGX=Math.round(landmark.x/TILE_METERS)-Math.floor(pattern[0].length/2);
   const originGY=Math.round(landmark.y/TILE_METERS)-Math.floor(pattern.length/2);
   for(let row=0;row<pattern.length;row++){
@@ -3142,7 +3335,8 @@ function drawLandmarkGround(landmark,camX,camY){
 function visibleStructureBlocks(startGX,endGX,startGY,endGY){
   const blocks=[];
   for(const landmark of landmarks){
-    const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+    const pattern=landmarkStructurePattern(landmark);
+    if(!pattern) continue;
     const originGX=Math.round(landmark.x/TILE_METERS)-Math.floor(pattern[0].length/2);
     const originGY=Math.round(landmark.y/TILE_METERS)-Math.floor(pattern.length/2);
     for(let row=0;row<pattern.length;row++){
@@ -3162,15 +3356,16 @@ function drawLandmarkLabel(landmark,camX,camY){
   const x=(landmark.x-camX)*VIEW_SCALE+canvas.width/2;
   const y=(landmark.y-camY)*VIEW_SCALE+canvas.height/2;
   if(x<-220||x>canvas.width+220||y<-220||y>canvas.height+220) return;
-  const pattern=landmark.type==="town"?townBlocks:ruinBlocks;
+  const pattern=landmarkStructurePattern(landmark);
+  const rows=pattern?.length||(landmark.settlement==="eiswacht"?18:9);
   if(Math.hypot(landmark.x-camX,landmark.y-camY)>70){
     ctx.save();
     ctx.font="bold 11px Georgia";
     ctx.textAlign="center";
     ctx.fillStyle="#071014";
-    ctx.fillText(landmark.short,x+1,y-pattern.length*TILE_METERS*VIEW_SCALE/2-12);
+    ctx.fillText(landmark.short,x+1,y-rows*TILE_METERS*VIEW_SCALE/2-12);
     ctx.fillStyle="#f0e5c9";
-    ctx.fillText(landmark.short,x,y-pattern.length*TILE_METERS*VIEW_SCALE/2-13);
+    ctx.fillText(landmark.short,x,y-rows*TILE_METERS*VIEW_SCALE/2-13);
     ctx.restore();
   }
 }
@@ -3223,15 +3418,16 @@ function addBloodWorldEffect(x,y,size,life,color="#641719",options={}){
   return addEffect({
     type:options.pool?"bloodPool":"bloodDecal",layer:"ground",decal:true,x,y,size,baseSize:size,life,color,
     pool:!!options.pool,ownerId:options.ownerId||null,bloodAmount:options.bloodAmount||0,
-    poolCapacity:options.poolCapacity||1,poolSpread:options.poolSpread||3.2
+    poolCapacity:options.poolCapacity||1,poolSpread:options.poolSpread||3.2,poolAspect:options.poolAspect||.34
   });
 }
 
 function createCorpseBloodPool(animal){
   if(animal.bloodPoolEffectId) return state.effects.find((effect)=>effect.id===animal.bloodPoolEffectId)||null;
   const profile=corpseBloodProfile(animal);
-  const effect=addBloodWorldEffect(animal.x,animal.y,profile.poolBase,BLOOD_POOL_LIFE_SECONDS,"#511315",{
-    pool:true,ownerId:animal.id,poolCapacity:animal.bloodCapacity||profile.capacity,poolSpread:profile.poolSpread
+  const offset=profile.bodyOffset||0;
+  const effect=addBloodWorldEffect(animal.x-Math.cos(animal.heading||0)*offset,animal.y-Math.sin(animal.heading||0)*offset,profile.poolBase,BLOOD_POOL_LIFE_SECONDS,profile.deep||"#511315",{
+    pool:true,ownerId:animal.id,poolCapacity:animal.bloodCapacity||profile.capacity,poolSpread:profile.poolSpread,poolAspect:profile.poolAspect
   });
   animal.bloodPoolEffectId=effect?.id||null;
   return effect;
@@ -3243,7 +3439,7 @@ function emitGroundTrack(x,y,dir,kind="foot"){
   if(!bridge&&["river","shallow","water","deepWater"].includes(terrain.biome)){
     addEffect({type:"ripple",layer:"ground",x,y,life:.72,size:1.3});
   }else{
-    const soft={snow:[32,"#9aa7a4"],glacier:[22,"#92aaa9"],packIce:[12,"#789596"],tundra:[19,"#536a59"],beach:[24,"#806b45"],desert:[22,"#826641"],swamp:[18,"#35422f"],forest:[9,"#31452f"],jungle:[9,"#28402d"],plains:[7,"#42523a"],oasis:[8,"#3c5439"]};
+    const soft={snow:[32,"#9aa7a4"],glacier:[22,"#92aaa9"],packIce:[12,"#789596"],tundra:[19,"#536a59"],beach:[24,"#806b45"],desert:[22,"#826641"],redDesert:[24,"#734735"],saltFlat:[18,"#9c947d"],drySteppe:[17,"#6d623b"],badlands:[20,"#603c35"],swamp:[18,"#35422f"],forest:[9,"#31452f"],jungle:[9,"#28402d"],plains:[7,"#42523a"],oasis:[8,"#3c5439"]};
     const profile=soft[terrain.biome];
     if(!profile&&!roadAt(x,y)) return;
     addEffect({
@@ -3407,13 +3603,14 @@ function drawEffects(camX,camY,layer){
       }else if(effect.type==="bloodPool"){
         const spreadA=.72+(effect.seed%19)/60;
         const spreadB=.34+((effect.seed>>>5)%17)/70;
-        ctx.fillRect(Math.round(x-size),Math.round(y-size*.32),size*2,Math.max(2,Math.round(size*.64)));
-        ctx.fillRect(Math.round(x-size*spreadA),Math.round(y-size*.62),Math.max(2,Math.round(size*1.08)),Math.max(2,Math.round(size*.45)));
-        ctx.fillRect(Math.round(x-size*.2),Math.round(y+size*.08),Math.max(2,Math.round(size*(.75+spreadB))),Math.max(2,Math.round(size*.32)));
+        const aspect=effect.poolAspect||.34;
+        ctx.fillRect(Math.round(x-size),Math.round(y-size*aspect),size*2,Math.max(2,Math.round(size*aspect*2)));
+        ctx.fillRect(Math.round(x-size*spreadA),Math.round(y-size*aspect*1.85),Math.max(2,Math.round(size*1.08)),Math.max(2,Math.round(size*aspect*1.35)));
+        ctx.fillRect(Math.round(x-size*.2),Math.round(y+size*aspect*.24),Math.max(2,Math.round(size*(.75+spreadB))),Math.max(2,Math.round(size*aspect)));
         for(let lobe=0;lobe<4;lobe++){
           const phase=((effect.seed>>>(lobe*3))&31)/31*Math.PI*2;
           const lobeSize=size*(.22+((effect.seed>>>(lobe*4+2))&7)/34);
-          ctx.fillRect(Math.round(x+Math.cos(phase)*size*.72-lobeSize/2),Math.round(y+Math.sin(phase)*size*.29-lobeSize*.24),Math.max(2,Math.round(lobeSize)),Math.max(2,Math.round(lobeSize*.48)));
+          ctx.fillRect(Math.round(x+Math.cos(phase)*size*.72-lobeSize/2),Math.round(y+Math.sin(phase)*size*aspect-lobeSize*aspect*.7),Math.max(2,Math.round(lobeSize)),Math.max(2,Math.round(lobeSize*aspect*1.45)));
         }
         ctx.fillStyle="#7f211f";ctx.fillRect(Math.round(x-size*.42),Math.round(y-size*.55),Math.max(2,Math.round(size*.86)),Math.max(2,Math.round(size*.22)));
       }else{
@@ -4085,7 +4282,7 @@ function drawHeldItem(c,u,dir,player){
   }
 
   if(typeof drawArtistStaticOverride==="function"&&drawArtistStaticOverride("item_"+itemId,c,6*u,6*u,{
-    animation:active?"swing":"idle",progress:active?progress:null,pixelSize:u
+    animation:active?(itemId==="huntingBow"?"draw":"swing"):"idle",progress:active?progress:null,pixelSize:u
   })){
     c.restore();
     return;
@@ -4118,6 +4315,10 @@ function drawHeldItem(c,u,dir,player){
     c.fillRect(12*u,-2*u,4*u,4*u);
     c.fillStyle="#edf2e9";
     c.fillRect(15*u,-u,3*u,2*u);
+  }else if(itemId==="huntingBow"){
+    c.strokeStyle="#9a6538";c.lineWidth=Math.max(2,u);c.beginPath();c.arc(5*u,0,7*u,-1.25,1.25);c.stroke();
+    c.strokeStyle="#ddd4b9";c.lineWidth=Math.max(1,u*.45);c.beginPath();c.moveTo(7*u,-6*u);c.lineTo((active?1:5)*u,0);c.lineTo(7*u,6*u);c.stroke();
+    if(active){c.fillStyle="#76502f";c.fillRect(-4*u,-Math.max(1,u/2),13*u,Math.max(1,u));c.fillStyle="#d9ded7";c.fillRect(8*u,-u,3*u,2*u);}
   }
   c.restore();
 }
@@ -4518,6 +4719,18 @@ function drawInventoryItemIcon(canvas,itemId){
     c.fillStyle="#6f4632";c.fillRect(-6*unit,-6*unit,12*unit,13*unit);c.fillStyle="#a5744e";c.fillRect(-3*unit,-6*unit,6*unit,9*unit);c.fillStyle="#171c1c";c.fillRect(-2*unit,-7*unit,4*unit,4*unit);
   }else if(itemCatalog[itemId]?.icon==="spear"){
     c.rotate(-.62);c.fillStyle="#855b35";c.fillRect(-2*unit,-8*unit,3*unit,17*unit);c.fillStyle="#c6d0cc";c.fillRect(-3*unit,-10*unit,5*unit,4*unit);c.fillStyle="#eef2e9";c.fillRect(-unit,-12*unit,2*unit,3*unit);
+  }else if(itemCatalog[itemId]?.icon==="bow"){
+    c.strokeStyle="#9b6638";c.lineWidth=Math.max(2,unit);c.beginPath();c.arc(-unit,0,7*unit,-1.28,1.28);c.stroke();c.strokeStyle="#e0d5b7";c.lineWidth=Math.max(1,unit*.45);c.beginPath();c.moveTo(unit,-6*unit);c.lineTo(5*unit,0);c.lineTo(unit,6*unit);c.stroke();
+  }else if(itemCatalog[itemId]?.icon==="arrow"){
+    c.rotate(-.55);c.fillStyle="#805a35";c.fillRect(-7*unit,-unit,14*unit,2*unit);c.fillStyle="#e2e5dc";c.fillRect(6*unit,-2*unit,4*unit,4*unit);c.fillStyle="#d7cab0";c.fillRect(-9*unit,-3*unit,4*unit,2*unit);c.fillRect(-9*unit,unit,4*unit,2*unit);
+  }else if(itemCatalog[itemId]?.icon==="fish"){
+    c.fillStyle="#6f9aa0";c.fillRect(-6*unit,-3*unit,10*unit,6*unit);c.fillRect(3*unit,-2*unit,4*unit,4*unit);c.fillStyle="#bcd0c8";c.fillRect(-3*unit,-2*unit,5*unit,2*unit);c.fillStyle="#263536";c.fillRect(4*unit,-unit,unit,unit);c.fillStyle="#52757b";c.fillRect(-9*unit,-4*unit,4*unit,4*unit);c.fillRect(-9*unit,0,4*unit,4*unit);
+  }else if(itemCatalog[itemId]?.icon==="potion"){
+    c.fillStyle="#d5d0b8";c.fillRect(-2*unit,-7*unit,4*unit,3*unit);c.fillStyle="#456c72";c.fillRect(-5*unit,-4*unit,10*unit,10*unit);c.fillStyle="#86b7b0";c.fillRect(-3*unit,-2*unit,6*unit,6*unit);c.fillStyle="#d9eee0";c.fillRect(-2*unit,-unit,2*unit,3*unit);
+  }else if(itemCatalog[itemId]?.icon==="crystal"){
+    c.fillStyle="#4f9f91";c.fillRect(-3*unit,-7*unit,6*unit,13*unit);c.fillStyle="#8fe0bd";c.fillRect(-unit,-9*unit,3*unit,15*unit);c.fillStyle="#d6f4d9";c.fillRect(0,-7*unit,unit,8*unit);
+  }else if(itemCatalog[itemId]?.icon==="lantern"){
+    c.fillStyle="#725635";c.fillRect(-5*unit,-5*unit,10*unit,12*unit);c.fillStyle="#a8edbd";c.fillRect(-3*unit,-3*unit,6*unit,7*unit);c.fillStyle="#e7d9a1";c.fillRect(-4*unit,-7*unit,8*unit,2*unit);c.fillStyle="#334744";c.fillRect(-3*unit,5*unit,6*unit,2*unit);
   }
   c.restore();
 }
@@ -4882,6 +5095,7 @@ function moveMountedPlayer(dt,horse,dx,dy){
   horse.dir=state.player.dir;
   horse.heading=Math.atan2(dy,dx);
   let speed=galloping?breed.gallopSpeed:breed.rideSpeed;
+  speed*=window.__ARCHIPELAGO_V015__?.desertMovementMultiplier?.()||1;
   if(roadAt(horse.x,horse.y)) speed*=1.08;
   const oldX=horse.x;
   const oldY=horse.y;
@@ -4963,6 +5177,7 @@ function movePlayer(dt){
   dx/=len;
   dy/=len;
   let speed=PLAYER_SPEED*(sprinting?SPRINT_MULTIPLIER:1);
+  speed*=window.__ARCHIPELAGO_V015__?.desertMovementMultiplier?.()||1;
   const bridge=bridgeAt(state.player.x,state.player.y,terrain);
   if(bridge) speed*=1.08;
   else if(terrain.biome==="deepWater") speed*=state.player.drowning ? .18 : .40;
@@ -5527,7 +5742,7 @@ function sanitizePlayer(p){
     stamina:Number.isFinite(Number(p.stamina))?Math.max(0,Math.min(100,Number(p.stamina))):100,
     swimming:!!p.swimming,
     drowning:!!p.drowning,
-    heldItem:["ironSword","woodsmanAxe"].includes(p.heldItem)?p.heldItem:null,
+    heldItem:["ironSword","woodsmanAxe","huntingSpear","huntingBow"].includes(p.heldItem)?p.heldItem:null,
     actionType:["swordSwing","axeSwing"].includes(p.actionType)?p.actionType:null,
     actionProgress:Number.isFinite(Number(p.actionProgress))?Math.max(0,Math.min(1,Number(p.actionProgress))):0,
     skin:String(p.skin||"#f1c27d").slice(0,16),
@@ -5770,8 +5985,8 @@ window.addEventListener("keydown",(event)=>{
     rotateSelectedInventoryItem();
     event.preventDefault();
   }
-  if((key==="1"||key==="2"||key==="3")&&state.running&&!event.repeat){
-    const itemId=key==="1"?"ironSword":key==="2"?"woodsmanAxe":"huntingSpear";
+  if((key==="1"||key==="2"||key==="3"||key==="4")&&state.running&&!event.repeat){
+    const itemId=key==="1"?"ironSword":key==="2"?"woodsmanAxe":key==="3"?"huntingSpear":"huntingBow";
     const item=state.inventory.items.find((entry)=>entry.itemId===itemId);
     if(item) equipInventoryItem(item.id);
     event.preventDefault();
@@ -6002,6 +6217,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   roadAssetCatalog,
   drawRoadDecoration,
   softBiomeColor,
+  landmarkStructurePattern,
   structureAtGrid,
   visibleStructureBlocks,
   collisionAt,
@@ -6045,6 +6261,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   activeAnimalsNear,
   animalCellCache,
   animalStates,
+  clearAnimalRuntimeCaches,
   createAnimalState,
   findAnimalTarget,
   damageAnimal,
@@ -6095,6 +6312,8 @@ window.__ARCHIPELAGO_DEBUG__ = {
   setDebugMode,
   drawCharacter,
   drawHorse,
+  drawDesertLizard,
+  drawJackal,
   drawMountedPair,
   drawPixelName,
   publicPlayer,

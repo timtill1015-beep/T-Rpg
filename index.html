@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#071116" />
   <title>Archipelago — Echoes of the Shattered Sea</title>
-  <link rel="stylesheet" href="style.css?v=0.15" />
+  <link rel="stylesheet" href="style.css?v=0.18" />
   <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script defer src="game.js?v=0.15"></script>
-  <script defer src="v015-systems.js?v=0.15"></script>
-  <script defer src="asset-editor.js?v=0.15"></script>
+  <script defer src="game.js?v=0.18"></script>
+  <script defer src="v015-systems.js?v=0.18"></script>
+  <script defer src="v018-eiswacht.js?v=0.18"></script>
+  <script defer src="asset-editor.js?v=0.18"></script>
 </head>
 <body>
   <div id="app">
@@ -24,7 +25,7 @@
         <h1 id="gameTitle"><span>ARCHI</span>PELAGO</h1>
         <p class="subtitle">Echoes of the Shattered Sea</p>
         <div class="title-divider" aria-hidden="true"><i></i><b>✦</b><i></i></div>
-        <p class="title-copy">Reise vom ewigen Eis des Nordpols bis durch die Dünen der Sonnenwüste.</p>
+        <p class="title-copy">Reise vom ewigen Eis bis zu Salzpfannen, roten Schluchten und Sandstürmen im Süden.</p>
 
         <nav class="title-actions" aria-label="Hauptmenü">
           <button id="beginBtn" class="menu-button primary">Neues Abenteuer <span>›</span></button>
@@ -35,7 +36,7 @@
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.15</span>
+        <span class="title-version">PROTOTYP · 0.18</span>
       </div>
     </section>
 
@@ -320,6 +321,7 @@
                   <select id="assetEditorScene">
                     <option value="forest">Wald</option>
                     <option value="village">Dorf</option>
+                    <option value="desert">Wüste</option>
                     <option value="combat">Kampf</option>
                     <option value="inventory">Inventar</option>
                   </select>
@@ -453,6 +455,9 @@
         <button type="button" data-quick-item="huntingSpear" aria-label="Jagdspeer ausrüsten">
           <kbd>3</kbd><i class="quick-icon spear-icon" aria-hidden="true"></i><small>Speer</small>
         </button>
+        <button type="button" data-quick-item="huntingBow" aria-label="Jagdbogen ausrüsten">
+          <kbd>4</kbd><i class="quick-icon bow-icon" aria-hidden="true"></i><small>Bogen</small><span id="quickArrowCount" class="quick-count" aria-label="Verfügbare Pfeile">0</span>
+        </button>
       </div>
 
       <nav id="mobileToolbar" class="mobile-toolbar glass-panel" aria-label="Mobile Spielmenüs">
@@ -533,7 +538,7 @@
             <div>
               <p class="eyebrow">Kartographisches Archiv</p>
               <h2>Die zersplitterte See</h2>
-              <p>20 × 20 km · Nordpol, Sonnenwüste, Flüsse, Wege und bekannte Orte</p>
+              <p>20 × 20 km · Nordpol, fünf Wüstenzonen, Flüsse, Wege und bekannte Orte</p>
             </div>
             <button id="closeMapBtn" class="icon-button" aria-label="Karte schließen">×</button>
           </div>
@@ -597,7 +602,7 @@
             </aside>
           </div>
 
-          <footer class="inventory-footer"><kbd>I</kbd> schließen <span>·</span> <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> Werkzeug wechseln <span>·</span> <kbd>LMB</kbd> benutzen</footer>
+          <footer class="inventory-footer"><kbd>I</kbd> schließen <span>·</span> <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd> Werkzeug wechseln <span>·</span> <kbd>LMB</kbd> benutzen</footer>
         </div>
       </div>
 

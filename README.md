@@ -2,14 +2,23 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.19)
+## Aktueller Stand (0.20)
+
+- **Treibholz-Maßstabs-Pass:** Haus-PNGs und Rucksack wurden auf deutlich kleinere native Pixelauflösungen reduziert und werden ausschließlich pixelklar hochskaliert; die drei Häuser erscheinen in der Welt gleichzeitig größer und wuchtiger
+- das starre Wegkreuz im Dorfkern wurde durch fünf unregelmäßige, gestufte Laufpfade ersetzt
+- Innenräume bestehen nun aus einem modularen Pack echter 8×8-Pixel-Texturen; ein Raumfeld entspricht exakt einem Meter, Möbel werden aus Meterfeldern zusammengesetzt und Kissen, Teppiche sowie Stoffe erhalten hausabhängige Akzentfarben
+- Dorfbewohner bewegen sich beschleunigt und geglättet, weichen Hindernissen seitlich aus und trennen ihre Kollisionen pro Achse, statt am ersten Objekt stehenzubleiben
+- neues Skyrim-/Oblivion-artiges Dialogbild: hervorgehobene große Figur rechts, weich verdunkelte und unscharfe Welt, ausrollender Text, Vorspulen per Tippen sowie animierte Redehaltung
+- Borin, Edda und Taren besitzen datengetriebene Gesprächsbäume mit mehreren Ebenen, Unterthemen und Rückwegen; Miras Treibholz-Chronik verzweigt in Gründung, Hausrecht und Gezeitenkarte
+- entschlacktes HUD ohne permanente Steuerungsleiste und doppeltes Questfenster; auf Mobilgeräten werden Kompass, Minimap und Zielkarte zugunsten der Weltmarkierung ausgeblendet
+- mobile Bewegung verwendet einen einzelnen analogen Joystick mit Totzone, freier Laufrichtung, variabler Geschwindigkeit und gleichzeitiger Sprint-/Aktionsbedienung
 
 - **Treibholz vollständig überarbeitet:** drei eigens erzeugte, auf Endauflösung skalierte Pixelart-Gebäude, deutlich mehr Küstendetails, freie Dorfwege und ein gerodetes Banditenlager außerhalb des Waldes
 - alle Treibholz-Häuser sind betretbar und besitzen eigene Innenräume, Kollisionen und Funktionen wie Betten, Herd, Handel, Fangbuch, Anschlagbrett und Werkplätze
 - Mira, Borin, Edda und Taren folgen echten Tagesplänen, laufen zwischen Arbeitsorten, Halle und Häusern, essen gemeinsam und schlafen nachts sichtbar in Innenräumen
 - neues bildschirmfüllendes Dialogsystem mit NPC-Nahansicht, Rolle, Stimmung, aktueller Tätigkeit und verzweigten Themen; Eiswacht verwendet dieselbe Darstellung
 - neuer offener Pixelart-Rucksack als Inventarhintergrund, sichtbare angelegte Rüstung an Spieler, Dorfbewohnern und Banditen sowie überarbeiteter geradliniger Speerstoß
-- gut lesbare goldene Questmarker in HUD und Welt, einschließlich Entfernung und Richtung; das Quest-HUD bleibt auf Mobilgeräten direkt bedienbar
+- gut lesbare goldene Questmarker mit Entfernung und Richtung; auf Mobilgeräten bleibt die Markierung direkt in der Welt und benötigt kein zweites Questfenster
 - robuster Start-Entstucker für Tiergruppen mit Gebäudeprüfung und Laufzeitrettung festgelaufener Tiere; Außenwelt-KI pausiert außerdem in Innenräumen
 - Touch-Eingaben gegen Doppelauslösung abgesichert, Mehrfingersteuerung stabilisiert und nicht anwendbare Außenweltaktionen in Innenräumen deaktiviert
 
@@ -96,7 +105,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - datengetriebene Tierarten, Verhaltenszustände, Trefferwerte, Loottabellen, Itemkatalog, Equipment-Regeln und Aktions-Handler als Basis für weitere Tiere, Waffen, Rüstung, Ressourcen, Behälter und Beute
 - getrennte Terrain-Ebene mit blockweise verschobenem Bildcache, begrenzte Welt-/Partikel-Caches und gedrosselte HUD-/Kartenupdates für deutlich stabilere Bildraten
 - Minimap und große beschriftete Weltkarte mit Legende
-- mobile Touch-Steuerung mit Mehrfinger-D-Pad, gedrückt gehaltenem Sprint, großen Aktions-/Interaktionstasten sowie direkten Buttons für Inventar, Karte und Pause; HUD und Overlays berücksichtigen Hochformat, Querformat und Display-Safe-Areas
+- mobile Touch-Steuerung mit analogem Lauf-Joystick, gleichzeitig gedrückt gehaltenem Sprint, großen Aktions-/Interaktionstasten sowie direkten Buttons für Inventar, Karte und Pause; HUD und Overlays berücksichtigen Hochformat, Querformat und Display-Safe-Areas
 - Host-/Join-Lobby mit sechsstelligem Code über PeerJS
 - integriertes Asset Studio für Nicht-Programmierer mit neun übersichtlichen Kategorien und dem vollständigen aktuellen Renderkatalog: Figuren, Tierbasen und Varianten einschließlich Wüstenechsen/Schakalen, zehn Frisuren, alle Waffen/Items, sämtliche Terrain- und Bau-Blöcke, Baumteile sowie alte und neue Weltobjekte; Pixelwerkzeuge, frei verwaltbare Animationsclips/Frames/FPS, Live-Vorschau, bis zu zwölf sortierbare Ebenen, Deckkraft, Undo/Redo und validierter JSON-Transfer bleiben enthalten
 

@@ -293,3 +293,43 @@ input:focus,select:focus{border-color:var(--gold);box-shadow:0 0 0 2px #d6aa5220
 @media (hover:none) and (pointer:coarse) and (max-height:540px), (max-width:700px) and (max-height:540px){
   .quest-hud{bottom:calc(max(8px,env(safe-area-inset-bottom)) + 143px);width:min(190px,49vw)}.quest-hud.expanded p{display:none}.dialog-card{grid-template-columns:32% 1fr;grid-template-rows:1fr}.dialog-portrait-panel{border-right:1px solid #6e6548;border-bottom:0}.dialog-content{padding:10px 12px}.dialog-copy{min-height:48px;margin:5px 0}.dialog-copy #dialogText{font-size:12px}.dialog-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.dialog-actions button{min-height:42px;padding:7px 25px 7px 9px;font-size:11px}.dialog-activity,.dialog-hint{display:none}
 }
+
+/* 0.20 · clear HUD, analog touch and meter-true Treibholz presentation */
+.backpack-panel{image-rendering:pixelated}
+.control-strip,.quest-hud{display:none!important}
+.player-hud{width:232px;height:64px;padding:6px;gap:7px}.player-hud #playerPortrait{width:42px;height:50px}.player-name-row{margin-bottom:5px}.player-name-row strong{font-size:12px}.meter{height:12px;margin-bottom:3px}.meter span{line-height:10px}
+.compass{width:220px;height:36px}.world-hud{width:158px;min-height:58px;grid-template-columns:1fr;padding:7px 9px}.world-hud div{border:0;padding:4px}.world-hud div:nth-of-type(2),.world-hud div:nth-of-type(3){display:none}.world-hud>span{top:-11px}
+.minimap-frame{width:154px;padding:5px}.minimap{width:142px;height:142px}.minimap-head,.minimap-footer{display:none}.quickbar button{width:56px;height:56px}.quest-world-marker{top:62px}.inside-building .quickbar{display:none!important}
+
+.dialog-overlay{display:block;padding:0!important;background:rgba(2,8,10,.68);backdrop-filter:blur(6px) brightness(.58)}
+.dialog-card{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;display:grid;grid-template-columns:minmax(420px,58%) minmax(300px,42%);padding:0;overflow:hidden;border:0;background:transparent;box-shadow:none}
+.dialog-content{grid-column:1;grid-row:1;align-self:center;max-height:88vh;margin:3vh 0 3vh clamp(20px,5vw,88px);padding:28px 32px 24px;overflow:auto;border:1px solid #74623e;background:linear-gradient(145deg,rgba(13,34,37,.95),rgba(5,17,20,.94));box-shadow:0 28px 80px #000b}
+.dialog-portrait-panel{grid-column:2;grid-row:1;position:relative;overflow:visible;border:0;background:transparent}
+.dialog-portrait-panel:before{display:none}
+#dialogPortrait{position:absolute;left:auto;right:clamp(0px,3vw,48px);top:50%;bottom:auto;width:min(38vw,560px);height:auto;aspect-ratio:7/9;translate:0 -50%;filter:drop-shadow(0 22px 24px #000a);image-rendering:pixelated}
+.dialog-portrait-caption{left:auto;right:clamp(14px,4vw,68px);bottom:5vh;width:min(300px,34vw);background:#071215e8}
+.dialog-content .dialog-copy{cursor:pointer}.dialog-copy #dialogText.typing:after{content:"▮";display:inline-block;margin-left:3px;color:#e0bd70;animation:dialogCaret .7s steps(1) infinite}.dialog-actions{transition:opacity .16s,translate .16s}.dialog-actions.typing{visibility:hidden;opacity:0;translate:0 8px;pointer-events:none}
+@keyframes dialogCaret{50%{opacity:0}}
+
+@media (hover:none) and (pointer:coarse), (max-width:700px){
+  .world-hud,.compass,.minimap-frame,.quest-hud,.quest-world-marker{display:none!important}
+  .player-hud{left:max(6px,env(safe-area-inset-left));top:max(6px,env(safe-area-inset-top));width:min(176px,calc(100% - 176px));height:50px;padding:5px}.player-hud #playerPortrait{display:none}.player-name-row{margin-bottom:2px}.player-name-row strong{font-size:10px}.meter{height:10px;margin-bottom:2px}.meter span{font-size:6px;line-height:8px}
+  .mobile-toolbar{right:max(6px,env(safe-area-inset-right));top:max(6px,env(safe-area-inset-top));gap:3px;padding:3px}.mobile-toolbar button{width:38px;height:38px}.mobile-toolbar button span{display:none}.mobile-toolbar button:disabled{display:none}
+  .quickbar{left:50%;right:auto;top:calc(max(6px,env(safe-area-inset-top)) + 54px);translate:-50% 0;flex-direction:row;gap:3px;padding:3px}.quickbar button{width:40px;height:40px}.quickbar kbd{font-size:6px}.quick-icon{scale:.66}
+  .mobile-controls{padding:0 max(9px,env(safe-area-inset-right)) max(9px,env(safe-area-inset-bottom)) max(9px,env(safe-area-inset-left))}
+  .mobile-joystick{--joy-x:0px;--joy-y:0px;width:144px;height:144px;display:grid;place-items:center;align-content:end;gap:3px;pointer-events:auto;touch-action:none;-webkit-user-select:none;user-select:none}
+  .mobile-joystick .joystick-ring{position:relative;width:118px;height:118px;border:2px solid #718788b8;border-radius:50%;background:radial-gradient(circle,#20383dc7 0 28%,#0b1a1edb 30% 66%,#071317b5 68%);box-shadow:0 7px 18px #000b,inset 0 0 18px #000}
+  .mobile-joystick .joystick-ring:before,.mobile-joystick .joystick-ring:after{content:"";position:absolute;left:50%;top:50%;background:#93a5a333;translate:-50% -50%}.mobile-joystick .joystick-ring:before{width:72%;height:1px}.mobile-joystick .joystick-ring:after{width:1px;height:72%}
+  .mobile-joystick i{position:absolute;left:50%;top:50%;width:48px;height:48px;border:2px solid #b5c0b8;border-radius:50%;translate:calc(-50% + var(--joy-x)) calc(-50% + var(--joy-y));background:radial-gradient(circle at 36% 30%,#627477,#263b3f 58%,#102124);box-shadow:0 5px 11px #000b,inset 0 2px #ffffff24;transition:translate .06s}
+  .mobile-joystick.active i{border-color:#f0ce76;transition:none}.mobile-joystick>span{color:#aab6b1;font:7px "Courier New",monospace;letter-spacing:.12em;text-transform:uppercase;text-shadow:0 2px #000}
+  .mobile-action-pad{width:138px;height:142px}.mobile-attack{width:76px;height:76px}.mobile-interact,.mobile-sprint{width:52px;height:52px}.mobile-dodge{width:44px;height:44px}
+  .interaction-hint,.toast{bottom:calc(max(9px,env(safe-area-inset-bottom)) + 148px)}
+  .dialog-card{display:block}.dialog-portrait-panel{position:absolute;z-index:1;inset:0 0 auto 34%;height:51%;border:0}.dialog-portrait-panel #dialogPortrait{right:-3vw;top:49%;width:min(64vw,360px);translate:0 -50%}.dialog-portrait-caption{display:none}
+  .dialog-content{position:absolute;z-index:2;left:0;right:0;bottom:0;width:auto;max-height:66%;margin:0;padding:13px 14px max(10px,env(safe-area-inset-bottom));border-width:1px 0 0;overflow:auto;background:linear-gradient(180deg,rgba(8,25,28,.91),rgba(3,13,16,.98) 35%)}
+  .dialog-content>header{padding-bottom:7px}.dialog-content h2{font-size:27px!important}.dialog-activity{margin-top:6px}.dialog-copy{min-height:58px;margin:8px 0 10px;padding-left:22px}.dialog-copy #dialogText{font-size:13px;line-height:1.52}.dialog-actions{gap:5px}.dialog-actions button{min-height:44px;padding:8px 28px 8px 11px;font-size:12px}.dialog-hint{display:none}
+}
+
+@media (hover:none) and (pointer:coarse) and (max-height:540px), (max-width:700px) and (max-height:540px){
+  .mobile-joystick{width:126px;height:126px}.mobile-joystick .joystick-ring{width:102px;height:102px}.mobile-joystick i{width:42px;height:42px}.mobile-action-pad{width:126px;height:126px}.mobile-attack{width:70px;height:70px}.mobile-interact,.mobile-sprint{width:47px;height:47px}.mobile-dodge{width:40px;height:40px}
+  .dialog-portrait-panel{left:58%;height:100%}.dialog-portrait-panel #dialogPortrait{right:0;top:50%;width:min(40vw,300px)}.dialog-content{top:0;right:38%;bottom:0;max-height:none;padding:10px 12px;justify-content:center}.dialog-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.dialog-copy{min-height:44px;margin:5px 0}.dialog-activity{display:none}
+}

@@ -283,6 +283,7 @@ const state = {
 // vice versa). Pointer IDs make diagonal movement plus sprint/attack possible.
 const keyboardHeldKeys = new Set();
 const mobileHeldPointers = new Map();
+const mobileJoystickVector={x:0,y:0,magnitude:0,pointerId:null};
 
 function touchControlsActive(){
   return window.matchMedia?.("(hover:none) and (pointer:coarse)").matches
@@ -316,6 +317,22 @@ function releaseAllMobileControls(){
     button.setAttribute("aria-pressed","false");
   }
   for(const key of keys) if(!keyboardHeldKeys.has(key)) state.keys.delete(key);
+  resetMobileJoystick();
+}
+
+function movementInputVector(){
+  let x=0,y=0;
+  if(state.keys.has("a")||state.keys.has("arrowleft")) x-=1;
+  if(state.keys.has("d")||state.keys.has("arrowright")) x+=1;
+  if(state.keys.has("w")||state.keys.has("arrowup")) y-=1;
+  if(state.keys.has("s")||state.keys.has("arrowdown")) y+=1;
+  if(!x&&!y&&mobileJoystickVector.magnitude>.04) return {x:mobileJoystickVector.x,y:mobileJoystickVector.y,magnitude:mobileJoystickVector.magnitude};
+  const length=Math.hypot(x,y);return length?{x:x/length,y:y/length,magnitude:1}:{x:0,y:0,magnitude:0};
+}
+
+function resetMobileJoystick(){
+  mobileJoystickVector.x=0;mobileJoystickVector.y=0;mobileJoystickVector.magnitude=0;mobileJoystickVector.pointerId=null;
+  const joystick=$("mobileJoystick");if(joystick){joystick.style.setProperty("--joy-x","0px");joystick.style.setProperty("--joy-y","0px");joystick.classList.remove("active");}
 }
 
 function mobileHaptic(pattern=8){
@@ -4448,10 +4465,13 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   // grid. Fractional units were the main source of the soft, smeared player.
   const u=Math.max(1,Math.round(scale));
   const moving=!!p.moving;
+  const talking=!!p.talking;
   const clock=Number(p.walkTime)||0;
+  const speechClock=typeof performance!=="undefined"?performance.now()/1000:clock;
   const frames=[0,1,0,-1];
   const step=moving?frames[Math.floor(clock*7)%frames.length]:0;
-  const bob=moving && Math.abs(step)===1?-1:0;
+  const talkGesture=talking?[0,-2,-1,0][Math.floor(speechClock*4)%4]:0;
+  const bob=moving&&Math.abs(step)===1?-1:talking&&Math.floor(speechClock*5)%2?-1:0;
   const dir=p.dir||"down";
   const skin=p.skin||"#f1c27d";
   const shirt=p.shirt||"#315d9b";
@@ -4466,7 +4486,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   const blinking=blinkClosed(p);
 
   c.save();
-  c.translate(Math.round(x-8*u),Math.round(y-21*u+bob*u));
+  c.translate(Math.round(x-8*u+(talking?Math.sin(speechClock*2.4)*u*.28:0)),Math.round(y-21*u+bob*u));
 
   if(!portraitMode){
     c.fillStyle="rgba(0,0,0,.30)";
@@ -4509,12 +4529,13 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle="#8e6d37";
     c.fillRect(6*u,15*u,6*u,1*u);
     c.fillStyle=skin;
-    c.fillRect((10+step*.5)*u,10*u,2*u,5*u);
+    c.fillRect((10+step*.5)*u,(10+talkGesture)*u,2*u,5*u);
     c.fillRect(6*u,3*u,6*u,7*u);
     drawHair(c,u,hairStyle,hair,"side");
     c.fillStyle=blinking?shade(skin,-42):eyes;
     c.fillRect(10*u,(blinking?7:6)*u,blinking?2*u:u,Math.max(1,u));
     drawBeard(c,u,beardStyle,beard,"side");
+    if(talking&&Math.floor(speechClock*9)%2===0){c.fillStyle=shade(skin,-48);c.fillRect(11*u,8*u,u,u);}
   }else if(dir==="down"){
     // Front view: the cloak sits behind the body and only shows at the sides.
     drawBackHair(c,u,hairStyle,hair,"down");
@@ -4545,8 +4566,8 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle="#8e6d37";
     c.fillRect(4*u,15*u,8*u,1*u);
     c.fillStyle=skin;
-    c.fillRect(2*u,(10+step*.5)*u,2*u,5*u);
-    c.fillRect(12*u,(10-step*.5)*u,2*u,5*u);
+    c.fillRect(2*u,(10+step*.5+talkGesture)*u,2*u,5*u);
+    c.fillRect(12*u,(10-step*.5-talkGesture*.5)*u,2*u,5*u);
     c.fillRect(4*u,3*u,8*u,7*u);
     drawHair(c,u,hairStyle,hair,"down");
     c.fillStyle=blinking?shade(skin,-42):eyes;
@@ -4554,6 +4575,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(6*u,eyeY,blinking?2*u:u,Math.max(1,u));
     c.fillRect(10*u,eyeY,blinking?2*u:u,Math.max(1,u));
     drawBeard(c,u,beardStyle,beard,"down");
+    if(talking&&Math.floor(speechClock*9)%2===0){c.fillStyle=shade(skin,-52);c.fillRect(7*u,8*u,2*u,u);}
   }else{
     // Back view: shoes point north, while the cloak correctly covers the back
     // between the shoulders and its hem. Arms and head remain in front of it.
@@ -4582,8 +4604,8 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(4*u,17*u,8*u,1*u);
     drawVisibleArmor(c,u,visibleArmor,"up");
     c.fillStyle=skin;
-    c.fillRect(2*u,(10+step*.5)*u,2*u,5*u);
-    c.fillRect(12*u,(10-step*.5)*u,2*u,5*u);
+    c.fillRect(2*u,(10+step*.5+talkGesture)*u,2*u,5*u);
+    c.fillRect(12*u,(10-step*.5-talkGesture*.5)*u,2*u,5*u);
     c.fillRect(4*u,3*u,8*u,7*u);
     drawHair(c,u,hairStyle,hair,"up");
   }
@@ -5147,7 +5169,7 @@ function horseCanOccupy(horse,x,y){
   return true;
 }
 
-function moveMountedPlayer(dt,horse,dx,dy){
+function moveMountedPlayer(dt,horse,dx,dy,inputStrength=1){
   const moving=!!(dx||dy);
   const wantsGallop=state.keys.has("shift")&&moving;
   const galloping=wantsGallop&&horse.mountStamina>1;
@@ -5175,7 +5197,7 @@ function moveMountedPlayer(dt,horse,dx,dy){
   else state.player.dir=dy>0?"down":"up";
   horse.dir=state.player.dir;
   horse.heading=Math.atan2(dy,dx);
-  let speed=galloping?breed.gallopSpeed:breed.rideSpeed;
+  let speed=(galloping?breed.gallopSpeed:breed.rideSpeed)*Math.max(.22,inputStrength);
   speed*=window.__ARCHIPELAGO_V015__?.desertMovementMultiplier?.()||1;
   if(roadAt(horse.x,horse.y)) speed*=1.08;
   const oldX=horse.x;
@@ -5213,17 +5235,12 @@ function moveMountedPlayer(dt,horse,dx,dy){
 function movePlayer(dt){
   if(state.paused||state.mapOpen||state.inventoryOpen||state.dead||window.__ARCHIPELAGO_V015__?.isRolling?.()) return;
   if(window.__ARCHIPELAGO_V015__?.moveInteriorPlayer?.(dt)) return;
-  let dx=0;
-  let dy=0;
-  if(state.keys.has("w")||state.keys.has("arrowup")) dy-=1;
-  if(state.keys.has("s")||state.keys.has("arrowdown")) dy+=1;
-  if(state.keys.has("a")||state.keys.has("arrowleft")) dx-=1;
-  if(state.keys.has("d")||state.keys.has("arrowright")) dx+=1;
+  const input=movementInputVector();let dx=input.x,dy=input.y;const inputStrength=input.magnitude;
   state.player.moving=!!(dx||dy);
 
   const mounted=state.mountedHorseId&&animalStates.get(state.mountedHorseId);
   if(mounted){
-    moveMountedPlayer(dt,mounted,dx,dy);
+    moveMountedPlayer(dt,mounted,dx,dy,inputStrength);
     return;
   }
   if(state.mountedHorseId) state.mountedHorseId=null;
@@ -5258,7 +5275,7 @@ function movePlayer(dt){
   const len=Math.hypot(dx,dy);
   dx/=len;
   dy/=len;
-  let speed=PLAYER_SPEED*(sprinting?SPRINT_MULTIPLIER:1);
+  let speed=PLAYER_SPEED*(sprinting?SPRINT_MULTIPLIER:1)*Math.max(.18,inputStrength);
   speed*=window.__ARCHIPELAGO_V015__?.desertMovementMultiplier?.()||1;
   const bridge=bridgeAt(state.player.x,state.player.y,terrain);
   if(bridge) speed*=1.08;
@@ -6196,6 +6213,24 @@ function bindMobileHoldButton(button){
   button.addEventListener("contextmenu",(event)=>event.preventDefault());
 }
 
+function bindMobileJoystick(joystick){
+  if(!joystick) return;const ring=joystick.querySelector(".joystick-ring");
+  const update=(event)=>{
+    if(mobileJoystickVector.pointerId!==event.pointerId) return;event.preventDefault();
+    const rect=ring.getBoundingClientRect();const cx=rect.left+rect.width/2,cy=rect.top+rect.height/2;const limit=rect.width*.31;
+    let dx=event.clientX-cx,dy=event.clientY-cy;const distance=Math.hypot(dx,dy);if(distance>limit){dx=dx/distance*limit;dy=dy/distance*limit;}
+    const raw=Math.min(1,distance/limit);const magnitude=raw<.12?0:(raw-.12)/.88;
+    mobileJoystickVector.x=magnitude?dx/(Math.hypot(dx,dy)||1):0;mobileJoystickVector.y=magnitude?dy/(Math.hypot(dx,dy)||1):0;mobileJoystickVector.magnitude=magnitude;
+    joystick.style.setProperty("--joy-x",Math.round(dx)+"px");joystick.style.setProperty("--joy-y",Math.round(dy)+"px");
+  };
+  const release=(event)=>{if(mobileJoystickVector.pointerId!==event.pointerId)return;try{joystick.releasePointerCapture(event.pointerId);}catch{}resetMobileJoystick();};
+  joystick.addEventListener("pointerdown",(event)=>{
+    if(!state.running||state.paused||state.mapOpen||state.inventoryOpen||state.dead||mobileJoystickVector.pointerId!==null) return;
+    event.preventDefault();event.stopPropagation();mobileJoystickVector.pointerId=event.pointerId;joystick.classList.add("active");try{joystick.setPointerCapture(event.pointerId);}catch{}update(event);mobileHaptic(5);
+  });
+  joystick.addEventListener("pointermove",update);joystick.addEventListener("pointerup",release);joystick.addEventListener("pointercancel",release);joystick.addEventListener("lostpointercapture",release);joystick.addEventListener("contextmenu",(event)=>event.preventDefault());
+}
+
 function bindMobileTapButton(button,handler,haptic=8){
   let activePointer=null;
   let lastActivation=-999;
@@ -6236,6 +6271,7 @@ function bindMobileTapButton(button,handler,haptic=8){
 window.addEventListener("pointerup",(event)=>releaseMobilePointer(event.pointerId),{passive:true});
 window.addEventListener("pointercancel",(event)=>releaseMobilePointer(event.pointerId),{passive:true});
 
+bindMobileJoystick($("mobileJoystick"));
 for(const button of document.querySelectorAll("[data-mobile-key]")) bindMobileHoldButton(button);
 for(const button of document.querySelectorAll("[data-mobile-action]")){
   const action=button.dataset.mobileAction;
@@ -6321,6 +6357,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   canOccupy,
   isWalkable,
   movePlayer,
+  movementInputVector,
   updateWorldReactions,
   nearbyInteraction,
   updateInteractionHint,

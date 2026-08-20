@@ -338,7 +338,7 @@ function updateMobileControlState(){
   const horseButton=document.querySelector('[data-mobile-action="horse-command"]');
   const horseLabel=$("mobileHorseCommandLabel");
   if(horseButton){
-    horseButton.disabled=!commandHorse;
+    horseButton.disabled=!commandHorse||!!window.__ARCHIPELAGO_V015__?.isInterior?.();
     horseButton.classList.toggle("active",commandHorse?.command==="stay");
     horseButton.setAttribute("aria-pressed",String(commandHorse?.command==="stay"));
   }
@@ -1159,6 +1159,15 @@ function nearLandmarkGrid(gx,gy,padding=0){
   return false;
 }
 
+const gameplayTreeClearings=[
+  {x:9000,y:11400,rx:190,ry:150},
+  {x:9455,y:11605,rx:154,ry:112}
+];
+function insideGameplayTreeClearing(gx,gy){
+  const x=(gx+.5)*TILE_METERS,y=(gy+.5)*TILE_METERS;
+  return gameplayTreeClearings.some((clearing)=>{const dx=(x-clearing.x)/clearing.rx,dy=(y-clearing.y)/clearing.ry;return dx*dx+dy*dy<1;});
+}
+
 function treeForPlot(plotX,plotY){
   const cacheKey=plotX+","+plotY;
   if(treePlotCache.has(cacheKey)) return treePlotCache.get(cacheKey);
@@ -1166,7 +1175,7 @@ function treeForPlot(plotX,plotY){
   const speciesSeed=hash2(plotX,plotY,1703);
   const gx=plotX*TREE_PLOT_TILES+1+Math.floor(hash2(plotX,plotY,1702)*2);
   const gy=plotY*TREE_PLOT_TILES+2;
-  if(nearLandmarkGrid(gx,gy,3)){
+  if(nearLandmarkGrid(gx,gy,3)||insideGameplayTreeClearing(gx,gy)){
     cacheValue(treePlotCache,cacheKey,null,TREE_CACHE_LIMIT);
     return null;
   }
@@ -2075,7 +2084,7 @@ function animalDirection(animal){
   return vy<0?"up":"down";
 }
 
-function spawnSeparationAllowed(species,x,y,avoid=[]){
+function spawnSeparationAllowed(species,x,y,avoid=[],ignoreId=null){
   const radius=animalCatalog[species]?.radius||2;
   const checked=new Set();
   const candidates=[];
@@ -2086,7 +2095,7 @@ function spawnSeparationAllowed(species,x,y,avoid=[]){
     candidates.push(animal);
   }
   for(const animal of candidates){
-    if(checked.has(animal.id)) continue;
+    if(animal.id===ignoreId||checked.has(animal.id)) continue;
     checked.add(animal.id);
     const otherRadius=animalCatalog[animal.species]?.radius||2;
     const minimum=(radius+otherRadius)*1.12+1.1;
@@ -2107,8 +2116,9 @@ function animalSpawnAllowed(species,x,y,owned=false,avoid=[]){
     const py=y+sy*radius;
     const gx=Math.floor(px/TILE_METERS);
     const gy=Math.floor(py/TILE_METERS);
-    if(structureAtGrid(gx,gy)||roadDecorationAtGrid(gx,gy)||treeOccupiesGrid(gx,gy)||fallenTreeCollisionAt(px,py)) return false;
+    if(structureAtGrid(gx,gy)||roadDecorationAtGrid(gx,gy)||treeOccupiesGrid(gx,gy)||fallenTreeCollisionAt(px,py)||window.__ARCHIPELAGO_V015__?.collisionAt?.(px,py)) return false;
   }
+  if(!owned&&Math.hypot(x-state.player.x,y-state.player.y)<radius+PLAYER_RADIUS+7) return false;
   return spawnSeparationAllowed(species,x,y,avoid);
 }
 
@@ -2204,7 +2214,21 @@ function createAnimalState(species,cellX,cellY,index,point,overrides={}){
     owned:false,riderId:null,mountStamina:100,command:"follow"
   };
   Object.assign(animal,overrides);
+  animal.spawnSanitized=false;animal.stuckFor=0;animal.lastUnstuckAt=Number(animal.lastUnstuckAt)||-999;
   return cacheAnimalState(id,animal);
+}
+
+function sanitizeAnimalSpawn(animal,nearby=[]){
+  if(!animal||animal.spawnSanitized||animal.status!=="alive"||animal.species==="crow"){if(animal)animal.spawnSanitized=true;return;}
+  const valid=animalCanStand(animal,animal.x,animal.y)&&spawnSeparationAllowed(animal.species,animal.x,animal.y,nearby,animal.id);
+  if(valid){animal.spawnSanitized=true;return;}
+  const seed=stableTextHash(animal.id);const originX=animal.x,originY=animal.y;
+  for(let ring=1;ring<=14;ring++) for(let slot=0;slot<16;slot++){
+    const angle=slot/16*Math.PI*2+hash2(seed,ring,8361)*.34;const x=originX+Math.cos(angle)*ring*TILE_METERS*1.18,y=originY+Math.sin(angle)*ring*TILE_METERS*1.18;
+    if(!animalCanStand(animal,x,y)||!spawnSeparationAllowed(animal.species,x,y,nearby,animal.id)) continue;
+    animal.x=x;animal.y=y;animal.homeX=x;animal.homeY=y;animal.vx=0;animal.vy=0;animal.heading=angle;animal.wanderTimer=.35;animal.spawnSanitized=true;return;
+  }
+  animal.spawnSanitized=true;
 }
 
 function ensureTreeCrows(tree){
@@ -2324,6 +2348,7 @@ function animalsInRect(left,top,right,bottom){
       result.push(horse);
     }
   }
+  for(const animal of result) sanitizeAnimalSpawn(animal,result);
   return result;
 }
 
@@ -2686,6 +2711,17 @@ function updateLivingAnimal(animal,dt){
   }
   animal.dir=animalDirection(animal);
   const moved=Math.hypot(animal.x-oldX,animal.y-oldY);
+  const expectedToMove=speed>.75&&animal.attackPhase!=="windup"&&animal.idleUntil<=state.elapsed;
+  animal.stuckFor=expectedToMove&&moved<.012?(animal.stuckFor||0)+dt:Math.max(0,(animal.stuckFor||0)-dt*2.5);
+  if(animal.stuckFor>.58&&state.elapsed-(animal.lastUnstuckAt||-999)>.8){
+    const base=animal.heading+hash2(stableTextHash(animal.id),Math.floor(state.elapsed*3),8477)*Math.PI;let recovered=false;
+    for(let ring=1;ring<=7&&!recovered;ring++) for(let slot=0;slot<12;slot++){
+      const angle=base+slot/12*Math.PI*2;const x=oldX+Math.cos(angle)*ring*TILE_METERS*.72,y=oldY+Math.sin(angle)*ring*TILE_METERS*.72;
+      if(!animalCanStand(animal,x,y)||!spawnSeparationAllowed(animal.species,x,y,[],animal.id)) continue;
+      animal.x=x;animal.y=y;animal.homeX=x;animal.homeY=y;animal.heading=angle;animal.vx=Math.cos(angle)*Math.max(4,speed*.35);animal.vy=Math.sin(angle)*Math.max(4,speed*.35);animal.wanderTimer=.35;recovered=true;
+    }
+    animal.lastUnstuckAt=state.elapsed;animal.stuckFor=0;
+  }
   if(charging&&animal.attackDamageActive&&Math.hypot(state.player.x-animal.x,state.player.y-animal.y)<meta.radius+PLAYER_RADIUS+2.4) injurePlayerFromBoar(animal);
   advanceAnimalGait(animal,moved,dt);
   if(animal.species==="horse"&&moved>.02){
@@ -2810,7 +2846,7 @@ function updateAnimalRagdoll(animal,dt){
 }
 
 function updateAnimals(dt){
-  if(state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
+  if(window.__ARCHIPELAGO_V015__?.isInterior?.()||state.paused||state.mapOpen||state.inventoryOpen||state.dead) return;
   pruneDistantCrows();
   const active=activeAnimalsNear(state.player.x,state.player.y);
   for(const animal of active){
@@ -3881,6 +3917,10 @@ function drawWorld(){
   const w=canvas.width;
   const h=canvas.height;
   ctx.clearRect(0,0,w,h);
+  if(window.__ARCHIPELAGO_V015__?.isInterior?.()){
+    window.__ARCHIPELAGO_V015__.drawOverlay?.(state.camera.x,state.camera.y);
+    return;
+  }
   const cameraOffset=window.__ARCHIPELAGO_V015__?.cameraOffset?.()||{x:0,y:0};
   const camX=state.camera.x+cameraOffset.x;
   const camY=state.camera.y+cameraOffset.y;
@@ -4240,19 +4280,52 @@ function drawOutfitDetails(c,u,style,dir,shirt){
   }
 }
 
+function visibleArmorForCharacter(player){
+  if(player.visibleArmor) return player.visibleArmor;
+  if(player===state.player||(player.id&&player.id===state.player.id)){
+    const armor=inventoryItemById(state.inventory.equipment.body);
+    return armor?.itemId||null;
+  }
+  return null;
+}
+
+function drawVisibleArmor(c,u,armor,dir){
+  if(!armor) return;const side=dir==="side";const back=dir==="up";
+  if(armor==="leatherVest"){
+    c.fillStyle="#68462e";c.fillRect((side?6:4)*u,9*u,(side?6:8)*u,7*u);c.fillStyle="#a87945";c.fillRect((side?7:5)*u,10*u,(side?4:6)*u,2*u);c.fillStyle="#3d2c22";c.fillRect((side?7:5)*u,14*u,(side?5:6)*u,u);c.fillStyle="#d1a85f";c.fillRect((side?9:7)*u,9*u,u,7*u);
+  }else if(armor==="paddedVest"){
+    c.fillStyle="#59635e";c.fillRect((side?6:4)*u,9*u,(side?6:8)*u,7*u);c.fillStyle="#7f8a82";for(let y=10;y<16;y+=2)c.fillRect((side?7:5)*u,y*u,(side?4:6)*u,u);c.fillStyle="#342f2b";c.fillRect((side?7:5)*u,15*u,(side?5:6)*u,u);
+  }else if(armor==="guardArmor"){
+    c.fillStyle="#4e5758";c.fillRect((side?6:4)*u,9*u,(side?6:8)*u,7*u);c.fillStyle="#899491";c.fillRect((side?7:5)*u,9*u,(side?5:6)*u,2*u);c.fillRect((side?7:5)*u,13*u,(side?5:6)*u,u);c.fillStyle="#a9b3af";if(side)c.fillRect(5*u,8*u,3*u,3*u);else{c.fillRect(3*u,8*u,3*u,3*u);c.fillRect(10*u,8*u,3*u,3*u);}c.fillStyle="#6f442f";c.fillRect((side?8:7)*u,10*u,2*u,6*u);
+  }
+  if(back){c.fillStyle="rgba(20,24,24,.18)";c.fillRect(5*u,10*u,6*u,5*u);}
+}
+
 function drawHeldItem(c,u,dir,player){
   const itemId=player.heldItem;
   if(!itemCatalog[itemId]) return;
   const progress=Math.max(0,Math.min(1,Number(player.actionProgress)||0));
   const active=!!player.actionType&&progress>0&&progress<1;
   const side=dir==="left"||dir==="right";
-  const hand=side?[11,12]:dir==="down"?[13,12]:[3,11];
-  const baseAngle=side?-.30:dir==="down"?.78:-2.25;
-  const swing=active?lerp(-1.12,1.05,smooth(progress)):0;
+  const spear=itemId==="huntingSpear";
+  const hand=spear?(side?[10,12]:[8,13]):side?[11,12]:dir==="down"?[13,12]:[3,11];
+  const baseAngle=spear?(side?0:dir==="down"?Math.PI/2:-Math.PI/2):(side?-.30:dir==="down"?.78:-2.25);
+  const swing=spear?(active?Math.sin(progress*Math.PI)*-.07:0):(active?lerp(-1.12,1.05,smooth(progress)):0);
+  let spearThrust=0;
+  if(spear&&active){
+    if(progress<.20) spearThrust=lerp(0,-2.5,smooth(progress/.20));
+    else if(progress<.52) spearThrust=lerp(-2.5,8.5,smooth((progress-.20)/.32));
+    else spearThrust=lerp(8.5,0,smooth((progress-.52)/.48));
+  }
 
   c.save();
   c.translate(hand[0]*u,hand[1]*u);
   c.rotate(baseAngle+swing);
+  if(spear)c.translate(spearThrust*u,0);
+
+  if(spear&&active&&progress>.20&&progress<.74){
+    const alpha=.42*(1-Math.abs(progress-.47)*1.45);c.save();c.globalAlpha=Math.max(.08,alpha);c.fillStyle="#d9eee7";c.fillRect(13*u,-Math.max(1,u/2),Math.round((4+progress*5)*u),Math.max(1,u));c.fillStyle="#6bb6b5";c.fillRect(10*u,Math.max(1,u),Math.round(5*u),Math.max(1,Math.round(u*.45)));c.restore();
+  }
 
   if(itemId==="ironSword"&&active&&progress>.12&&progress<.88){
     // The trail is deliberately part of the character draw, so it can never
@@ -4282,7 +4355,7 @@ function drawHeldItem(c,u,dir,player){
   }
 
   if(typeof drawArtistStaticOverride==="function"&&drawArtistStaticOverride("item_"+itemId,c,6*u,6*u,{
-    animation:active?(itemId==="huntingBow"?"draw":"swing"):"idle",progress:active?progress:null,pixelSize:u
+    animation:active?(itemId==="huntingBow"?"draw":spear?"thrust":"swing"):"idle",progress:active?progress:null,pixelSize:u
   })){
     c.restore();
     return;
@@ -4389,6 +4462,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
   const beard=p.beard||hair;
   const beardStyle=p.beardStyle||"none";
   const outfit=p.outfit||"traveler";
+  const visibleArmor=visibleArmorForCharacter(p);
   const blinking=blinkClosed(p);
 
   c.save();
@@ -4431,6 +4505,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle=shade(shirt,24);
     c.fillRect(10*u,10*u,2*u,5*u);
     drawOutfitDetails(c,u,outfit,"side",shirt);
+    drawVisibleArmor(c,u,visibleArmor,"side");
     c.fillStyle="#8e6d37";
     c.fillRect(6*u,15*u,6*u,1*u);
     c.fillStyle=skin;
@@ -4466,6 +4541,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillStyle=shade(shirt,24);
     c.fillRect(4*u,9*u,8*u,1*u);
     drawOutfitDetails(c,u,outfit,"down",shirt);
+    drawVisibleArmor(c,u,visibleArmor,"down");
     c.fillStyle="#8e6d37";
     c.fillRect(4*u,15*u,8*u,1*u);
     c.fillStyle=skin;
@@ -4504,6 +4580,7 @@ function drawCharacter(c,x,y,p,scale=2.5,local=false,portraitMode=false){
     c.fillRect(4*u,9*u,1*u,7*u);
     c.fillStyle=shade(cloak,-18);
     c.fillRect(4*u,17*u,8*u,1*u);
+    drawVisibleArmor(c,u,visibleArmor,"up");
     c.fillStyle=skin;
     c.fillRect(2*u,(10+step*.5)*u,2*u,5*u);
     c.fillRect(12*u,(10-step*.5)*u,2*u,5*u);
@@ -4960,6 +5037,10 @@ function useEquippedItem(){
   state.action.cooldown=definition.cooldown;
   state.player.actionType=definition.action;
   state.player.actionProgress=.001;
+  if(window.__ARCHIPELAGO_V015__?.isInterior?.()){
+    window.__ARCHIPELAGO_V015__?.sound?.("swing",item.itemId);
+    return true;
+  }
   if(definition.action==="axeSwing") performAxeImpact();
   else if(definition.action==="swordSwing") performSwordImpact();
   else if(window.__ARCHIPELAGO_V015__?.useEquippedItem?.(item,definition)) return true;
@@ -5131,6 +5212,7 @@ function moveMountedPlayer(dt,horse,dx,dy){
 
 function movePlayer(dt){
   if(state.paused||state.mapOpen||state.inventoryOpen||state.dead||window.__ARCHIPELAGO_V015__?.isRolling?.()) return;
+  if(window.__ARCHIPELAGO_V015__?.moveInteriorPlayer?.(dt)) return;
   let dx=0;
   let dy=0;
   if(state.keys.has("w")||state.keys.has("arrowup")) dy-=1;
@@ -5705,6 +5787,7 @@ function publicPlayer(){
     id:p.id,name:p.name,x:p.x,y:p.y,dir:p.dir,moving:p.moving,walkTime:p.walkTime,
     health:p.health,stamina:p.stamina,swimming:p.swimming,drowning:p.drowning,
     heldItem:p.heldItem,actionType:p.actionType,actionProgress:p.actionProgress,
+    visibleArmor:visibleArmorForCharacter(p),
     skin:p.skin,eyes:p.eyes,hair:p.hair,hairStyle:p.hairStyle,
     beard:p.beard,beardStyle:p.beardStyle,outfit:p.outfit,shirt:p.shirt,cloak:p.cloak,
     bleed:p.bleed?.duration>0?{intensity:p.bleed.intensity,duration:p.bleed.duration}:null,
@@ -5743,8 +5826,9 @@ function sanitizePlayer(p){
     swimming:!!p.swimming,
     drowning:!!p.drowning,
     heldItem:["ironSword","woodsmanAxe","huntingSpear","huntingBow"].includes(p.heldItem)?p.heldItem:null,
-    actionType:["swordSwing","axeSwing"].includes(p.actionType)?p.actionType:null,
+    actionType:["swordSwing","axeSwing","spearThrust","bowShot"].includes(p.actionType)?p.actionType:null,
     actionProgress:Number.isFinite(Number(p.actionProgress))?Math.max(0,Math.min(1,Number(p.actionProgress))):0,
+    visibleArmor:["leatherVest","paddedVest","guardArmor"].includes(p.visibleArmor)?p.visibleArmor:null,
     skin:String(p.skin||"#f1c27d").slice(0,16),
     eyes:String(p.eyes||"#243b53").slice(0,16),
     hair:String(p.hair||"#3a2418").slice(0,16),
@@ -5965,7 +6049,7 @@ function toggleMap(force){
 window.addEventListener("keydown",(event)=>{
   const key=event.key.toLowerCase();
   const editable=event.target instanceof HTMLElement&&(event.target.isContentEditable||["INPUT","TEXTAREA","SELECT"].includes(event.target.tagName));
-  if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright","shift"].includes(key)){
+  if(!editable&&["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright","shift"].includes(key)){
     keyboardHeldKeys.add(key);
     state.keys.add(key);
     event.preventDefault();
@@ -5976,22 +6060,22 @@ window.addEventListener("keydown",(event)=>{
     else togglePause();
     event.preventDefault();
   }
-  if(key==="i"&&state.running&&!event.repeat){
+  if(!editable&&key==="i"&&state.running&&!event.repeat){
     if(state.paused) togglePause(false);
     toggleInventory();
     event.preventDefault();
   }
-  if(key==="r"&&state.inventoryOpen&&!event.repeat){
+  if(!editable&&key==="r"&&state.inventoryOpen&&!event.repeat){
     rotateSelectedInventoryItem();
     event.preventDefault();
   }
-  if((key==="1"||key==="2"||key==="3"||key==="4")&&state.running&&!event.repeat){
+  if(!editable&&(key==="1"||key==="2"||key==="3"||key==="4")&&state.running&&!event.repeat){
     const itemId=key==="1"?"ironSword":key==="2"?"woodsmanAxe":key==="3"?"huntingSpear":"huntingBow";
     const item=state.inventory.items.find((entry)=>entry.itemId===itemId);
     if(item) equipInventoryItem(item.id);
     event.preventDefault();
   }
-  if(key==="m"&&state.running&&!event.repeat){
+  if(!editable&&key==="m"&&state.running&&!event.repeat){
     toggleMap();
     event.preventDefault();
   }
@@ -6113,15 +6197,23 @@ function bindMobileHoldButton(button){
 }
 
 function bindMobileTapButton(button,handler,haptic=8){
+  let activePointer=null;
+  let lastActivation=-999;
   const clear=(event)=>{
+    if(activePointer!==null&&event?.pointerId!==undefined&&event.pointerId!==activePointer) return;
     button.classList.remove("is-pressed");
     if(event?.pointerId!==undefined){
       try{button.releasePointerCapture(event.pointerId);}catch{}
     }
+    activePointer=null;
   };
   button.addEventListener("pointerdown",(event)=>{
     event.preventDefault();
     event.stopPropagation();
+    const now=performance.now();
+    if(activePointer!==null||now-lastActivation<140) return;
+    activePointer=event.pointerId;
+    lastActivation=now;
     try{button.setPointerCapture(event.pointerId);}catch{}
     button.classList.add("is-pressed");
     mobileHaptic(haptic);
@@ -6133,11 +6225,16 @@ function bindMobileTapButton(button,handler,haptic=8){
   button.addEventListener("click",(event)=>{
     event.preventDefault();
     event.stopPropagation();
-    // Keyboard activation creates a click without pointer coordinates.
-    if(event.detail===0) handler();
+    // Keyboard activation creates a click without pointer coordinates. Some
+    // mobile browsers also synthesize detail=0 after pointerdown, so gate it
+    // against the activation timestamp instead of firing the action twice.
+    if(event.detail===0&&performance.now()-lastActivation>420){lastActivation=performance.now();handler();}
   });
   button.addEventListener("contextmenu",(event)=>event.preventDefault());
 }
+
+window.addEventListener("pointerup",(event)=>releaseMobilePointer(event.pointerId),{passive:true});
+window.addEventListener("pointercancel",(event)=>releaseMobilePointer(event.pointerId),{passive:true});
 
 for(const button of document.querySelectorAll("[data-mobile-key]")) bindMobileHoldButton(button);
 for(const button of document.querySelectorAll("[data-mobile-action]")){
@@ -6238,6 +6335,7 @@ window.__ARCHIPELAGO_DEBUG__ = {
   addInventoryItem,
   inventoryItemById,
   renderInventory,
+  updateMobileControlState,
   syncHeldItem,
   equipInventoryItem,
   unequipInventoryItem,

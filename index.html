@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#071116" />
   <title>Archipelago — Echoes of the Shattered Sea</title>
-  <link rel="stylesheet" href="style.css?v=0.18" />
+  <link rel="stylesheet" href="style.css?v=0.19" />
   <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script defer src="game.js?v=0.18"></script>
-  <script defer src="v015-systems.js?v=0.18"></script>
-  <script defer src="v018-eiswacht.js?v=0.18"></script>
-  <script defer src="asset-editor.js?v=0.18"></script>
+  <script defer src="game.js?v=0.19"></script>
+  <script defer src="v015-systems.js?v=0.19"></script>
+  <script defer src="v018-eiswacht.js?v=0.19"></script>
+  <script defer src="asset-editor.js?v=0.19"></script>
 </head>
 <body>
   <div id="app">
@@ -36,7 +36,7 @@
 
       <div class="title-footer">
         <span>20 × 20 km prozedurale Welt</span>
-        <span class="title-version">PROTOTYP · 0.18</span>
+        <span class="title-version">PROTOTYP · 0.19</span>
       </div>
     </section>
 
@@ -524,11 +524,24 @@
       </div>
 
       <div id="dialogOverlay" class="screen-overlay dialog-overlay hidden">
-        <div class="dialog-card modal-card">
-          <p id="dialogKicker" class="eyebrow">Treibholz</p>
-          <h2 id="dialogSpeaker">Mira</h2>
-          <p id="dialogText"></p>
-          <div id="dialogActions" class="dialog-actions"></div>
+        <div class="dialog-card modal-card" role="dialog" aria-modal="true" aria-labelledby="dialogSpeaker">
+          <section class="dialog-portrait-panel" aria-hidden="true">
+            <canvas id="dialogPortrait" width="280" height="360"></canvas>
+            <div class="dialog-portrait-caption">
+              <span id="dialogRole">Bewohnerin von Treibholz</span>
+              <strong id="dialogMood">Aufmerksam</strong>
+            </div>
+          </section>
+          <section class="dialog-content">
+            <header>
+              <div><p id="dialogKicker" class="eyebrow">Treibholz</p><h2 id="dialogSpeaker">Mira</h2></div>
+              <button id="dialogClose" class="icon-button" type="button" aria-label="Gespräch beenden">×</button>
+            </header>
+            <p id="dialogActivity" class="dialog-activity">Dorfvorsteherin · beaufsichtigt das Lagerfeuer</p>
+            <div class="dialog-copy"><i aria-hidden="true">“</i><p id="dialogText"></p></div>
+            <div id="dialogActions" class="dialog-actions"></div>
+            <small class="dialog-hint">Wähle eine Antwort · Tippen funktioniert direkt</small>
+          </section>
         </div>
       </div>
 

@@ -123,12 +123,11 @@ function updateResidents(dt){
   moveActor(dog,dogTarget,blizzardActive()?"liegt am Ofen":njal.moving?"folgt Njal":"bewacht den Werkhof",dt,15);
 }
 
-function closeDialogue(){const overlay=$("dialogOverlay");if(overlay) overlay.classList.add("hidden");systems.runtime.eiswachtTalkingId=null;state.paused=false;}
+function closeDialogue(){systems.runtime.eiswachtTalkingId=null;systems.closeDialog?.();}
 function showDialogue(speaker,text,actions=[]){
-  state.paused=true;$("dialogSpeaker").textContent=speaker;$("dialogText").textContent=text;const box=$("dialogActions");box.replaceChildren();
-  const choices=actions.length?actions:[{label:"Schließen",action:closeDialogue}];
-  for(const choice of choices){const button=document.createElement("button");button.type="button";button.textContent=choice.label;if(choice.primary) button.classList.add("primary");button.addEventListener("click",choice.action);box.appendChild(button);}
-  $("dialogOverlay").classList.remove("hidden");
+  const cleanName=speaker.split(" · ")[0];const resident=residents.find((entry)=>entry.name===cleanName);const choices=actions.length?actions:[{label:"Gespräch beenden",action:closeDialogue}];
+  const context=resident?{kicker:"EISWACHT · GESPRÄCH",role:resident.role,mood:"Frostklar",activity:resident.role+" · "+resident.activity,profile:{...resident.look,role:resident.role,mood:"Frostklar",visibleArmor:resident.id==="njal"?"leatherVest":resident.id==="tova"?"paddedVest":null}}:{kicker:"EISWACHT · ENTDECKUNG",role:"Chronik der Weißnacht",mood:"Eisstill"};
+  systems.showDialog?.(cleanName,text,choices,context);
 }
 function saveQuiet(){systems.saveNow?.("auto");}
 function shardCount(){return systems.inventoryCount("auroraShard");}
@@ -252,7 +251,7 @@ function drawVillageProp(object,p){
 function drawResident(resident,camX,camY){
   const p=worldToScreen(resident.x,resident.y,camX,camY);if(p.x<-70||p.y<-90||p.x>canvas.width+70||p.y>canvas.height+70) return;
   const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;const entity={...resident,status:"alive",moving:resident.moving,dir:resident.dir,gait:resident.gait,talking:systems.runtime.eiswachtTalkingId===resident.id};
-  if(!editor?.drawArtistSpriteOverride("npc_eis_"+resident.id,entity,ctx,p.x,p.y)) api.drawCharacter(ctx,p.x,p.y,{...state.player,...resident.look,id:"eis:"+resident.id,name:"",x:resident.x,y:resident.y,dir:resident.dir,moving:resident.moving,walkTime:resident.gait,actionType:null,heldItem:null},2,false);
+  if(!editor?.drawArtistSpriteOverride("npc_eis_"+resident.id,entity,ctx,p.x,p.y)) api.drawCharacter(ctx,p.x,p.y,{...state.player,...resident.look,id:"eis:"+resident.id,name:"",x:resident.x,y:resident.y,dir:resident.dir,moving:resident.moving,walkTime:resident.gait,actionType:null,heldItem:null,visibleArmor:resident.id==="njal"?"leatherVest":resident.id==="tova"?"paddedVest":null},2,false);
   ctx.textAlign="center";ctx.font="10px Georgia";ctx.fillStyle="#091316";ctx.fillText(resident.name,Math.round(p.x+1),Math.round(p.y-55));ctx.fillStyle="#e9e2ca";ctx.fillText(resident.name,Math.round(p.x),Math.round(p.y-56));
   if(Math.hypot(state.player.x-resident.x,state.player.y-resident.y)<55){ctx.font="7px Courier New";ctx.fillStyle="#91aaa8";ctx.fillText(resident.activity,Math.round(p.x),Math.round(p.y-45));}
 }
@@ -314,10 +313,10 @@ systems.drawOverlay=(camX,camY)=>{originals.drawOverlay(camX,camY);drawVillageOv
 systems.update=(dt,realDt)=>{originals.update(dt,realDt);if(state.running&&!state.paused) updateEiswacht(dt);else updateVillageUi();};
 systems.onGameStarted=()=>{originals.onGameStarted();worldState();systems.runtime.eiswachtWasNear=false;for(const resident of residents){const entry=scheduleEntry(resident);resident.x=anchors[entry[1]][0];resident.y=anchors[entry[1]][1];resident.activity=entry[2];resident.moving=false;}updateVillageUi();};
 systems.useConsumable=(item,definition)=>{if((item?.itemId==="smokedArcticChar"||item?.itemId==="frostTea")&&definition?.consumable) state.player.stamina=Math.min(100,state.player.stamina+(definition.stamina||0));return originals.useConsumable(item,definition);};
-systems.version="0.18";
+systems.version="0.19";
 
 const panel=document.createElement("div");panel.id="eiswachtPanel";panel.className="eiswacht-panel hidden";panel.innerHTML="<b>EISWACHT</b><span>Forschungsdorf am Rand des Packeises</span>";$("gamePanel").appendChild(panel);
-$("closeDialog")?.addEventListener("click",()=>{systems.runtime.eiswachtTalkingId=null;});
+$("dialogClose")?.addEventListener("click",()=>{systems.runtime.eiswachtTalkingId=null;});
 
-window.__ARCHIPELAGO_EISWACHT__={version:"0.18",centre:CENTRE,anchors,villageObjects,residents,dog,worldState,gameMinute,gameDay,blizzardActive,scheduleEntry,updateResidents,nearbyEisInteraction,inspectObject,talkToResident,shardCount};
+window.__ARCHIPELAGO_EISWACHT__={version:"0.19",centre:CENTRE,anchors,villageObjects,residents,dog,worldState,gameMinute,gameDay,blizzardActive,scheduleEntry,updateResidents,nearbyEisInteraction,inspectObject,talkToResident,shardCount};
 })();

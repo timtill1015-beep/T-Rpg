@@ -2,7 +2,16 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.18)
+## Aktueller Stand (0.19)
+
+- **Treibholz vollständig überarbeitet:** drei eigens erzeugte, auf Endauflösung skalierte Pixelart-Gebäude, deutlich mehr Küstendetails, freie Dorfwege und ein gerodetes Banditenlager außerhalb des Waldes
+- alle Treibholz-Häuser sind betretbar und besitzen eigene Innenräume, Kollisionen und Funktionen wie Betten, Herd, Handel, Fangbuch, Anschlagbrett und Werkplätze
+- Mira, Borin, Edda und Taren folgen echten Tagesplänen, laufen zwischen Arbeitsorten, Halle und Häusern, essen gemeinsam und schlafen nachts sichtbar in Innenräumen
+- neues bildschirmfüllendes Dialogsystem mit NPC-Nahansicht, Rolle, Stimmung, aktueller Tätigkeit und verzweigten Themen; Eiswacht verwendet dieselbe Darstellung
+- neuer offener Pixelart-Rucksack als Inventarhintergrund, sichtbare angelegte Rüstung an Spieler, Dorfbewohnern und Banditen sowie überarbeiteter geradliniger Speerstoß
+- gut lesbare goldene Questmarker in HUD und Welt, einschließlich Entfernung und Richtung; das Quest-HUD bleibt auf Mobilgeräten direkt bedienbar
+- robuster Start-Entstucker für Tiergruppen mit Gebäudeprüfung und Laufzeitrettung festgelaufener Tiere; Außenwelt-KI pausiert außerdem in Innenräumen
+- Touch-Eingaben gegen Doppelauslösung abgesichert, Mehrfingersteuerung stabilisiert und nicht anwendbare Außenweltaktionen in Innenräumen deaktiviert
 
 - **Eiswacht als vollständig eigenes Forschungsdorf:** Das ausgeloste Norddorf verwendet kein generisches Stadtmuster mehr, sondern 32 handplatzierte Gebäude, Einrichtungen und Umgebungsdetails mit eigener Pixelgrafik, Kollision und Interaktion
 - individuelles Dorfensemble mit Langhaus **Zur Stillen Flamme**, Observatorium, Werkhof, Wärmestube, Frostgewächshaus, Räucherhaus, Weißnacht-Archiv, Wohnhütten, Dampfgenerator, Eisbecken, Fischgestell, Expeditionsschlitten, Wetterfahne, Schichtglocke und Nordlicht-Leuchtfeuer
@@ -29,7 +38,7 @@ Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, dete
 - drei dauerhaft gewählte Kadaverlagen pro Tierart; Hühner und Wildschweine behalten dabei ihre Gefieder-/Fellvariante, und mehrere `DEAD`-Frames im Asset Studio dienen nun als statische Kadavervarianten
 - überarbeitetes Blut pro Tierart mit eigenem Farbprofil, Körperwunde, Lachenform und Blutmenge: starker sichtbarer Ersterguss, kurze Hauptblutung und langes kontinuierliches Nachsickern aus einer gemeinsamen endlichen Reserve
 
-- neues Startgebiet **Treibholz** mit Dorfwegen, drei Hütten, Mira, Händler Borin, Werkbank, Brunnen und Lagerfeuer
+- Startgebiet **Treibholz** als lebendiges Küstendorf mit drei betretbaren Häusern, vier Bewohnern, Werkbank, Brunnen, Lagerfeuer, Fischerei- und Hafendetails
 - vollständige erste Questkette: Materialien sammeln, Jagdspeer herstellen, das erste Banditenlager räumen und Belohnung abholen
 - Werkbank-, Lagerfeuer- und Händlerrezepte für Jagdspeer, Lederweste, Feldverbände, gebratenes Fleisch und Vorräte
 - drei getrennte lokale Spielstände mit Laden, Überschreiben, Löschen, 20-Sekunden-Autosave und sichtbarer Speicherbestätigung

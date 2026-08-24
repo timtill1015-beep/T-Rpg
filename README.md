@@ -2,7 +2,12 @@
 
 Ein statisches 2D-Pixel-RPG für den Browser mit einer 20 × 20 km großen, deterministisch generierten Inselwelt und Peer-to-Peer-Multiplayer.
 
-## Aktueller Stand (0.20)
+## Aktueller Stand (0.21)
+
+- **Treibholz-Lebenswelt-Pass:** Der geometrische Dorfmittelpunkt wurde durch echte Türwege ersetzt; vergrößerte Häuser besitzen passende Schatten, physische Fußabdrücke und zugängliche Türpunkte
+- NPCs nutzen dauerhaftes Hindernis-Steering statt eines einmaligen Seitwärtsschritts und erreichen dadurch auch entfernte Tagesplan-Ziele zuverlässig
+- alle drei Häuser besitzen zwei begehbare Etagen mit Raumteilern sowie 38 funktionale Möbeltypen aus strikt 8×8 Pixel großen Meterkacheln
+- Baumkronen verwenden neue buschige 8×8-Blattcluster, deren Varianten für stabile Bildraten zwischengespeichert werden
 
 - **Treibholz-Maßstabs-Pass:** Haus-PNGs und Rucksack wurden auf deutlich kleinere native Pixelauflösungen reduziert und werden ausschließlich pixelklar hochskaliert; die drei Häuser erscheinen in der Welt gleichzeitig größer und wuchtiger
 - das starre Wegkreuz im Dorfkern wurde durch fünf unregelmäßige, gestufte Laufpfade ersetzt

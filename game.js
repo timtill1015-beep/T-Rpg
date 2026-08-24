@@ -1332,25 +1332,32 @@ function treeOverlapsRoad(gx,gy,kind,variant){
   return false;
 }
 
+const treeLeafTextureCache=new Map();
+function bushyLeafTexture(colors,block,variant,seed){
+  const key=colors.join("|")+":"+block+":"+variant+":"+seed;let texture=treeLeafTextureCache.get(key);if(texture)return texture;
+  texture=document.createElement("canvas");texture.width=block;texture.height=block;const leafCtx=texture.getContext("2d");leafCtx.imageSmoothingEnabled=false;
+  const masks=[
+    ["00111100","01111110","11111111","11111111","11111111","11111111","01111110","00111100"],
+    ["00011100","01111110","11111111","11111111","11111111","11111110","01111110","00111000"],
+    ["00111000","01111110","11111111","11111111","11111111","11111111","00111110","00011100"]
+  ];
+  const mask=masks[variant];
+  for(let py=0;py<8;py++) for(let px=0;px<8;px++){
+    if(mask[py][px]!=="1")continue;
+    const noise=hash2(px+variant*11,py+seed%17,seed+17);const edge=px===0||px===7||py===0||py===7||mask[Math.max(0,py-1)][px]!=="1"||mask[py][Math.max(0,px-1)]!=="1";
+    const color=edge||noise<.24?colors[0]:noise>.73?colors[2]:colors[1];const x0=Math.floor(px*block/8),x1=Math.ceil((px+1)*block/8),y0=Math.floor(py*block/8),y1=Math.ceil((py+1)*block/8);
+    leafCtx.fillStyle=color;leafCtx.fillRect(x0,y0,Math.max(1,x1-x0),Math.max(1,y1-y0));
+  }
+  if((variant+seed)%2===0){const chip=Math.max(2,Math.floor(block/8));leafCtx.fillStyle=colors[2];leafCtx.fillRect(Math.floor(block*.39),Math.floor(block*.18),chip*2,chip);}
+  treeLeafTextureCache.set(key,texture);return texture;
+}
 function drawTreeBlock(gx,gy,camX,camY,colors,seed,assetId=null,assetAnimation="idle"){
   const size=TILE_METERS*VIEW_SCALE;
   const x=Math.floor((gx*TILE_METERS-camX)*VIEW_SCALE+canvas.width/2);
   const y=Math.floor((gy*TILE_METERS-camY)*VIEW_SCALE+canvas.height/2);
   const block=Math.ceil(size)+1;
   if(assetId&&typeof drawArtistTileOverride==="function"&&drawArtistTileOverride(assetId,ctx,x,y,block,{animation:assetAnimation})) return;
-  ctx.fillStyle=colors[1];
-  ctx.fillRect(x,y,block,block);
-  ctx.fillStyle=colors[0];
-  ctx.fillRect(x,y+block-3,block,3);
-  ctx.fillRect(x+block-3,y,3,block);
-  ctx.fillStyle=colors[2];
-  const chip=Math.max(2,Math.floor(block*.22));
-  const side=hash2(gx,gy,seed)>.5?3:block-chip-3;
-  ctx.fillRect(x+side,y+3,chip,chip);
-  if(hash2(gx,gy,seed+1)>.58){
-    ctx.fillStyle=colors[0];
-    ctx.fillRect(x+3,y+Math.floor(block*.56),chip,chip);
-  }
+  const variant=Math.floor(hash2(gx,gy,seed)*3)%3;ctx.drawImage(bushyLeafTexture(colors,block,variant,seed),x,y);
 }
 
 function drawGridTree(tree,camX,camY){

@@ -36,21 +36,72 @@ const interiorTilePack=Object.freeze({
   rug:["0aaaaaa0","aaaaaaaa","aAaaaaAa","aaaaaaaa","aaaaaaaa","aAaaaaAa","aaaaaaaa","0aaaaaa0"],
   bed:["BBBBBBBB","BccccccB","BccccccB","BccccccB","BccccccB","BccccccB","BbbbbbbB","BBBBBBBB"],
   pillow:["0CCCCCC0","CCCCCCCC","CCllllCC","CCCCCCCC","CCCCCCCC","CCllllCC","CCCCCCCC","0CCCCCC0"],
+  bunkBed:["BBccccBB","BbCCCCbB","BbccccbB","BBBBBBBB","BbccccbB","BbCCCCbB","BbccccbB","BBBBBBBB"],
   table:["bbbbbbbb","bBhbbhBb","bbbbbbbb","bbbbbbbb","bBbbbbBb","bbbbbbbb","bBhbbhBb","BBBBBBBB"],
+  sideTable:["00bbbb00","0bhhhhb0","0bbbbbb0","00BBBB00","00b00b00","00b00b00","00B00B00","00000000"],
   chair:["00bbbb00","00bbbb00","BBBBBBBB","BBbbbbBB","00b00b00","00b00b00","00b00b00","00B00B00"],
+  stool:["00000000","00bbbb00","0bhhhhb0","00BBBB00","00b00b00","00b00b00","00B00B00","00000000"],
+  bench:["00000000","bbbbbbbb","bhhhhhhb","BBBBBBBB","0b0000b0","0b0000b0","0B0000B0","00000000"],
+  wardrobe:["BBBBBBBB","BbbbbbbB","BbBbbBbB","BbbbbbbB","BbBbbBbB","BbbbbbbB","BbbhhbbB","BBBBBBBB"],
+  cabinet:["BBBBBBBB","BbbhhbbB","BbbbbbbB","BBBBBBBB","BbbhhbbB","BbbbbbbB","BbbbbbbB","BBBBBBBB"],
   crate:["BBBBBBBB","BbbbbbbB","BbBbbBbB","BbbBBbbB","BbbBBbbB","BbBbbBbB","BbbbbbbB","BBBBBBBB"],
   barrel:["00BBBB00","0BbbbbB0","BbhbbhbB","BbbbbbbB","BbbbbbbB","BbhbbhbB","0BbbbbB0","00BBBB00"],
+  sack:["000pp000","00pppp00","0pppppp0","0pppppp0","pppppppp","pppppppp","0pppppp0","00pppp00"],
+  chest:["00BBBB00","0BhhhhB0","BbbbbbbB","BBBBBBBB","BbbEEbbB","BbbbbbbB","BbbbbbbB","BBBBBBBB"],
   hearth:["00SSSS00","0SssssS0","SssSSssS","SsSeessS","SseeeesS","SssEEssS","0SssssS0","00SSSS00"],
+  stove:["SSSSSSSS","SssssssS","SssSSssS","SssEEssS","SssssssS","SssSSssS","SssssssS","SSSSSSSS"],
+  cauldron:["000SS000","00SssS00","0SssssS0","SssEEssS","SseeeesS","0SssssS0","00SSSS00","00000000"],
+  oven:["SSSSSSSS","SssssssS","SssSSssS","SsS00SsS","SsSeESsS","SssssssS","SSSSSSSS","00000000"],
+  basin:["00000000","0CCCCCC0","CCssssCC","CssssssC","CffffffC","CCffffCC","0CCCCCC0","00000000"],
+  bucket:["00000000","00BBBB00","0BccccB0","0BccccB0","0BccccB0","0BccccB0","00BBBB00","00000000"],
+  lantern:["000EE000","00EeeE00","00EeeE00","00EEEE00","000BB000","000BB000","000BB000","00BBBB00"],
+  candleTable:["000E0000","000e0000","00bbbb00","0bhhhhb0","00BBBB00","00b00b00","00B00B00","00000000"],
   counter:["bbbbbbbb","bbbbbbbb","hhhhhhhh","BBBBBBBB","BbbbbbbB","BbbbbbbB","BbbbbbbB","BBBBBBBB"],
   shelf:["BBBBBBBB","BppbppbB","BppbppbB","BBBBBBBB","BppbppbB","BppbppbB","BbbbbbbB","BBBBBBBB"],
+  bookshelf:["BBBBBBBB","BapCppaB","BppAppCB","BBBBBBBB","BCppApaB","BpaCpppB","BbbbbbbB","BBBBBBBB"],
+  screen:["BaaBBaaB","BaaBBaaB","BAaBBaAB","BaaBBaaB","BaaBBaaB","BAaBBaAB","BaaBBaaB","B00BB00B"],
+  desk:["bbbbbbbb","bhhhhhhb","BBBBBBBB","BbbBBbbB","BbbbbbbB","BbbBBbbB","Bbb00bbB","BBb00bBB"],
+  anvil:["00SSSSS0","0SSSSSSS","000SS000","00SSSS00","00SSSS00","00SssS00","00SssS00","0SSSSSS0"],
+  workbench:["bbbbbbbb","bhBhBhhb","bbbbbbbb","BBBBBBBB","BbSbbSbB","BbbbbbbB","Bbb00bbB","BBb00bBB"],
+  loom:["B000000B","BacacacB","BacacacB","BacacacB","BacacacB","BacacacB","BbbbbbbB","BB0000BB"],
+  spinningWheel:["000BB000","00BbbB00","0Bb00bB0","Bb0BB0bB","0Bb00bB0","00BbbB00","000BB000","00B00B00"],
+  fishRack:["B000000B","BppppppB","BpcpcpcB","BpcpcpcB","BpcpcpcB","B000000B","B000000B","B000000B"],
   board:["00BBBB00","0BppppB0","0BppppB0","0BpapbB0","0BppppB0","0BppppB0","00b00b00","00B00B00"],
-  net:["c000c000","0c0c000c","00c000c0","0c0c000c","c000c000","0c0c000c","00c000c0","0c0c000c"]
+  net:["c000c000","0c0c000c","00c000c0","0c0c000c","c000c000","0c0c000c","00c000c0","0c0c000c"],
+  mapTable:["bbbbbbbb","bpCCpppb","bpAappCb","bpppAppb","bCpppppb","bppCAppb","bbbbbbbb","BBBBBBBB"],
+  ladder:["B000000B","BbbbbbbB","B000000B","BbbbbbbB","B000000B","BbbbbbbB","B000000B","BbbbbbbB"],
+  stairs:["000000bb","00000bbb","0000bbbb","000bbbbb","00bbbbbb","0bbbbbbb","bbbbbbbb","BBBBBBBB"]
+});
+
+const furnitureFunctions=Object.freeze({
+  rug:{action:"inspect",label:"Gewebten Teppich betrachten"},bed:{action:"sleep",label:"Im Bett schlafen"},pillow:{action:"inspect",label:"Besticktes Kissen ansehen"},bunkBed:{action:"sleep",label:"Im Stockbett schlafen"},table:{action:"meal",label:"Am Tisch essen"},sideTable:{action:"storage",label:"Beistelltisch durchsuchen"},chair:{action:"sit",label:"Auf den Stuhl setzen"},stool:{action:"sit",label:"Auf den Hocker setzen"},bench:{action:"sit",label:"Auf der Bank ausruhen"},wardrobe:{action:"storage",label:"Kleiderschrank öffnen"},cabinet:{action:"storage",label:"Schrank durchsuchen"},crate:{action:"storage",label:"Kiste durchsuchen"},barrel:{action:"storage",label:"Fass prüfen"},sack:{action:"storage",label:"Getreidesack prüfen"},chest:{action:"storage",label:"Truhe öffnen"},hearth:{action:"cook",label:"An der Feuerstelle kochen"},stove:{action:"cook",label:"Am Holzofen kochen"},cauldron:{action:"meal",label:"Aus dem Kessel essen"},oven:{action:"cook",label:"Backofen benutzen"},basin:{action:"wash",label:"Am Waschbecken waschen"},bucket:{action:"wash",label:"Wassereimer benutzen"},lantern:{action:"light",label:"Laterne umstellen"},candleTable:{action:"light",label:"Kerze anzünden"},counter:{action:"trade",label:"Handelstresen benutzen"},shelf:{action:"storage",label:"Wandregal durchsuchen"},bookshelf:{action:"lore",label:"Bücherregal lesen"},screen:{action:"inspect",label:"Bemalten Raumteiler ansehen"},desk:{action:"lore",label:"Schreibtisch untersuchen"},anvil:{action:"craft",label:"Am Amboss arbeiten"},workbench:{action:"craft",label:"Werkbank benutzen"},loom:{action:"craft",label:"Am Webstuhl arbeiten"},spinningWheel:{action:"craft",label:"Spinnrad benutzen"},fishRack:{action:"storage",label:"Trockenfisch nehmen"},board:{action:"board",label:"Anschlagbrett lesen"},net:{action:"lore",label:"Fischernetz untersuchen"},mapTable:{action:"map",label:"Kartentisch studieren"},ladder:{action:"floor",label:"Leiter benutzen"},stairs:{action:"floor",label:"Treppe benutzen"}
 });
 
 const interiors={
-  fisher:{id:"fisher",name:"Eddas Fischerhaus",buildingId:"hut-west",width:15,height:10,accent:"#356d68",door:{x:7.5,y:9.15},beds:[{x:2.5,y:2}],stations:[{id:"fisher-hearth",kind:"interiorHearth",x:12,y:2,label:"Fischsuppe essen",mobileLabel:"Essen"},{id:"fisher-net",kind:"interiorLore",x:2,y:7.5,label:"Eddas Fangbuch lesen",mobileLabel:"Lesen"}],objects:[{type:"bed",x:1,y:1,w:3,h:2,solid:true},{type:"hearth",x:11,y:1,w:2,h:2,solid:true},{type:"table",x:6,y:5,w:3,h:2,solid:true},{type:"chair",x:5,y:6,w:1,h:1,solid:true},{type:"chair",x:9,y:6,w:1,h:1,solid:true},{type:"net",x:1,y:7,w:2,h:2,solid:false},{type:"rug",x:6,y:7,w:3,h:1,solid:false},{type:"barrel",x:12,y:7,w:1,h:1,solid:true}]},
-  store:{id:"store",name:"Borins Vorratshaus",buildingId:"hut-east",width:16,height:10,accent:"#8a5b35",door:{x:8,y:9.15},beds:[{x:13.5,y:2}],stations:[{id:"store-counter",kind:"interiorTrade",x:5.5,y:4.5,label:"Mit Borin handeln",mobileLabel:"Handel"},{id:"store-ledger",kind:"interiorLore",x:13.5,y:7.5,label:"Vorratsbuch ansehen",mobileLabel:"Lesen"}],objects:[{type:"bed",x:12,y:1,w:3,h:2,solid:true},{type:"counter",x:4,y:4,w:4,h:1,solid:true},{type:"crate",x:1,y:1,w:2,h:2,solid:true},{type:"crate",x:1,y:6,w:2,h:2,solid:true},{type:"barrel",x:11,y:6,w:1,h:1,solid:true},{type:"shelf",x:13,y:6,w:2,h:2,solid:true},{type:"rug",x:6,y:7,w:4,h:1,solid:false}]},
-  hall:{id:"hall",name:"Treibholzer Versammlungshalle",buildingId:"hut-hall",width:18,height:11,accent:"#315f66",door:{x:9,y:10.15},beds:[{x:2.5,y:2},{x:15.5,y:2}],stations:[{id:"hall-hearth",kind:"interiorCampfire",x:9,y:3,label:"Am Hallenfeuer rasten und kochen",mobileLabel:"Rasten"},{id:"hall-board",kind:"interiorBoard",x:15.5,y:7.5,label:"Das Anschlagbrett lesen",mobileLabel:"Lesen"},{id:"hall-table",kind:"interiorMeal",x:9,y:7,label:"Gemeinsame Mahlzeit nehmen",mobileLabel:"Essen"}],objects:[{type:"bed",x:1,y:1,w:3,h:2,solid:true,accent:"#70434a"},{type:"bed",x:14,y:1,w:3,h:2,solid:true,accent:"#425f78"},{type:"hearth",x:8,y:2,w:2,h:2,solid:true},{type:"table",x:6,y:6,w:6,h:2,solid:true},{type:"chair",x:5,y:6,w:1,h:1,solid:true},{type:"chair",x:12,y:6,w:1,h:1,solid:true},{type:"chair",x:7,y:8,w:1,h:1,solid:true},{type:"chair",x:10,y:8,w:1,h:1,solid:true},{type:"board",x:15,y:7,w:1,h:2,solid:true},{type:"rug",x:6,y:4,w:6,h:1,solid:false},{type:"barrel",x:2,y:8,w:1,h:1,solid:true}]}
+  fisher:{id:"fisher",name:"Eddas Fischerhaus",buildingId:"hut-west",floors:[
+    {name:"Fischerhaus · Küche & Werkraum",width:16,height:11,accent:"#356d68",door:{x:8,y:10.15},partitions:[{x:10,y:4,w:1,h:2},{x:10,y:7,w:1,h:3}],objects:[
+      {type:"hearth",x:12,y:1,w:2,h:2,solid:true},{type:"cauldron",x:10,y:1,w:1,h:1,solid:true},{type:"basin",x:14,y:4,w:1,h:1,solid:true},{type:"bucket",x:13,y:5,w:1,h:1,solid:true},{type:"table",x:6,y:5,w:3,h:2,solid:true},{type:"chair",x:5,y:6,w:1,h:1,solid:true},{type:"stool",x:9,y:6,w:1,h:1,solid:true},{type:"fishRack",x:1,y:1,w:2,h:2,solid:true},{type:"net",x:1,y:7,w:2,h:2,solid:false},{type:"barrel",x:12,y:8,w:1,h:1,solid:true},{type:"rug",x:6,y:8,w:4,h:1,solid:false},{type:"ladder",x:14,y:8,w:1,h:1,solid:true,targetFloor:1,targetX:12.2,targetY:8.5,label:"Zur Schlafkoje hinaufsteigen"}
+    ]},
+    {name:"Fischerhaus · Schlafkoje",width:15,height:10,accent:"#477b72",door:{x:13.5,y:8.2},objects:[
+      {type:"bunkBed",x:1,y:1,w:3,h:2,solid:true},{type:"pillow",x:4,y:1,w:1,h:1,solid:false},{type:"sideTable",x:5,y:2,w:1,h:1,solid:true},{type:"wardrobe",x:11,y:1,w:2,h:2,solid:true},{type:"chest",x:11,y:6,w:2,h:1,solid:true},{type:"spinningWheel",x:7,y:5,w:2,h:2,solid:true},{type:"screen",x:5,y:5,w:1,h:2,solid:true},{type:"candleTable",x:3,y:6,w:1,h:1,solid:true},{type:"rug",x:5,y:3,w:5,h:1,solid:false},{type:"ladder",x:13,y:8,w:1,h:1,solid:true,targetFloor:0,targetX:13.5,targetY:9.6,label:"In den Werkraum hinabsteigen"}
+    ]}
+  ]},
+  store:{id:"store",name:"Borins Vorratshaus",buildingId:"hut-east",floors:[
+    {name:"Vorratshaus · Laden & Lager",width:17,height:11,accent:"#8a5b35",door:{x:8.5,y:10.15},partitions:[{x:11,y:1,w:1,h:4},{x:11,y:6,w:1,h:4}],objects:[
+      {type:"counter",x:4,y:4,w:5,h:1,solid:true},{type:"crate",x:1,y:1,w:2,h:2,solid:true},{type:"barrel",x:1,y:7,w:1,h:1,solid:true},{type:"sack",x:2,y:7,w:1,h:1,solid:true},{type:"cabinet",x:13,y:1,w:2,h:2,solid:true},{type:"shelf",x:14,y:5,w:1,h:2,solid:true},{type:"chest",x:12,y:8,w:2,h:1,solid:true},{type:"bench",x:5,y:7,w:3,h:1,solid:true},{type:"lantern",x:10,y:2,w:1,h:1,solid:true},{type:"stairs",x:14,y:8,w:2,h:1,solid:true,targetFloor:1,targetX:12.2,targetY:8.6,label:"Zur Wohnung hinaufgehen"},{type:"rug",x:7,y:8,w:3,h:1,solid:false}
+    ]},
+    {name:"Vorratshaus · Borins Wohnung",width:16,height:10,accent:"#735137",door:{x:13.5,y:8},partitions:[{x:8,y:1,w:1,h:3},{x:8,y:5,w:1,h:4}],objects:[
+      {type:"bed",x:1,y:1,w:3,h:2,solid:true},{type:"pillow",x:1,y:1,w:1,h:1,solid:false},{type:"wardrobe",x:5,y:1,w:2,h:2,solid:true},{type:"bookshelf",x:12,y:1,w:2,h:2,solid:true},{type:"desk",x:9,y:5,w:2,h:2,solid:true},{type:"sideTable",x:4,y:2,w:1,h:1,solid:true},{type:"candleTable",x:6,y:6,w:1,h:1,solid:true},{type:"cabinet",x:2,y:6,w:2,h:2,solid:true},{type:"screen",x:7,y:4,w:1,h:3,solid:true},{type:"stove",x:12,y:6,w:2,h:2,solid:true},{type:"rug",x:9,y:3,w:3,h:1,solid:false},{type:"stairs",x:13,y:8,w:2,h:1,solid:true,targetFloor:0,targetX:13.2,targetY:9.5,label:"In den Laden hinabgehen"}
+    ]}
+  ]},
+  hall:{id:"hall",name:"Treibholzer Versammlungshalle",buildingId:"hut-hall",floors:[
+    {name:"Versammlungshalle · Großer Saal",width:19,height:12,accent:"#315f66",door:{x:9.5,y:11.15},objects:[
+      {type:"hearth",x:8,y:2,w:3,h:2,solid:true},{type:"oven",x:15,y:1,w:2,h:2,solid:true},{type:"table",x:5,y:6,w:8,h:2,solid:true},{type:"chair",x:4,y:6,w:1,h:1,solid:true},{type:"chair",x:13,y:6,w:1,h:1,solid:true},{type:"stool",x:6,y:8,w:1,h:1,solid:true},{type:"bench",x:9,y:9,w:4,h:1,solid:true},{type:"board",x:16,y:6,w:1,h:2,solid:true},{type:"mapTable",x:1,y:5,w:3,h:2,solid:true},{type:"anvil",x:2,y:9,w:1,h:1,solid:true},{type:"workbench",x:14,y:9,w:2,h:1,solid:true},{type:"stairs",x:16,y:9,w:2,h:1,solid:true,targetFloor:1,targetX:14.2,targetY:8.5,label:"Zur Galerie hinaufgehen"},{type:"rug",x:6,y:4,w:7,h:1,solid:false}
+    ]},
+    {name:"Versammlungshalle · Galerie & Schlafnischen",width:18,height:11,accent:"#3e6870",door:{x:15.5,y:8.5},partitions:[{x:8,y:1,w:1,h:3},{x:8,y:5,w:1,h:5}],objects:[
+      {type:"bunkBed",x:1,y:1,w:3,h:2,solid:true,accent:"#70434a"},{type:"bed",x:14,y:1,w:3,h:2,solid:true,accent:"#425f78"},{type:"wardrobe",x:6,y:1,w:2,h:2,solid:true},{type:"bookshelf",x:9,y:1,w:2,h:2,solid:true},{type:"loom",x:2,y:6,w:2,h:2,solid:true},{type:"spinningWheel",x:5,y:6,w:2,h:2,solid:true},{type:"desk",x:10,y:6,w:2,h:2,solid:true},{type:"candleTable",x:13,y:6,w:1,h:1,solid:true},{type:"screen",x:7,y:4,w:1,h:3,solid:true},{type:"chest",x:14,y:4,w:2,h:1,solid:true},{type:"rug",x:9,y:3,w:3,h:1,solid:false},{type:"stairs",x:15,y:8,w:2,h:1,solid:true,targetFloor:0,targetX:14.5,targetY:10.5,label:"In den großen Saal hinabgehen"}
+    ]}
+  ]}
 };
 
 Object.assign(itemCatalog,{
@@ -93,9 +144,9 @@ const worldObjects=[
   {id:"workbench",kind:"workbench",x:START.x-10,y:START.y-42,radius:7,solid:true,label:"Werkbank benutzen",mobileLabel:"Bauen"},
   {id:"village-fire",kind:"campfire",x:START.x+27,y:START.y-38,radius:4,label:"Am Lagerfeuer rasten und kochen",mobileLabel:"Rasten"},
   {id:"village-well",kind:"well",x:START.x-52,y:START.y-28,radius:8,solid:true,label:"Brunnen untersuchen",mobileLabel:"Ansehen"},
-  {id:"hut-west",kind:"hut",interior:"fisher",x:START.x-92,y:START.y+34,radius:28,halfWidth:31,halfHeight:19,solid:true,label:"Eddas Fischerhaus betreten",mobileLabel:"Betreten",pixelSize:[144,112]},
-  {id:"hut-east",kind:"hut",interior:"store",x:START.x+89,y:START.y+37,radius:27,halfWidth:30,halfHeight:18,solid:true,label:"Borins Vorratshaus betreten",mobileLabel:"Betreten",pixelSize:[136,104]},
-  {id:"hut-hall",kind:"hut",interior:"hall",x:START.x,y:START.y-109,radius:34,halfWidth:39,halfHeight:22,solid:true,label:"Versammlungshalle betreten",mobileLabel:"Betreten",pixelSize:[176,128]},
+  {id:"hut-west",kind:"hut",interior:"fisher",x:START.x-92,y:START.y+34,radius:28,solid:true,label:"Eddas Fischerhaus betreten",mobileLabel:"Betreten",pixelSize:[152,120],footprint:{halfWidth:31,halfDepth:9,offsetY:-3},doorPoint:{x:START.x-92,y:START.y+47}},
+  {id:"hut-east",kind:"hut",interior:"store",x:START.x+89,y:START.y+37,radius:27,solid:true,label:"Borins Vorratshaus betreten",mobileLabel:"Betreten",pixelSize:[144,112],footprint:{halfWidth:29,halfDepth:8.5,offsetY:-3},doorPoint:{x:START.x+89,y:START.y+49}},
+  {id:"hut-hall",kind:"hut",interior:"hall",x:START.x,y:START.y-109,radius:34,solid:true,label:"Versammlungshalle betreten",mobileLabel:"Betreten",pixelSize:[192,140],footprint:{halfWidth:39,halfDepth:10.5,offsetY:-4},doorPoint:{x:START.x,y:START.y-94}},
   {id:"fish-rack",kind:"fishRack",x:START.x-128,y:START.y+13,radius:5,label:"Eddas Trockenfisch begutachten",mobileLabel:"Ansehen"},
   {id:"net-table",kind:"netTable",x:START.x-114,y:START.y+70,radius:5,label:"Flicktisch untersuchen",mobileLabel:"Ansehen"},
   {id:"village-board",kind:"noticeBoard",x:START.x+54,y:START.y-74,radius:5,solid:true,label:"Treibholzer Anschläge lesen",mobileLabel:"Lesen"},
@@ -140,7 +191,7 @@ function createBandits(){
 const runtime={
   activeSlot:null,pendingLoad:null,autosave:0,saveFlash:0,hitStop:0,shake:0,roll:null,arrows:[],arrowSerial:0,renderDensity:1,frameTime:.016,questSignature:"",markerSignature:"",lastSoundAt:new Map(),audio:null,
   interior:null,dialogTimer:null,dialogToken:0,dialogPortraitFrame:null,dialogSpeaker:null,dialogProfile:null,dialogTyping:false,dialogFullText:"",npcScheduleMinute:-1,
-  world:{contentVersion:20,questStage:0,bandits:createBandits(),opened:{},visited:{},crafted:{},meals:{},playSeconds:0,weatherSeed:0}
+  world:{contentVersion:21,questStage:0,bandits:createBandits(),opened:{},visited:{},crafted:{},meals:{},furnitureUses:{},interiorLights:{},playSeconds:0,weatherSeed:0}
 };
 
 function clone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
@@ -162,43 +213,52 @@ function villageHour(){return (8+state.elapsed/120)%24;}
 function exteriorPoint(id,dx=0,dy=0){const object=worldObjects.find((entry)=>entry.id===id);return {x:(object?.x||START.x)+dx,y:(object?.y||START.y)+dy};}
 function npcSchedule(id,hour=villageHour()){
   if(id==="mira"){
-    if(hour<6||hour>=22) return {interior:"hall",x:2.5,y:2,pose:"sleep",activity:"schläft in der Halle"};
-    if(hour<7.2) return {interior:"hall",x:7.5,y:8.7,pose:"eat",activity:"frühstückt mit den Frühwachen"};
+    if(hour<6||hour>=22) return {interior:"hall",floor:1,x:2.5,y:2,pose:"sleep",activity:"schläft auf der Galerie"};
+    if(hour<7.2) return {interior:"hall",floor:0,x:7.5,y:9.2,pose:"eat",activity:"frühstückt mit den Frühwachen"};
     if(hour<10) return {...exteriorPoint("village-fire",-12,8),activity:"beaufsichtigt das Morgenfeuer"};
     if(hour<13) return {...exteriorPoint("workbench",12,8),activity:"prüft Werkzeug und Jagdvorräte"};
     if(hour<16) return {...exteriorPoint("village-board",-9,8),activity:"verteilt Aufgaben am Anschlagbrett"};
     if(hour<18.5) return {...exteriorPoint("village-well",14,5),activity:"spricht mit heimkehrenden Sammlern"};
-    if(hour<20.3) return {interior:"hall",x:7.5,y:8.7,pose:"eat",activity:"isst in der Versammlungshalle"};
+    if(hour<20.3) return {interior:"hall",floor:0,x:7.5,y:9.2,pose:"eat",activity:"isst in der Versammlungshalle"};
     return {...exteriorPoint("village-fire",10,8),activity:"hält Abendwache am Feuer"};
   }
   if(id==="borin"){
-    if(hour<7||hour>=21.5) return {interior:"store",x:13.5,y:2,pose:"sleep",activity:"schläft über seinem Lager"};
-    if(hour<8) return {interior:"hall",x:10.5,y:8.7,pose:"eat",activity:"frühstückt in der Halle"};
+    if(hour<7||hour>=21.5) return {interior:"store",floor:1,x:2.5,y:2,pose:"sleep",activity:"schläft über seinem Lager"};
+    if(hour<8) return {interior:"hall",floor:0,x:10.5,y:9.2,pose:"eat",activity:"frühstückt in der Halle"};
     if(hour<18) return {x:START.x-34,y:START.y+14,activity:"führt Handel und zählt Vorräte"};
-    if(hour<19.2) return {interior:"store",x:5.5,y:5.5,pose:"work",activity:"sortiert die Tageslieferungen"};
-    if(hour<21) return {interior:"hall",x:10.5,y:8.7,pose:"eat",activity:"isst mit den Dorfbewohnern"};
-    return {interior:"store",x:13.5,y:8.3,pose:"work",activity:"schließt sein Vorratsbuch ab"};
+    if(hour<19.2) return {interior:"store",floor:0,x:5.5,y:5.5,pose:"work",activity:"sortiert die Tageslieferungen"};
+    if(hour<21) return {interior:"hall",floor:0,x:10.5,y:9.2,pose:"eat",activity:"isst mit den Dorfbewohnern"};
+    return {interior:"store",floor:1,x:10.5,y:6.5,pose:"work",activity:"schließt sein Vorratsbuch ab"};
   }
   if(id==="edda"){
-    if(hour<5.5||hour>=21.5) return {interior:"fisher",x:2.5,y:2,pose:"sleep",activity:"schläft nach der Frühfahrt"};
-    if(hour<6.2) return {interior:"fisher",x:12,y:3.5,pose:"eat",activity:"wärmt Fischsuppe auf"};
+    if(hour<5.5||hour>=21.5) return {interior:"fisher",floor:1,x:2.5,y:2,pose:"sleep",activity:"schläft nach der Frühfahrt"};
+    if(hour<6.2) return {interior:"fisher",floor:0,x:10.5,y:2.5,pose:"eat",activity:"wärmt Fischsuppe auf"};
     if(hour<11) return {...exteriorPoint("boat-west",-5,10),activity:"landet den Morgenfang an"};
     if(hour<14) return {...exteriorPoint("fish-rack",8,7),activity:"salzt und trocknet den Fang"};
-    if(hour<15) return {interior:"hall",x:7.5,y:8.7,pose:"eat",activity:"isst in der Halle"};
+    if(hour<15) return {interior:"hall",floor:0,x:7.5,y:9.2,pose:"eat",activity:"isst in der Halle"};
     if(hour<19) return {...exteriorPoint("net-table",5,7),activity:"flickt beschädigte Netze"};
-    if(hour<21) return {interior:"hall",x:7.5,y:8.7,pose:"eat",activity:"erzählt vom Nebel vor der Küste"};
-    return {interior:"fisher",x:2,y:8.3,pose:"work",activity:"führt ihr Fangbuch"};
+    if(hour<21) return {interior:"hall",floor:0,x:7.5,y:9.2,pose:"eat",activity:"erzählt vom Nebel vor der Küste"};
+    return {interior:"fisher",floor:0,x:2,y:8.3,pose:"work",activity:"führt ihr Fangbuch"};
   }
-  if(hour<6||hour>=23) return {interior:"hall",x:15.5,y:2,pose:"sleep",activity:"schläft in der Wachnische"};
-  if(hour<7) return {interior:"hall",x:10.5,y:8.7,pose:"eat",activity:"isst vor der Frühwache"};
+  if(hour<6||hour>=23) return {interior:"hall",floor:1,x:15.5,y:2,pose:"sleep",activity:"schläft in der Wachnische"};
+  if(hour<7) return {interior:"hall",floor:0,x:10.5,y:9.2,pose:"eat",activity:"isst vor der Frühwache"};
   if(hour<10) return {...exteriorPoint("village-board",9,9),activity:"liest Wachmeldungen"};
   if(hour<13) return {...exteriorPoint("workbench",-11,8),activity:"repariert Speere und Schilde"};
   if(hour<16) return {x:START.x+142,y:START.y+54,activity:"patrouilliert das östliche Tor"};
   if(hour<18.5) return {x:START.x-18,y:START.y+58,activity:"prüft Stege und Hauspfähle"};
-  if(hour<20) return {interior:"hall",x:10.5,y:8.7,pose:"eat",activity:"isst in der Halle"};
+  if(hour<20) return {interior:"hall",floor:0,x:10.5,y:9.2,pose:"eat",activity:"isst in der Halle"};
   return {...exteriorPoint("village-fire",18,10),activity:"hält Nachtwache am Feuer"};
 }
 
+function solidContains(object,x,y,padding=0){
+  if(object.kind==="hut"&&object.footprint){
+    const footprint=object.footprint;const halfX=footprint.halfWidth+padding,halfY=footprint.halfDepth+padding;
+    const dx=(x-object.x)/halfX,dy=(y-(object.y+footprint.offsetY))/halfY;
+    return dx*dx+dy*dy<1;
+  }
+  const halfX=(object.halfWidth||object.radius||6)+padding,halfY=(object.halfHeight||object.radius||6)+padding;
+  const dx=(x-object.x)/halfX,dy=(y-object.y)/halfY;return dx*dx+dy*dy<1;
+}
 function npcCanStand(npc,x,y){
   if(!api.isWalkable(x,y)) return false;
   for(const object of worldObjects){
@@ -208,46 +268,54 @@ function npcCanStand(npc,x,y){
       continue;
     }
     if(!object.solid) continue;
-    const rx=(object.halfWidth||object.radius||4)+1.15;
-    const ry=(object.halfHeight||object.radius||4)+.85;
-    const dx=(x-object.x)/rx,dy=(y-object.y)/ry;
-    if(dx*dx+dy*dy<1) return false;
+    if(solidContains(object,x,y,1.15)) return false;
   }
   return true;
+}
+function npcSteering(npc,targetX,targetY,dt){
+  const dx=targetX-npc.x,dy=targetY-npc.y,distance=Math.hypot(dx,dy)||1;const base=Math.atan2(dy,dx);const lookAhead=Math.min(5,1.7+distance*.08);
+  if(npcCanStand(npc,npc.x+Math.cos(base)*lookAhead,npc.y+Math.sin(base)*lookAhead)){npc.avoidTime=Math.max(0,(npc.avoidTime||0)-dt*2);return {x:dx/distance,y:dy/distance};}
+  npc.avoidTime=(npc.avoidTime||0)+dt;if(!npc.avoidSign) npc.avoidSign=npc.id.charCodeAt(0)%2?1:-1;if(npc.avoidTime>1.1){npc.avoidSign*=-1;npc.avoidTime=.2;}
+  const offsets=[.28,.52,.78,1.05,1.36,1.62,2.05,2.5,Math.PI];let best=null;
+  for(const offset of offsets) for(const sign of [npc.avoidSign,-npc.avoidSign]){
+    const angle=base+offset*sign;const probeX=npc.x+Math.cos(angle)*lookAhead,probeY=npc.y+Math.sin(angle)*lookAhead;
+    if(!npcCanStand(npc,probeX,probeY)) continue;
+    const score=Math.hypot(targetX-probeX,targetY-probeY)+offset*(sign===npc.avoidSign?.16:.24);
+    if(!best||score<best.score) best={x:Math.cos(angle),y:Math.sin(angle),score};
+  }
+  return best||{x:-dy/distance*npc.avoidSign,y:dx/distance*npc.avoidSign};
 }
 function updateNpcSchedules(dt){
   const frozen=state.paused||state.mapOpen||state.inventoryOpen||state.dead;
   for(const npc of worldObjects.filter((entry)=>entry.kind==="npc")){
     const schedule=npcSchedule(npc.id);
-    npc.activity=schedule.activity;npc.pose=schedule.pose||"stand";npc.indoor=schedule.interior||null;npc.indoorX=schedule.x;npc.indoorY=schedule.y;
+    npc.activity=schedule.activity;npc.pose=schedule.pose||"stand";npc.indoor=schedule.interior||null;npc.indoorFloor=schedule.floor||0;npc.indoorX=schedule.x;npc.indoorY=schedule.y;
     if(npc.indoor||frozen){npc.moving=false;npc.vx=0;npc.vy=0;continue;}
     const dx=schedule.x-npc.x,dy=schedule.y-npc.y,distance=Math.hypot(dx,dy);
     if(distance<1.1){npc.moving=false;npc.vx=0;npc.vy=0;continue;}
-    const speed=npc.id==="taren"?11:9.2;
+    const targetKey=Math.round(schedule.x)+":"+Math.round(schedule.y);if(npc.navTarget!==targetKey){npc.navTarget=targetKey;npc.avoidTime=0;npc.avoidSign=npc.id.charCodeAt(0)%2?1:-1;}
+    const steering=npcSteering(npc,schedule.x,schedule.y,Math.min(dt,.05));const speed=npc.id==="taren"?11:9.2;
     const response=1-Math.exp(-Math.min(dt,.05)*9);
-    npc.vx=(npc.vx||0)+((dx/distance)*speed-(npc.vx||0))*response;
-    npc.vy=(npc.vy||0)+((dy/distance)*speed-(npc.vy||0))*response;
-    const oldX=npc.x,oldY=npc.y,stepX=npc.vx*Math.min(dt,.05),stepY=npc.vy*Math.min(dt,.05);
-    if(npcCanStand(npc,npc.x+stepX,npc.y)) npc.x+=stepX;else npc.vx*=.18;
-    if(npcCanStand(npc,npc.x,npc.y+stepY)) npc.y+=stepY;else npc.vy*=.18;
-    if(Math.hypot(npc.x-oldX,npc.y-oldY)<.015){
-      const side=npc.id.charCodeAt(0)%2?1:-1,safeDt=Math.min(dt,.05);
-      const sideX=-dy/distance*speed*safeDt*side,sideY=dx/distance*speed*safeDt*side;
-      if(npcCanStand(npc,npc.x+sideX,npc.y)) npc.x+=sideX;
-      if(npcCanStand(npc,npc.x,npc.y+sideY)) npc.y+=sideY;
+    npc.vx=(npc.vx||0)+(steering.x*speed-(npc.vx||0))*response;npc.vy=(npc.vy||0)+(steering.y*speed-(npc.vy||0))*response;
+    const oldX=npc.x,oldY=npc.y,safeDt=Math.min(dt,.05);let nextX=npc.x+npc.vx*safeDt,nextY=npc.y+npc.vy*safeDt;
+    if(npcCanStand(npc,nextX,nextY)){npc.x=nextX;npc.y=nextY;}else{
+      const slideX=npc.x+npc.vx*safeDt,slideY=npc.y+npc.vy*safeDt;
+      if(npcCanStand(npc,slideX,npc.y)) npc.x=slideX;if(npcCanStand(npc,npc.x,slideY)) npc.y=slideY;
+      if(Math.hypot(npc.x-oldX,npc.y-oldY)<.01){npc.avoidTime=(npc.avoidTime||0)+safeDt*3;npc.vx=steering.x*speed*.7;npc.vy=steering.y*speed*.7;}
     }
     const moved=Math.hypot(npc.x-oldX,npc.y-oldY);npc.moving=moved>.012;if(npc.moving)npc.gait=(npc.gait||0)+moved*.56;
-    npc.dir=Math.abs(dx)>Math.abs(dy)?dx>0?"right":"left":dy>0?"down":"up";
+    npc.dir=Math.abs(npc.vx)>Math.abs(npc.vy)?npc.vx>0?"right":"left":npc.vy>0?"down":"up";
   }
 }
 
-function interiorRoom(){return runtime.interior&&interiors[runtime.interior.id];}
+function interiorBuilding(){return runtime.interior&&interiors[runtime.interior.id];}
+function interiorRoom(){const building=interiorBuilding();return building?.floors?.[runtime.interior.floor||0]||null;}
 function interiorFurniture(room){
   return room.objects.filter((object)=>object.solid);
 }
 function interiorCanStand(x,y){
   const room=interiorRoom();if(!room) return false;if(x<.55||y<.8||x>room.width-.55||y>room.height-.42) return false;
-  return !interiorFurniture(room).some((rect)=>x>rect.x-.28&&x<rect.x+rect.w+.28&&y>rect.y-.28&&y<rect.y+rect.h+.28);
+  return ![...interiorFurniture(room),...(room.partitions||[])].some((rect)=>x>rect.x-.28&&x<rect.x+rect.w+.28&&y>rect.y-.28&&y<rect.y+rect.h+.28);
 }
 function moveInteriorPlayer(dt){
   if(!runtime.interior||state.paused||state.mapOpen||state.inventoryOpen||state.dead) return false;
@@ -258,9 +326,9 @@ function moveInteriorPlayer(dt){
   state.player.dir=Math.abs(dx)>Math.abs(dy)?dx>0?"right":"left":dy>0?"down":"up";state.player.walkTime+=dt*(state.keys.has("shift")?2:1);state.player.stamina=Math.min(100,state.player.stamina+dt*12);return true;
 }
 function enterInterior(building){
-  const room=interiors[building.interior];if(!room) return;
+  const interior=interiors[building.interior];const room=interior?.floors?.[0];if(!room) return;
   if(state.mountedHorseId){const horse=animalStates.get(state.mountedHorseId);if(horse) horse.riderId=null;state.mountedHorseId=null;api.showToast("Dein Pferd wartet vor der Tür.",1500);}
-  runtime.roll=null;runtime.interior={id:room.id,x:room.door.x,y:room.door.y-.55,exteriorX:state.player.x,exteriorY:state.player.y};state.keys.clear();$("gamePanel").classList.add("inside-building");
+  runtime.roll=null;runtime.interior={id:interior.id,floor:0,x:room.door.x,y:room.door.y-.72,exteriorX:state.player.x,exteriorY:state.player.y};state.keys.clear();$("gamePanel").classList.add("inside-building");
   const label=$("insideLabel")||document.createElement("div");label.id="insideLabel";label.className="inside-label";label.textContent=room.name;if(!label.parentNode) $("gamePanel").appendChild(label);api.showToast(room.name+" betreten",1300);
   api.updateMobileControlState?.();
 }
@@ -423,17 +491,20 @@ function nearestWoodPiece(){
 }
 function nearbyInteraction(){
   if(runtime.interior){
-    const room=interiorRoom();let best=null;const consider=(candidate,x,y)=>{const distance=Math.hypot(runtime.interior.x-x,runtime.interior.y-y);if(distance<1.35&&(!best||distance<best.distance)) best={type:"v015",distance,...candidate};};
-    consider({kind:"interiorExit",label:"Nach Treibholz hinausgehen",mobileLabel:"Verlassen"},room.door.x,room.door.y);
-    for(const station of room.stations) consider({kind:station.kind,station,label:station.label,mobileLabel:station.mobileLabel},station.x,station.y);
-    for(const npc of worldObjects.filter((entry)=>entry.kind==="npc"&&entry.indoor===room.id)) consider({kind:"interiorNpc",object:npc,label:"Mit "+npcProfiles[npc.variant].name+" sprechen",mobileLabel:"Reden"},npc.indoorX,npc.indoorY);
+    const room=interiorRoom();let best=null;const consider=(candidate,x,y,reach=1.35)=>{const distance=Math.hypot(runtime.interior.x-x,runtime.interior.y-y);if(distance<reach&&(!best||distance<best.distance)) best={type:"v015",distance,...candidate};};
+    if((runtime.interior.floor||0)===0) consider({kind:"interiorExit",label:"Nach Treibholz hinausgehen",mobileLabel:"Verlassen"},room.door.x,room.door.y);
+    for(const furniture of room.objects){
+      const definition=furnitureFunctions[furniture.type];if(!definition)continue;const nearestX=Math.max(furniture.x,Math.min(runtime.interior.x,furniture.x+furniture.w));const nearestY=Math.max(furniture.y,Math.min(runtime.interior.y,furniture.y+furniture.h));
+      consider({kind:"interiorFurniture",furniture,definition,label:furniture.label||definition.label,mobileLabel:definition.action==="floor"?"Etage":definition.action==="sleep"?"Schlafen":definition.action==="craft"?"Bauen":"Benutzen"},nearestX,nearestY,1.42);
+    }
+    for(const npc of worldObjects.filter((entry)=>entry.kind==="npc"&&entry.indoor===runtime.interior.id&&(entry.indoorFloor||0)===(runtime.interior.floor||0))) consider({kind:"interiorNpc",object:npc,label:"Mit "+npcProfiles[npc.variant].name+" sprechen",mobileLabel:"Reden"},npc.indoorX,npc.indoorY);
     return best;
   }
   let best=nearestWoodPiece();
   for(const object of worldObjects){
     if(object.kind==="npc"&&object.indoor) continue;
     if(runtime.world.opened[object.id]&&object.kind==="lootChest") continue;
-    const distance=Math.max(0,distanceTo(object)-(object.radius||2));
+    const distance=object.kind==="hut"&&object.doorPoint?Math.hypot(state.player.x-object.doorPoint.x,state.player.y-object.doorPoint.y):Math.max(0,distanceTo(object)-(object.radius||2));
     if(distance<18&&object.label&&(!best||distance<best.distance)) best={type:"v015",kind:object.kind,object,distance,label:object.label,mobileLabel:object.mobileLabel};
   }
   return best;
@@ -442,6 +513,7 @@ function interact(target){
   if(target.type!=="v015") return false;
   if(target.kind==="interiorExit"){exitInterior();return true;}
   if(target.kind==="interiorNpc"){talkToNpc(target.object);return true;}
+  if(target.kind==="interiorFurniture"){useInteriorFurniture(target);return true;}
   if(target.kind==="interiorTrade"){const borin=worldObjects.find((entry)=>entry.id==="borin");if(borin?.indoor==="store") talkToNpc(borin);else openCraft("trader");return true;}
   if(target.kind==="interiorCampfire"){openCraft("campfire");return true;}
   if(target.kind==="interiorHearth"||target.kind==="interiorMeal"){
@@ -486,9 +558,31 @@ function interact(target){
   return true;
 }
 
+function useInteriorFurniture(target){
+  const furniture=target.furniture,definition=target.definition;const floor=runtime.interior.floor||0;const key=runtime.interior.id+":"+floor+":"+furniture.type+":"+furniture.x+":"+furniture.y;runtime.world.furnitureUses=runtime.world.furnitureUses||{};runtime.world.furnitureUses[key]=(runtime.world.furnitureUses[key]||0)+1;
+  if(definition.action==="floor"){
+    const nextFloor=Number(furniture.targetFloor)||0;const nextRoom=interiors[runtime.interior.id]?.floors?.[nextFloor];if(!nextRoom)return;
+    runtime.interior.floor=nextFloor;runtime.interior.x=furniture.targetX??nextRoom.door.x;runtime.interior.y=furniture.targetY??nextRoom.door.y;const label=$("insideLabel");if(label)label.textContent=nextRoom.name;api.showToast(nextRoom.name,1300);return;
+  }
+  if(definition.action==="sleep"){state.player.health=100;state.player.stamina=100;state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};const hour=(8+state.elapsed/120)%24;state.elapsed+=(((7-hour+24)%24)||24)*120;api.showToast("Ausgeschlafen · Leben und Ausdauer erholt",1900);sound("rest");saveNow("rest");return;}
+  if(definition.action==="meal"){const day=Math.floor(state.elapsed/(120*24));const mealKey=key+":"+day;if(runtime.world.meals?.[mealKey]){api.showToast("Hier hast du heute bereits gegessen.",1500);return;}runtime.world.meals=runtime.world.meals||{};runtime.world.meals[mealKey]=true;state.player.health=Math.min(100,state.player.health+14);state.player.stamina=100;api.showToast("Warme Mahlzeit · +14 Leben · volle Ausdauer",1800);sound("heal");return;}
+  if(definition.action==="sit"){state.player.stamina=100;api.showToast("Kurz ausgeruht · Ausdauer vollständig erholt",1500);sound("rest");return;}
+  if(definition.action==="cook"){openCraft("campfire");return;}
+  if(definition.action==="trade"){const borin=worldObjects.find((entry)=>entry.id==="borin");if(borin?.indoor==="store"&&(borin.indoorFloor||0)===floor)talkToNpc(borin);else openCraft("trader");return;}
+  if(definition.action==="craft"){openCraft("workbench");return;}
+  if(definition.action==="wash"){state.player.stamina=100;state.player.heat=Math.max(0,(state.player.heat||0)-20);api.showToast("Frisches Wasser · Ausdauer erholt",1500);sound("water");return;}
+  if(definition.action==="light"){runtime.world.interiorLights=runtime.world.interiorLights||{};const currentlyLit=runtime.world.interiorLights[key]!==false;runtime.world.interiorLights[key]=!currentlyLit;api.showToast(runtime.world.interiorLights[key]?"Licht entzündet":"Licht gelöscht",1200);return;}
+  if(definition.action==="board"){showDialog("Treibholzer Anschläge","Mira teilt Nachtwachen ein. Taren sucht Hilfe für neue Türstege, Borin meldet knappe Salzvorräte und Edda warnt vor Glocken im Küstennebel.");return;}
+  if(definition.action==="map"){showDialog("Karte der zersplitterten See","Farbige Fäden verbinden Treibholz mit der Kieslichtung, drei Höhlen und einer Route ins Glasmeer. Mehrere Randnotizen stammen von verschwundenen Fischern.");return;}
+  if(definition.action==="lore"){showDialog("Spuren des Alltags",furniture.type==="bookshelf"?"Gezeitenbücher, Jagdlisten und alte Inselchroniken stehen dicht nebeneinander. Ein Band über Nebelzeichen wurde zuletzt häufig benutzt.":furniture.type==="desk"?"Zwischen Rechnungen und Wachplänen liegt ein unfertiger Brief über Lichter jenseits der Bucht.":"Knoten, Flicken und Salzspuren erzählen von vielen Fahrten durch schlechtes Wetter.");return;}
+  if(definition.action==="storage"){api.showToast(furniture.type==="fishRack"?"Der Fisch ist für den Winter abgezählt.":"Ordentlich verstaut · nichts gehört dir",1500);return;}
+  api.showToast(definition.label,1300);
+}
+
 function collisionAt(x,y){
   for(const object of worldObjects){
     if(!object.solid) continue;
+    if(object.kind==="hut"&&object.footprint){if(solidContains(object,x,y,PLAYER_RADIUS*.65))return {type:"v015",object};continue;}
     let halfX=(object.halfWidth||object.radius||6)+PLAYER_RADIUS*.65,halfY=(object.halfHeight||object.radius||6)+PLAYER_RADIUS*.65;
     const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;const assetId="prop_"+object.kind;const asset=editor?.pack?.assets?.[assetId];const definition=editor?.definitions?.[assetId];const size=propPixelSizes[object.kind];
     if(asset?.enabled&&definition&&size){halfX=Math.max(2,asset.meta.hitbox.width/definition.width*size[0]/VIEW_SCALE/2)+PLAYER_RADIUS*.65;halfY=Math.max(2,asset.meta.hitbox.height/definition.height*size[1]/VIEW_SCALE/2)+PLAYER_RADIUS*.65;}
@@ -615,17 +709,33 @@ function onAnimalDamaged(animal,damage,itemId){
 }
 
 function worldToScreen(x,y,camX,camY){return {x:(x-camX)*VIEW_SCALE+canvas.width/2,y:(y-camY)*VIEW_SCALE+canvas.height/2};}
-function drawGround(camX,camY){
-  if(runtime.interior) return;const village=worldToScreen(START.x,START.y,camX,camY);const camp=worldToScreen(BANDIT_CAMP_ONE.x,BANDIT_CAMP_ONE.y,camX,camY);ctx.save();ctx.globalAlpha=.46;
-  ctx.fillStyle="#8e784f";ctx.beginPath();ctx.ellipse(Math.round(village.x),Math.round(village.y-5),151,96,0,0,Math.PI*2);ctx.fill();
-  const pathEnds=[[-128,62],[-78,31],[78,34],[0,-96],[118,67]];ctx.fillStyle="#b09a69";
-  for(const [endX,endY] of pathEnds) for(let step=1;step<=9;step++){
-    const t=step/10,jitter=((step*7+endX)%5)-2;const x=village.x+endX*t+jitter,y=village.y+endY*t+((step*3+endY)%3)-1;
-    ctx.fillRect(Math.round(x-6),Math.round(y-3),12+(step%3)*2,6+(step%2)*2);
+function drawVillagePath(points,camX,camY,seed=0){
+  let serial=0;ctx.fillStyle="#b09a69";
+  for(let segment=0;segment<points.length-1;segment++){
+    const from=points[segment],to=points[segment+1];const length=Math.hypot(to.x-from.x,to.y-from.y);const steps=Math.max(2,Math.ceil(length/5));
+    for(let step=0;step<=steps;step++,serial++){
+      const t=step/steps;const worldX=from.x+(to.x-from.x)*t,worldY=from.y+(to.y-from.y)*t;const p=worldToScreen(worldX,worldY,camX,camY);const jitter=((serial*7+seed*11)%5)-2;
+      ctx.fillRect(Math.round(p.x-6+jitter),Math.round(p.y-3+(serial%3)-1),10+(serial+seed)%5,5+(serial%2)*2);
+      if(serial%3===0){ctx.fillStyle="#88744f";ctx.fillRect(Math.round(p.x-2+jitter),Math.round(p.y+2),4,2);ctx.fillStyle="#b09a69";}
+    }
   }
+}
+function drawGround(camX,camY){
+  if(runtime.interior) return;const camp=worldToScreen(BANDIT_CAMP_ONE.x,BANDIT_CAMP_ONE.y,camX,camY);ctx.save();ctx.globalAlpha=.46;
+  const point=(x,y)=>({x:START.x+x,y:START.y+y});
+  drawVillagePath([point(-150,76),point(-112,66),point(-68,58),point(-18,56),point(24,57),point(72,57),point(126,67)],camX,camY,1);
+  drawVillagePath([point(-92,47),point(-91,55),point(-68,58)],camX,camY,2);
+  drawVillagePath([point(89,49),point(89,56),point(72,57)],camX,camY,3);
+  drawVillagePath([point(0,-94),point(0,-76),point(12,-58),point(18,-35),point(24,-18),point(24,57)],camX,camY,4);
+  drawVillagePath([point(-52,-19),point(-30,-25),point(-7,-30),point(18,-35)],camX,camY,5);
   ctx.globalAlpha=.64;ctx.fillStyle="#725f42";ctx.beginPath();ctx.ellipse(Math.round(camp.x),Math.round(camp.y+8),132,84,-.08,0,Math.PI*2);ctx.fill();ctx.globalAlpha=.32;ctx.fillStyle="#b79a63";for(let i=0;i<18;i++){const angle=i*2.39;ctx.fillRect(Math.round(camp.x+Math.cos(angle)*(28+i*5%102)),Math.round(camp.y+Math.sin(angle)*(20+i*3%66)),5+i%7,2+i%3);}
   for(const object of worldObjects.filter((entry)=>entry.kind==="campfire")){const p=worldToScreen(object.x,object.y,camX,camY);if(p.x<-50||p.y<-50||p.x>canvas.width+50||p.y>canvas.height+50) continue;ctx.fillStyle="rgba(255,151,55,.12)";const size=28+Math.sin(state.elapsed*5+object.x)*3;ctx.fillRect(Math.round(p.x-size),Math.round(p.y-size*.45),Math.round(size*2),Math.round(size*.9));}
   ctx.restore();
+}
+function drawHouseShadow(object,p){
+  const footprint=object.footprint;if(!footprint)return;const halfWidth=Math.round(footprint.halfWidth*VIEW_SCALE),halfDepth=Math.round(footprint.halfDepth*VIEW_SCALE);const centerY=Math.round(p.y+footprint.offsetY*VIEW_SCALE+4);
+  ctx.fillStyle="rgba(2,8,7,.34)";
+  for(let row=-halfDepth;row<=halfDepth;row+=3){const ratio=row/(halfDepth||1);const span=Math.round(halfWidth*Math.sqrt(Math.max(0,1-ratio*ratio)));ctx.fillRect(Math.round(p.x-span+4),centerY+row,Math.max(2,span*2),3);}
 }
 function fallbackNpc(entity,x,y,scale=2){const profile=npcProfiles[entity.variant]||{skin:"#a86f45",hair:"#302721",hairStyle:"undercut",beardStyle:"stubble",shirt:"#6c4337",cloak:"#2f3437",outfit:"raider",visibleArmor:entity.kind==="bandit"?"guardArmor":null};const player={...state.player,...profile,id:entity.id,name:"",x:entity.x,y:entity.y,dir:entity.dir||"down",moving:!!entity.moving,talking:!!entity.talking,walkTime:entity.gait||0,actionType:null,actionProgress:0,heldItem:entity.heldItem||null,visibleArmor:entity.visibleArmor||profile.visibleArmor};api.drawCharacter(ctx,x,y,player,scale,false);}
 function drawQuestTargetFloat(object,p,height=58){const target=questTarget();if(!target||target.id!==object.id||runtime.interior) return;const y=Math.round(p.y-height+Math.sin(state.elapsed*4)*3);ctx.save();ctx.translate(Math.round(p.x),y);ctx.rotate(Math.PI/4);ctx.fillStyle="#31250f";ctx.strokeStyle="#f2cc69";ctx.lineWidth=2;ctx.fillRect(-9,-9,18,18);ctx.strokeRect(-9,-9,18,18);ctx.rotate(-Math.PI/4);ctx.fillStyle="#fff0af";ctx.font="bold 15px Georgia";ctx.textAlign="center";ctx.fillText(target.markerGlyph||"!",0,5);ctx.restore();}
@@ -635,7 +745,7 @@ function drawProp(object,camX,camY){
   if(object.kind==="npc"){drawNpc(object,camX,camY);return;}const p=worldToScreen(object.x,object.y,camX,camY);const editor=window.__ARCHIPELAGO_ASSET_EDITOR__;const assetId=["workbench","campfire","well","hut","cave","banditTent","lootChest","desertWell","caravan","sunAltar"].includes(object.kind)?"prop_"+object.kind:null;
   const size=object.pixelSize||propPixelSizes[object.kind]||[48,32];
   const propAnimation=object.kind==="campfire"?"burn":object.kind==="sunAltar"?"glow":object.kind==="desertWell"?"water":runtime.world.opened[object.id]?"open":"idle";
-  if(object.kind==="hut"&&houseSprites[object.id]?.complete&&houseSprites[object.id].naturalWidth){ctx.save();ctx.imageSmoothingEnabled=false;ctx.fillStyle="rgba(2,8,7,.34)";ctx.fillRect(Math.round(p.x-size[0]*.43),Math.round(p.y-9),Math.round(size[0]*.86),9);ctx.drawImage(houseSprites[object.id],Math.round(p.x-size[0]/2),Math.round(p.y-size[1]),size[0],size[1]);ctx.restore();drawQuestTargetFloat(object,p,size[1]+17);return;}
+  if(object.kind==="hut"&&houseSprites[object.id]?.complete&&houseSprites[object.id].naturalWidth){ctx.save();ctx.imageSmoothingEnabled=false;drawHouseShadow(object,p);ctx.drawImage(houseSprites[object.id],Math.round(p.x-size[0]/2),Math.round(p.y-size[1]),size[0],size[1]);ctx.restore();drawQuestTargetFloat(object,p,size[1]+17);return;}
   if(assetId&&object.kind!=="hut"&&editor?.drawArtistSizedOverride(assetId,ctx,p.x-size[0]/2,p.y-size[1],size[0],size[1],{animation:propAnimation})){drawQuestTargetFloat(object,p,size[1]+17);return;}
   if(object.kind==="workbench"){ctx.fillStyle="#5d3d26";ctx.fillRect(Math.round(p.x-20),Math.round(p.y-13),40,13);ctx.fillStyle="#a97746";ctx.fillRect(Math.round(p.x-22),Math.round(p.y-18),44,7);ctx.fillStyle="#3e2a1e";ctx.fillRect(Math.round(p.x-17),Math.round(p.y),5,17);ctx.fillRect(Math.round(p.x+12),Math.round(p.y),5,17);}
   else if(object.kind==="campfire"){ctx.fillStyle="#4c3326";ctx.fillRect(Math.round(p.x-12),Math.round(p.y+3),24,5);ctx.fillStyle="#e15b2d";ctx.fillRect(Math.round(p.x-7),Math.round(p.y-13),14,16);ctx.fillStyle="#ffd36b";ctx.fillRect(Math.round(p.x-3),Math.round(p.y-18-Math.sin(state.elapsed*9)*3),7,14);}
@@ -722,12 +832,13 @@ function drawInterior(){
   const pixelScale=Math.max(1,Math.floor(Math.min((canvas.width-24)/logicalWidth,(canvas.height-48)/logicalHeight)));
   const width=logicalWidth*pixelScale,height=logicalHeight*pixelScale,ox=Math.round((canvas.width-width)/2),oy=Math.round((canvas.height-height)/2+8);
   const sx=(meters)=>Math.round(ox+meters*INTERIOR_TILE_PIXELS*pixelScale),sy=(meters)=>Math.round(oy+meters*INTERIOR_TILE_PIXELS*pixelScale);
-  const basePalette=interiorPalette(room);const doorTile=Math.floor(room.door.x);
+  const basePalette=interiorPalette(room);const doorTile=(runtime.interior.floor||0)===0?Math.floor(room.door.x):-1;
   ctx.save();ctx.imageSmoothingEnabled=false;ctx.fillStyle="#02080a";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#101719";ctx.fillRect(ox-4,oy-4,width+8,height+8);
   for(let y=0;y<room.height;y++) for(let x=0;x<room.width;x++){
     const edge=x===0||x===room.width-1||y===0||y===room.height-1;
     drawInteriorTile(y===room.height-1&&x===doorTile?"door":edge?"wall":"floor",x,y,pixelScale,ox,oy,basePalette);
   }
+  for(const partition of room.partitions||[]) for(let y=0;y<partition.h;y++)for(let x=0;x<partition.w;x++)drawInteriorTile("wall",partition.x+x,partition.y+y,pixelScale,ox,oy,basePalette);
   const ordered=[...room.objects].sort((a,b)=>Number(a.solid)-Number(b.solid));
   for(const object of ordered){
     const palette=interiorPalette(room,object.accent||room.accent);
@@ -736,16 +847,16 @@ function drawInterior(){
       drawInteriorTile(type,object.x+x,object.y+y,pixelScale,ox,oy,palette);
     }
   }
-  for(const object of room.objects.filter((entry)=>entry.type==="hearth")){
+  for(const object of room.objects.filter((entry)=>["hearth","stove","oven","cauldron","lantern","candleTable"].includes(entry.type))){
+    const lightKey=runtime.interior.id+":"+(runtime.interior.floor||0)+":"+object.type+":"+object.x+":"+object.y;if(["lantern","candleTable"].includes(object.type)&&runtime.world.interiorLights?.[lightKey]===false)continue;
     const cx=sx(object.x+object.w/2),cy=sy(object.y+object.h/2);const glow=ctx.createRadialGradient(cx,cy,0,cx,cy,42*pixelScale);
-    glow.addColorStop(0,"rgba(255,184,83,.18)");glow.addColorStop(1,"rgba(255,151,48,0)");ctx.fillStyle=glow;ctx.fillRect(ox,oy,width,height);
+    glow.addColorStop(0,["lantern","candleTable"].includes(object.type)?"rgba(255,205,112,.13)":"rgba(255,184,83,.18)");glow.addColorStop(1,"rgba(255,151,48,0)");ctx.fillStyle=glow;ctx.fillRect(ox,oy,width,height);
   }
-  for(const station of room.stations){
-    const near=Math.hypot(runtime.interior.x-station.x,runtime.interior.y-station.y)<1.35;if(!near)continue;
-    ctx.strokeStyle="#f2cd70";ctx.lineWidth=Math.max(1,pixelScale*.22);ctx.strokeRect(sx(station.x-.58),sy(station.y-.58),Math.round(1.16*8*pixelScale),Math.round(1.16*8*pixelScale));
+  const nearby=nearbyInteraction();if(nearby?.kind==="interiorFurniture"){
+    const furniture=nearby.furniture;ctx.strokeStyle="#f2cd70";ctx.lineWidth=Math.max(1,pixelScale*.22);ctx.strokeRect(sx(furniture.x-.08),sy(furniture.y-.08),Math.round((furniture.w+.16)*8*pixelScale),Math.round((furniture.h+.16)*8*pixelScale));
   }
   const characterScale=Math.max(1,Math.round(pixelScale*.72));
-  const indoorNpcs=worldObjects.filter((entry)=>entry.kind==="npc"&&entry.indoor===room.id).sort((a,b)=>a.indoorY-b.indoorY);
+  const indoorNpcs=worldObjects.filter((entry)=>entry.kind==="npc"&&entry.indoor===runtime.interior.id&&(entry.indoorFloor||0)===(runtime.interior.floor||0)).sort((a,b)=>a.indoorY-b.indoorY);
   for(const npc of indoorNpcs){
     const px=sx(npc.indoorX),py=sy(npc.indoorY);
     if(npc.pose==="sleep"){ctx.save();ctx.translate(px,py);ctx.rotate(Math.PI/2);fallbackNpc({...npc,moving:false,dir:"right"},0,0,characterScale);ctx.restore();ctx.fillStyle="#e8d99e";ctx.font=Math.max(10,pixelScale*2)+"px Georgia";ctx.fillText("z",px+pixelScale*9,py-pixelScale*4);}
@@ -789,14 +900,14 @@ function restoreSnapshot(save){
   if(state.player.health<=0){state.player.health=100;state.player.x=state.lastSafe.x;state.player.y=state.lastSafe.y;state.player.bleed={intensity:0,duration:0,tickCooldown:0,volume:0,trailDistance:0};state.camera.x=state.player.x;state.camera.y=state.player.y;}
   treePhysicsStates.clear();for(const entry of save.trees||[]){const tree=api.treeAtGrid(entry.gx,entry.gy);if(!tree) continue;const physics=api.getTreePhysics(tree,true);Object.assign(physics,clone(entry),{tree,key:entry.gx+","+entry.gy});}
   if(api.clearAnimalRuntimeCaches) api.clearAnimalRuntimeCaches();else{api.animalStates.clear();api.animalCellCache.clear();}for(const raw of save.animals||[]){const cellX=raw.originCellX??Math.floor(raw.x/(18*TILE_METERS));const cellY=raw.originCellY??Math.floor(raw.y/(18*TILE_METERS));api.createAnimalState(raw.species,cellX,cellY,0,{x:raw.x,y:raw.y},clone(raw));}
-  state.starterHorseId=save.starterHorseId||null;state.mountedHorseId=save.mountedHorseId||null;runtime.world=clone(save.world||runtime.world);if(!Array.isArray(runtime.world.bandits)) runtime.world.bandits=createBandits();if((runtime.world.contentVersion||0)<19){const fresh=new Map(createBandits().map((bandit)=>[bandit.id,bandit]));for(const bandit of runtime.world.bandits.filter((entry)=>entry.camp===1)){const target=fresh.get(bandit.id);if(target){bandit.x=target.x;bandit.y=target.y;bandit.homeX=target.homeX;bandit.homeY=target.homeY;}}}runtime.world.contentVersion=20;runtime.world.meals=runtime.world.meals||{};api.syncHeldItem();api.renderInventory();updateQuestHud();
+  state.starterHorseId=save.starterHorseId||null;state.mountedHorseId=save.mountedHorseId||null;runtime.world=clone(save.world||runtime.world);if(!Array.isArray(runtime.world.bandits)) runtime.world.bandits=createBandits();if((runtime.world.contentVersion||0)<19){const fresh=new Map(createBandits().map((bandit)=>[bandit.id,bandit]));for(const bandit of runtime.world.bandits.filter((entry)=>entry.camp===1)){const target=fresh.get(bandit.id);if(target){bandit.x=target.x;bandit.y=target.y;bandit.homeX=target.homeX;bandit.homeY=target.homeY;}}}runtime.world.contentVersion=21;runtime.world.meals=runtime.world.meals||{};runtime.world.furnitureUses=runtime.world.furnitureUses||{};runtime.world.interiorLights=runtime.world.interiorLights||{};api.syncHeldItem();api.renderInventory();updateQuestHud();
 }
 function loadSlot(slot){const save=readSlot(slot);if(!save) return false;if(state.running) saveNow("switch");runtime.activeSlot=slot;runtime.pendingLoad=save;closeSaveSlots();api.togglePause(false);api.startGame();return true;}
 function nextEmptySlot(){for(let slot=1;slot<=3;slot++) if(!readSlot(slot)) return slot;return 1;}
 function onGameStarted(){
   runtime.arrows=[];runtime.interior=null;runtime.roll=null;$("gamePanel").classList.remove("inside-building");$("insideLabel")?.remove();
   if(runtime.pendingLoad){const save=runtime.pendingLoad;runtime.pendingLoad=null;restoreSnapshot(save);api.showToast("Spielstand "+runtime.activeSlot+" geladen",1800);}
-  else{runtime.activeSlot=runtime.activeSlot||nextEmptySlot();runtime.world={contentVersion:20,questStage:0,bandits:createBandits(),opened:{},visited:{},crafted:{},meals:{},playSeconds:0,weatherSeed:Math.floor(Math.random()*525)};updateQuestHud();saveNow("new");}
+  else{runtime.activeSlot=runtime.activeSlot||nextEmptySlot();runtime.world={contentVersion:21,questStage:0,bandits:createBandits(),opened:{},visited:{},crafted:{},meals:{},furnitureUses:{},interiorLights:{},playSeconds:0,weatherSeed:Math.floor(Math.random()*525)};updateQuestHud();saveNow("new");}
   updateNpcSchedules(0);runtime.autosave=0;updateSaveUi();
 }
 function formatDate(value){try{return new Date(value).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});}catch{return "Unbekannt";}}
@@ -834,7 +945,7 @@ function bindUi(){
 }
 
 const exported={
-  version:"0.20",recipes,worldObjects,runtime,collisionAt,nearbyInteraction,interact,drawGround,renderables,drawRenderable,drawOverlay,
+  version:"0.21",recipes,worldObjects,runtime,collisionAt,nearbyInteraction,interact,drawGround,renderables,drawRenderable,drawOverlay,
   frameDt,cameraOffset,update,dodge,isRolling:()=>!!runtime.roll,performPlayerStrike,useEquippedItem,useConsumable,onAnimalDamaged,updateAnimalSocial,sound,
   onGameStarted,saveNow,readSlot,loadSlot,snapshot,restoreSnapshot,inventoryCount,removeInventory,weatherType,desertMovementMultiplier,advanceQuestFromInventory,
   isInterior:()=>!!runtime.interior,moveInteriorPlayer,exitInterior,questTarget,showDialog,closeDialog

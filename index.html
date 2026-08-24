@@ -2,142 +2,629 @@
 <html lang="de">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Archipelago RPG</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#071116" />
+  <title>Archipelago — Echoes of the Shattered Sea</title>
+  <link rel="stylesheet" href="style.css?v=0.21" />
   <script defer src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
-  <script defer src="game.js"></script>
+  <script defer src="game.js?v=0.21"></script>
+  <script defer src="v015-systems.js?v=0.21"></script>
+  <script defer src="v018-eiswacht.js?v=0.21"></script>
+  <script defer src="asset-editor.js?v=0.21"></script>
 </head>
 <body>
   <div id="app">
-    <header class="topbar">
-      <div>
-        <h1>ARCHIPELAGO RPG</h1>
-        <p>10 × 10 km · Pixel Browser RPG</p>
-      </div>
-      <div class="status">
-        <span id="netDot" class="dot offline"></span>
-        <span id="netStatus">Offline / Solo</span>
-      </div>
-    </header>
+    <section id="titleScreen" class="title-screen" aria-labelledby="gameTitle">
+      <canvas id="titleMap" width="960" height="540" aria-hidden="true"></canvas>
+      <div class="title-mist mist-one"></div>
+      <div class="title-mist mist-two"></div>
+      <div class="title-vignette"></div>
 
-    <main>
-      <section id="setupPanel" class="panel setup-grid">
-        <div class="card">
-          <h2>1. Charakter</h2>
-          <label>Name
-            <input id="playerName" maxlength="18" value="Abenteurer" />
-          </label>
+      <div class="title-content">
+        <p class="eyebrow">Eine Welt hinter dem Nebel</p>
+        <h1 id="gameTitle"><span>ARCHI</span>PELAGO</h1>
+        <p class="subtitle">Echoes of the Shattered Sea</p>
+        <div class="title-divider" aria-hidden="true"><i></i><b>✦</b><i></i></div>
+        <p class="title-copy">Reise vom ewigen Eis bis zu Salzpfannen, roten Schluchten und Sandstürmen im Süden.</p>
 
-          <div class="creator-row">
-            <div>
-              <label>Haut
-                <select id="skinSelect">
-                  <option value="#f1c27d">Hell</option>
-                  <option value="#d79a62">Mittel</option>
-                  <option value="#a86f45">Dunkel</option>
-                  <option value="#75462e">Sehr dunkel</option>
-                </select>
-              </label>
-              <label>Haare
-                <select id="hairSelect">
-                  <option value="#3a2418">Braun</option>
-                  <option value="#161616">Schwarz</option>
-                  <option value="#d9b24c">Blond</option>
-                  <option value="#8d3d2e">Rot</option>
-                  <option value="#d7d7d7">Grau</option>
-                </select>
-              </label>
-              <label>Oberteil
-                <select id="shirtSelect">
-                  <option value="#315d9b">Blau</option>
-                  <option value="#7b3f8c">Violett</option>
-                  <option value="#3f7b46">Grün</option>
-                  <option value="#9a3c3c">Rot</option>
-                  <option value="#b1812c">Ocker</option>
-                </select>
-              </label>
+        <nav class="title-actions" aria-label="Hauptmenü">
+          <button id="beginBtn" class="menu-button primary">Neues Abenteuer <span>›</span></button>
+          <button id="multiplayerTitleBtn" class="menu-button">Mehrspieler <span>›</span></button>
+          <button id="continueBtn" class="menu-button" disabled>Spielstände <small>Noch kein Spielstand</small></button>
+        </nav>
+      </div>
+
+      <div class="title-footer">
+        <span>20 × 20 km prozedurale Welt</span>
+        <span class="title-version">PROTOTYP · 0.21</span>
+      </div>
+    </section>
+
+    <section id="saveSlotsOverlay" class="screen-overlay save-slots-overlay hidden" aria-label="Spielstände">
+      <div class="save-slots-card modal-card" role="dialog" aria-modal="true" aria-labelledby="saveSlotsTitle">
+        <header class="save-slots-head">
+          <div><p class="eyebrow">Lokales Reisetagebuch</p><h2 id="saveSlotsTitle">Spielstände</h2><p>Drei getrennte Reisen · automatisches Speichern alle 20 Sekunden</p></div>
+          <button id="closeSaveSlots" class="icon-button" aria-label="Spielstände schließen">×</button>
+        </header>
+        <div id="saveSlotList" class="save-slot-list"></div>
+      </div>
+    </section>
+
+    <section id="menuScreen" class="menu-screen hidden">
+      <header class="topbar">
+        <button id="backTitleBtn" class="icon-button" aria-label="Zurück zum Titelscreen">←</button>
+        <div class="topbar-brand">
+          <span class="brand-mark">A</span>
+          <div><strong>ARCHIPELAGO</strong><small>ABENTEUER VORBEREITEN</small></div>
+        </div>
+        <div class="status">
+          <span id="netDot" class="dot offline"></span>
+          <span id="netStatus">Offline / Solo</span>
+        </div>
+      </header>
+
+      <main class="setup-shell">
+        <div class="setup-heading">
+          <p class="eyebrow">Vor der Überfahrt</p>
+          <h2>Wer betritt die Inseln?</h2>
+          <p>Gestalte deinen Reisenden und wähle, wie deine Geschichte beginnt.</p>
+        </div>
+
+        <section id="setupPanel" class="setup-grid">
+          <div class="card character-card">
+            <div class="card-number">01</div>
+            <div class="card-heading">
+              <span>DEIN REISENDER</span>
+              <h3>Charakter</h3>
             </div>
-            <canvas id="creatorPreview" width="96" height="128" aria-label="Charaktervorschau"></canvas>
-          </div>
-        </div>
 
-        <div class="card">
-          <h2>2. Multiplayer</h2>
-          <button id="soloBtn" class="primary">Solo starten</button>
-          <button id="hostBtn">Lobby hosten</button>
-          <div id="hostBox" class="hidden lobby-code-box">
-            <span>Lobby-Code</span>
-            <strong id="lobbyCode">------</strong>
-            <button id="copyCodeBtn" class="small">Code kopieren</button>
-          </div>
-
-          <div class="join-row">
-            <input id="joinCode" maxlength="6" placeholder="ABC123" />
-            <button id="joinBtn">Beitreten</button>
-          </div>
-
-          <p class="hint">
-            Die Website kann auf Netlify liegen. Multiplayer läuft als Browser-zu-Browser-Verbindung,
-            wobei der Host die Lobby verwaltet.
-          </p>
-        </div>
-
-        <div class="card wide">
-          <h2>Welt</h2>
-          <div class="world-stats">
-            <div><strong>100 km²</strong><span>Gesamtfläche</span></div>
-            <div><strong>Prozedural</strong><span>Chunks statt riesiger Tilemap</span></div>
-            <div><strong>8+</strong><span>Biome</span></div>
-            <div><strong>Mehrere</strong><span>Inseln</span></div>
-          </div>
-        </div>
-      </section>
-
-      <section id="gamePanel" class="game-wrap hidden">
-        <canvas id="gameCanvas" width="960" height="540"></canvas>
-
-        <aside class="hud left">
-          <div class="hud-title">ARCHIPELAGO</div>
-          <div><span>Biome</span><strong id="biomeText">-</strong></div>
-          <div><span>Position</span><strong id="coordText">-</strong></div>
-          <div><span>Spieler</span><strong id="playerCount">1</strong></div>
-        </aside>
-
-        <aside class="hud right">
-          <div class="controls-title">STEUERUNG</div>
-          <div>WASD · Laufen</div>
-          <div>SHIFT · Sprint</div>
-          <div>M · Karte</div>
-          <div>ESC · Menü</div>
-        </aside>
-
-        <canvas id="minimap" class="minimap" width="180" height="180"></canvas>
-
-        <div id="toast" class="toast hidden"></div>
-
-        <div id="pauseMenu" class="pause hidden">
-          <div class="pause-card">
-            <h2>Pause</h2>
-            <button id="resumeBtn" class="primary">Weiter</button>
-            <button id="leaveBtn">Zurück zum Hauptmenü</button>
-          </div>
-        </div>
-
-        <div id="mapOverlay" class="map-overlay hidden">
-          <div class="map-card">
-            <div class="map-head">
-              <div>
-                <h2>Weltkarte</h2>
-                <p>10 × 10 km</p>
+            <div class="creator-layout">
+              <div class="creator-preview-wrap">
+                <canvas id="creatorPreview" width="144" height="176" aria-label="Charaktervorschau"></canvas>
+                <div class="preview-controls" aria-label="Vorschau drehen">
+                  <button id="previewLeftBtn" class="icon-button small" aria-label="Nach links drehen">←</button>
+                  <span id="previewDirection">Vorne</span>
+                  <button id="previewRightBtn" class="icon-button small" aria-label="Nach rechts drehen">→</button>
+                </div>
               </div>
-              <button id="closeMapBtn">Schließen</button>
+
+              <div class="creator-form">
+                <label>Name
+                  <input id="playerName" maxlength="18" value="Abenteurer" autocomplete="off" />
+                </label>
+                <div class="field-pair">
+                  <label>Haut
+                    <select id="skinSelect">
+                      <option value="#f1c27d">Hell</option>
+                      <option value="#d79a62">Mittel</option>
+                      <option value="#a86f45">Dunkel</option>
+                      <option value="#75462e">Sehr dunkel</option>
+                    </select>
+                  </label>
+                  <label>Augen
+                    <select id="eyeSelect">
+                      <option value="#243b53">Blau</option>
+                      <option value="#4b3621">Braun</option>
+                      <option value="#355f42">Grün</option>
+                      <option value="#7a7265">Grau</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-pair">
+                  <label>Frisur
+                    <select id="hairStyleSelect">
+                      <option value="tousled">Zerzaust</option>
+                      <option value="bob">Kurzer Bob</option>
+                      <option value="braid">Zopf</option>
+                      <option value="mohawk">Irokese</option>
+                      <option value="long">Langes Haar</option>
+                      <option value="curls">Locken</option>
+                      <option value="undercut">Undercut</option>
+                      <option value="ponytail">Pferdeschwanz</option>
+                      <option value="bun">Dutt</option>
+                      <option value="hood">Reisekapuze</option>
+                    </select>
+                  </label>
+                  <label>Haarfarbe
+                    <select id="hairSelect">
+                      <option value="#3a2418">Braun</option>
+                      <option value="#161616">Schwarz</option>
+                      <option value="#d9b24c">Blond</option>
+                      <option value="#8d3d2e">Rot</option>
+                      <option value="#d7d7d7">Grau</option>
+                      <option value="#8a6a3c">Dunkelblond</option>
+                      <option value="#eee7d8">Weiß</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-pair">
+                  <label>Bart
+                    <select id="beardStyleSelect">
+                      <option value="none">Keiner</option>
+                      <option value="stubble">Stoppeln</option>
+                      <option value="moustache">Schnurrbart</option>
+                      <option value="goatee">Kinnbart</option>
+                      <option value="full">Vollbart</option>
+                      <option value="braided">Geflochtener Bart</option>
+                    </select>
+                  </label>
+                  <label>Bartfarbe
+                    <select id="beardSelect">
+                      <option value="#3a2418">Braun</option>
+                      <option value="#161616">Schwarz</option>
+                      <option value="#d9b24c">Blond</option>
+                      <option value="#8d3d2e">Rot</option>
+                      <option value="#9d9d9d">Grau</option>
+                      <option value="#eee7d8">Weiß</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field-pair">
+                  <label>Kleidung
+                    <select id="outfitSelect">
+                      <option value="traveler">Reisender</option>
+                      <option value="ranger">Waldläufer</option>
+                      <option value="raider">Küstenräuber</option>
+                      <option value="scholar">Gelehrter</option>
+                      <option value="north">Nordländer</option>
+                      <option value="desert">Wüstenwanderer</option>
+                    </select>
+                  </label>
+                  <label>Stofffarbe
+                    <select id="shirtSelect">
+                      <option value="#315d9b">Küstenblau</option>
+                      <option value="#7b3f8c">Dämmerlila</option>
+                      <option value="#3f7b46">Waldgrün</option>
+                      <option value="#9a3c3c">Glutrot</option>
+                      <option value="#b1812c">Dünenocker</option>
+                      <option value="#343b43">Nachtgrau</option>
+                      <option value="#b9aa83">Leinen</option>
+                    </select>
+                  </label>
+                </div>
+                <label>Mantelfarbe
+                  <select id="cloakSelect">
+                    <option value="#684431">Lederbraun</option>
+                    <option value="#243e46">Tiefsee</option>
+                    <option value="#4d5941">Moosgrün</option>
+                    <option value="#6b3441">Weinrot</option>
+                    <option value="#77736b">Wollgrau</option>
+                    <option value="#b58a55">Sand</option>
+                  </select>
+                </label>
+              </div>
             </div>
-            <canvas id="worldMap" width="640" height="640"></canvas>
+          </div>
+
+          <div id="journeyCard" class="card journey-card">
+            <div class="card-number">02</div>
+            <div class="card-heading">
+              <span>DEINE REISE</span>
+              <h3>Spielmodus</h3>
+            </div>
+
+            <button id="soloBtn" class="choice-button primary">
+              <span class="choice-icon">♜</span>
+              <span><strong>Solo starten</strong><small>Die Inseln auf eigene Faust erkunden</small></span>
+              <b>›</b>
+            </button>
+            <button id="hostBtn" class="choice-button">
+              <span class="choice-icon">⌂</span>
+              <span><strong>Lobby hosten</strong><small>Eine Welt für Freunde öffnen</small></span>
+              <b>›</b>
+            </button>
+
+            <div id="hostBox" class="hidden lobby-code-box">
+              <span>DEIN LOBBY-CODE</span>
+              <strong id="lobbyCode">------</strong>
+              <button id="copyCodeBtn" class="small">Kopieren</button>
+            </div>
+
+            <div class="join-divider"><span>ODER BEITRETEN</span></div>
+            <div class="join-row">
+              <input id="joinCode" maxlength="6" placeholder="ABC123" aria-label="Lobby-Code" />
+              <button id="joinBtn">Beitreten</button>
+            </div>
+
+            <div class="world-promise">
+              <span>✦</span>
+              <p><strong>Eine gemeinsame Welt</strong>Terrain, Orte und Flüsse entstehen aus demselben Seed und sind für alle identisch.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </section>
+
+    <section id="assetEditorOverlay" class="asset-editor-overlay hidden" aria-label="Asset Studio">
+      <div id="assetEditorLogin" class="asset-editor-login modal-card" role="dialog" aria-modal="true" aria-labelledby="assetEditorLoginTitle">
+        <p class="eyebrow">Geschützter Werkzeugbereich</p>
+        <h2 id="assetEditorLoginTitle">Asset Studio</h2>
+        <p>Texturen, Animationsframes und Ebenen direkt im Browser bearbeiten. Beim ersten Öffnen setzt du ein lokales Studio-Passwort für dieses Gerät.</p>
+        <label>Lokales Studio-Passwort
+          <input id="assetEditorPassword" type="password" autocomplete="current-password" />
+        </label>
+        <p id="assetEditorLoginError" class="asset-editor-error hidden" role="alert">Passwort stimmt nicht.</p>
+        <div class="asset-editor-login-actions">
+          <button id="assetEditorCancelLogin">Abbrechen</button>
+          <button id="assetEditorUnlock" class="primary">Studio öffnen</button>
+        </div>
+        <small>Der Passwortschutz ist bei einer statischen Website nur eine Zugangshürde, keine Server-Authentifizierung.</small>
+      </div>
+
+      <div id="assetEditorWorkspace" class="asset-editor-workspace hidden">
+        <header class="asset-editor-head">
+          <div>
+            <p class="eyebrow">Artist-Werkzeug</p>
+            <h2 id="assetEditorTitle">Asset Studio</h2>
+            <p id="assetEditorStatus">Projekt-Pack geladen</p>
+          </div>
+          <div class="asset-editor-head-actions">
+            <button id="assetEditorUndo" title="Rückgängig (Strg+Z)">↶</button>
+            <button id="assetEditorRedo" title="Wiederholen (Strg+Y)">↷</button>
+            <button id="assetEditorClose" class="icon-button" aria-label="Asset Studio schließen">×</button>
+          </div>
+        </header>
+
+        <div class="asset-editor-layout">
+          <aside class="asset-editor-panel asset-editor-assets">
+            <span class="asset-editor-kicker">01 · ASSET</span>
+            <label>Kategorie
+              <select id="assetEditorCategory"></select>
+            </label>
+            <label>Asset suchen
+              <input id="assetEditorSearch" type="search" placeholder="z. B. Schwert, Haar, Block" />
+            </label>
+            <p id="assetEditorAssetMeta" class="asset-editor-asset-meta"></p>
+            <div id="assetEditorAssetList" class="asset-editor-asset-list"></div>
+            <label class="asset-editor-switch"><input id="assetEditorEnabled" type="checkbox" /> Im Spiel aktiv</label>
+            <label>Darstellungsgröße
+              <input id="assetEditorScale" type="range" min="1" max="6" step="0.25" />
+              <output id="assetEditorScaleValue">3×</output>
+            </label>
+            <div class="asset-editor-help">
+              <strong>Ohne Code ins Spiel</strong>
+              <p>1. Kategorie, Variante und Clip wählen.<br />2. Frames/Ebenen bearbeiten und „Im Spiel aktiv“ einschalten.<br />3. „Projektdatei speichern“ lädt <em>artist-assets.json</em> herunter. Diese Datei auf GitHub über <em>Add file → Upload files</em> ersetzen; GitHub Pages übernimmt sie beim nächsten Build.</p>
+            </div>
+          </aside>
+
+          <main class="asset-editor-stage">
+            <div class="asset-editor-animation-bar">
+              <label>Animation
+                <select id="assetEditorAnimation"></select>
+              </label>
+              <label>Tempo (FPS)
+                <input id="assetEditorFps" type="number" min="1" max="24" step="1" />
+              </label>
+              <div class="asset-editor-frame-actions" aria-label="Animationsframes">
+                <button id="assetEditorPrevFrame" aria-label="Vorheriger Frame">‹</button>
+                <strong id="assetEditorFrameLabel">1 / 1</strong>
+                <button id="assetEditorNextFrame" aria-label="Nächster Frame">›</button>
+                <button id="assetEditorAddFrame">+ Frame</button>
+                <button id="assetEditorDuplicateFrame">Duplizieren</button>
+                <button id="assetEditorDeleteFrame">Löschen</button>
+              </div>
+              <div class="asset-editor-clip-actions" aria-label="Animationsclips verwalten">
+                <button id="assetEditorAddAnimation">+ Clip</button>
+                <button id="assetEditorDuplicateAnimation">Clip kopieren</button>
+                <button id="assetEditorRenameAnimation">Umbenennen</button>
+                <button id="assetEditorDeleteAnimation">Clip löschen</button>
+              </div>
+            </div>
+
+            <div class="asset-editor-canvases">
+              <div class="asset-editor-grid-wrap">
+                <canvas id="assetEditorCanvas" width="640" height="640" aria-label="Pixelraster"></canvas>
+              </div>
+              <aside class="asset-editor-preview-wrap">
+                <span>LIVE-VORSCHAU</span>
+                <label>Szene
+                  <select id="assetEditorScene">
+                    <option value="forest">Wald</option>
+                    <option value="village">Dorf</option>
+                    <option value="desert">Wüste</option>
+                    <option value="combat">Kampf</option>
+                    <option value="inventory">Inventar</option>
+                  </select>
+                </label>
+                <label>Richtung
+                  <select id="assetEditorDirection">
+                    <option value="down">Vorne</option><option value="left">Links</option><option value="up">Hinten</option><option value="right">Rechts</option>
+                  </select>
+                </label>
+                <canvas id="assetEditorPreview" width="240" height="240"></canvas>
+                <div id="assetEditorRuntimeStatus" class="asset-runtime-status"></div>
+                <label class="asset-editor-switch"><input id="assetEditorOnion" type="checkbox" /> Vorherigen Frame zeigen</label>
+                <label class="asset-editor-switch"><input id="assetEditorGridToggle" type="checkbox" checked /> Raster zeigen</label>
+              </aside>
+            </div>
+
+            <div class="asset-editor-tools" role="toolbar" aria-label="Pixelwerkzeuge">
+              <button class="active" data-asset-tool="pencil">Stift <kbd>P</kbd></button>
+              <button data-asset-tool="eraser">Radierer <kbd>E</kbd></button>
+              <button data-asset-tool="fill">Füllen <kbd>F</kbd></button>
+              <button data-asset-tool="picker">Pipette <kbd>I</kbd></button>
+              <label class="asset-editor-color">Farbe <input id="assetEditorColor" type="color" value="#d8ad55" /></label>
+              <input id="assetEditorColorText" class="asset-editor-color-text" value="#d8ad55" maxlength="9" aria-label="Farbe als Hexwert" />
+              <button id="assetEditorMirror">Horizontal spiegeln</button>
+              <button id="assetEditorClearFrame">Frame leeren</button>
+            </div>
+          </main>
+
+          <aside class="asset-editor-panel asset-editor-layers">
+            <span class="asset-editor-kicker">02 · EBENEN</span>
+            <div id="assetEditorLayerList" class="asset-editor-layer-list"></div>
+            <div class="asset-editor-layer-actions">
+              <button id="assetEditorAddLayer">+ Ebene</button>
+              <button id="assetEditorDuplicateLayer">Duplizieren</button>
+              <button id="assetEditorDeleteLayer">Löschen</button>
+            </div>
+            <label>Ebenenname
+              <input id="assetEditorLayerName" maxlength="24" />
+            </label>
+            <label>Deckkraft
+              <input id="assetEditorLayerOpacity" type="range" min="0" max="1" step="0.05" />
+              <output id="assetEditorLayerOpacityValue">100%</output>
+            </label>
+            <div class="asset-editor-layer-order">
+              <button id="assetEditorLayerUp">Ebene nach vorn</button>
+              <button id="assetEditorLayerDown">Ebene nach hinten</button>
+            </div>
+            <span class="asset-editor-kicker asset-meta-kicker">03 · RUNTIME</span>
+            <div class="asset-meta-grid">
+              <label>Anker X<input id="assetEditorAnchorX" type="number" step="1" /></label>
+              <label>Anker Y<input id="assetEditorAnchorY" type="number" step="1" /></label>
+              <label>Hitbox X<input id="assetEditorHitboxX" type="number" min="1" step="1" /></label>
+              <label>Hitbox Y<input id="assetEditorHitboxY" type="number" min="1" step="1" /></label>
+              <label>Hand X<input id="assetEditorHandX" type="number" step="1" /></label>
+              <label>Hand Y<input id="assetEditorHandY" type="number" step="1" /></label>
+            </div>
+            <div id="assetEditorValidation" class="asset-validation" role="status"></div>
+          </aside>
+        </div>
+
+        <footer class="asset-editor-footer">
+          <div>
+            <button id="assetEditorSaveDraft" class="primary">Entwurf speichern</button>
+            <button id="assetEditorSaveProject">Projektdatei speichern</button>
+            <button id="assetEditorExport">JSON exportieren</button>
+            <button id="assetEditorImport">JSON importieren</button>
+            <input id="assetEditorImportFile" class="hidden" type="file" accept="application/json,.json" />
+          </div>
+          <button id="assetEditorReset">Asset zurücksetzen</button>
+        </footer>
+      </div>
+    </section>
+
+    <section id="gamePanel" class="game-wrap hidden">
+      <canvas id="terrainCanvas" width="1280" height="720" aria-hidden="true"></canvas>
+      <canvas id="gameCanvas" width="1280" height="720"></canvas>
+      <div class="game-vignette" aria-hidden="true"></div>
+
+      <aside class="player-hud glass-panel">
+        <canvas id="playerPortrait" width="52" height="64" aria-hidden="true"></canvas>
+        <div class="player-readout">
+          <div class="player-name-row"><strong id="hudPlayerName">Abenteurer</strong><span id="movementStateText">LV. 1</span></div>
+          <div class="meter health"><i id="healthFill"></i><span id="healthText">100 / 100</span></div>
+          <div class="meter stamina"><i id="staminaFill"></i><span id="staminaText">AUSDAUER</span></div>
+        </div>
+      </aside>
+
+      <div class="compass glass-panel" aria-label="Kompass">
+        <span>W</span><span>NW</span><strong id="compassDirection">N</strong><span>NO</span><span>O</span>
+        <i></i>
+      </div>
+
+      <aside class="world-hud glass-panel">
+        <span id="timeText">08:00</span>
+        <div><small>REGION</small><strong id="biomeText">-</strong></div>
+        <div><small>POSITION</small><strong id="coordText">-</strong></div>
+        <div><small>REISENDE</small><strong id="playerCount">1</strong></div>
+      </aside>
+
+      <aside class="quest-hud glass-panel">
+        <span id="questLabel" class="quest-label">AUFBRUCH</span>
+        <strong id="questTitle">Glut im Nebel</strong>
+        <p id="questDescription">Sprich mit Mira im Lager Treibholz.</p>
+      </aside>
+
+      <aside class="minimap-frame glass-panel">
+        <div class="minimap-head"><span>GEBIETSKARTE</span><b id="locationText">Unbekannte Küste</b></div>
+        <canvas id="minimap" class="minimap" width="200" height="200"></canvas>
+        <div class="minimap-footer"><span>M</span> Weltkarte öffnen</div>
+      </aside>
+
+      <div class="control-strip glass-panel">
+        <span><kbd>WASD</kbd> Bewegen</span>
+        <span><kbd>SHIFT</kbd> Sprinten</span>
+        <span><kbd>I</kbd> Inventar</span>
+        <span><kbd>E</kbd> Interagieren</span>
+        <span><kbd>H</kbd> Pferd Follow/Stay</span>
+        <span><kbd>LEER</kbd> Ausweichrolle</span>
+        <span><kbd>LMB</kbd> Benutzen</span>
+        <span><kbd>M</kbd> Karte</span>
+        <span><kbd>ESC</kbd> Menü</span>
+      </div>
+
+      <div id="quickbar" class="quickbar glass-panel" aria-label="Schnellzugriff">
+        <button type="button" data-quick-item="ironSword" aria-label="Schwert ausrüsten">
+          <kbd>1</kbd><i class="quick-icon sword-icon" aria-hidden="true"></i><small>Schwert</small>
+        </button>
+        <button type="button" data-quick-item="woodsmanAxe" aria-label="Axt ausrüsten">
+          <kbd>2</kbd><i class="quick-icon axe-icon" aria-hidden="true"></i><small>Axt</small>
+        </button>
+        <button type="button" data-quick-item="huntingSpear" aria-label="Jagdspeer ausrüsten">
+          <kbd>3</kbd><i class="quick-icon spear-icon" aria-hidden="true"></i><small>Speer</small>
+        </button>
+        <button type="button" data-quick-item="huntingBow" aria-label="Jagdbogen ausrüsten">
+          <kbd>4</kbd><i class="quick-icon bow-icon" aria-hidden="true"></i><small>Bogen</small><span id="quickArrowCount" class="quick-count" aria-label="Verfügbare Pfeile">0</span>
+        </button>
+      </div>
+
+      <nav id="mobileToolbar" class="mobile-toolbar glass-panel" aria-label="Mobile Spielmenüs">
+        <button type="button" data-mobile-action="inventory" aria-label="Inventar öffnen" aria-pressed="false">
+          <b aria-hidden="true">I</b><span>Inventar</span>
+        </button>
+        <button type="button" data-mobile-action="map" aria-label="Weltkarte öffnen" aria-pressed="false">
+          <b aria-hidden="true">M</b><span>Karte</span>
+        </button>
+        <button type="button" data-mobile-action="horse-command" aria-label="Pferd zwischen Folgen und Bleiben umschalten" aria-pressed="false">
+          <b aria-hidden="true">H</b><span id="mobileHorseCommandLabel">Bleiben</span>
+        </button>
+        <button type="button" data-mobile-action="pause" aria-label="Spiel pausieren" aria-pressed="false">
+          <b aria-hidden="true">Ⅱ</b><span>Menü</span>
+        </button>
+      </nav>
+
+      <div id="mobileControls" class="mobile-controls" aria-label="Mobile Spielsteuerung">
+        <div id="mobileJoystick" class="mobile-joystick" role="application" aria-label="Analoger Lauf-Joystick">
+          <div class="joystick-ring" aria-hidden="true"><i id="mobileJoystickKnob"></i></div>
+          <span>Laufen</span>
+        </div>
+
+        <div class="mobile-action-pad" aria-label="Aktionen">
+          <button type="button" class="mobile-sprint" data-mobile-key="shift" aria-label="Sprinten">
+            <b aria-hidden="true">»</b><span>Sprint</span>
+          </button>
+          <button type="button" class="mobile-interact" data-mobile-action="interact" aria-label="Interagieren">
+            <b aria-hidden="true">E</b><span id="mobileInteractLabel">Aktion</span>
+          </button>
+          <button type="button" class="mobile-attack" data-mobile-action="attack" aria-label="Ausgerüsteten Gegenstand benutzen">
+            <b aria-hidden="true">⚔</b><span id="mobileAttackLabel">Schwert</span>
+          </button>
+          <button type="button" class="mobile-dodge" data-mobile-action="dodge" aria-label="Ausweichrolle">
+            <b aria-hidden="true">↝</b><span>Rolle</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="interactionHint" class="interaction-hint hidden"><kbd>E</kbd> Untersuchen</div>
+      <div id="toast" class="toast hidden"></div>
+      <div id="debugBadge" class="debug-badge hidden">DEBUG · KLICK-TELEPORT · # BEENDEN</div>
+
+      <div id="pauseMenu" class="screen-overlay pause hidden">
+        <div class="pause-card modal-card">
+          <p class="eyebrow">Die Welt wartet</p>
+          <h2>Pause</h2>
+          <button id="resumeBtn" class="primary">Weiterreisen</button>
+          <button id="openMapBtn">Weltkarte</button>
+          <button id="saveGameBtn">Jetzt speichern</button>
+          <button id="openSaveSlotsInGame">Spielstände</button>
+          <button id="leaveBtn">Zurück zum Hauptmenü</button>
+        </div>
+      </div>
+
+      <div id="craftOverlay" class="screen-overlay craft-overlay hidden">
+        <div class="craft-card modal-card">
+          <header><div><p id="craftKicker" class="eyebrow">Werkbank</p><h2 id="craftTitle">Herstellen</h2><p id="craftSubtitle">Materialien werden direkt aus dem Rucksack verwendet.</p></div><button id="closeCraft" class="icon-button" aria-label="Herstellung schließen">×</button></header>
+          <div id="craftRecipeList" class="craft-recipe-list"></div>
+        </div>
+      </div>
+
+      <div id="dialogOverlay" class="screen-overlay dialog-overlay hidden">
+        <div class="dialog-card modal-card" role="dialog" aria-modal="true" aria-labelledby="dialogSpeaker">
+          <section class="dialog-content">
+            <header>
+              <div><p id="dialogKicker" class="eyebrow">Treibholz</p><h2 id="dialogSpeaker">Mira</h2></div>
+              <button id="dialogClose" class="icon-button" type="button" aria-label="Gespräch beenden">×</button>
+            </header>
+            <p id="dialogActivity" class="dialog-activity">Dorfvorsteherin · beaufsichtigt das Lagerfeuer</p>
+            <div class="dialog-copy"><i aria-hidden="true">“</i><p id="dialogText" aria-live="polite"></p></div>
+            <div id="dialogActions" class="dialog-actions"></div>
+            <small class="dialog-hint">Antwort wählen · Text antippen zum Vorspulen</small>
+          </section>
+          <section class="dialog-portrait-panel" aria-hidden="true">
+            <canvas id="dialogPortrait" width="280" height="360"></canvas>
+            <div class="dialog-portrait-caption">
+              <span id="dialogRole">Bewohnerin von Treibholz</span>
+              <strong id="dialogMood">Aufmerksam</strong>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div id="mapOverlay" class="screen-overlay map-overlay hidden">
+        <div class="map-card modal-card">
+          <div class="map-head">
+            <div>
+              <p class="eyebrow">Kartographisches Archiv</p>
+              <h2>Die zersplitterte See</h2>
+              <p>20 × 20 km · Nordpol, fünf Wüstenzonen, Flüsse, Wege und bekannte Orte</p>
+            </div>
+            <button id="closeMapBtn" class="icon-button" aria-label="Karte schließen">×</button>
+          </div>
+          <div class="map-layout">
+            <canvas id="worldMap" width="720" height="720"></canvas>
+            <aside class="map-legend">
+              <h3>Legende</h3>
+              <span><i class="legend-player"></i>Deine Position</span>
+              <span><i class="legend-town"></i>Siedlung</span>
+              <span><i class="legend-ruin"></i>Ruine</span>
+              <span><i class="legend-river"></i>Fluss</span>
+              <span><i class="legend-road"></i>Alter Weg</span>
+              <div class="map-scale"><i></i><b>4 km</b></div>
+              <p>Die Karte zeigt nur bekannte Hauptorte. Kleinere Geheimnisse findest du beim Erkunden.</p>
+            </aside>
           </div>
         </div>
-      </section>
-    </main>
+      </div>
+
+      <div id="inventoryOverlay" class="screen-overlay inventory-overlay hidden">
+        <div class="inventory-card modal-card">
+          <header class="inventory-head">
+            <div>
+              <p class="eyebrow">Ausrüstung &amp; Gepäck</p>
+              <h2>Inventar</h2>
+              <p>Mehrfeld-Raster · Gegenstände können gedreht und verschoben werden</p>
+            </div>
+            <button id="closeInventoryBtn" class="icon-button" aria-label="Inventar schließen">×</button>
+          </header>
+
+          <div class="inventory-layout">
+            <section class="equipment-panel" aria-labelledby="equipmentTitle">
+              <div class="inventory-section-title"><span>01</span><h3 id="equipmentTitle">Charakter</h3></div>
+              <div class="equipment-paperdoll">
+                <button type="button" class="equipment-slot slot-head" data-equipment-slot="head"><small>Kopf</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-body" data-equipment-slot="body"><small>Körper</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-legs" data-equipment-slot="legs"><small>Beine</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-feet" data-equipment-slot="feet"><small>Stiefel</small><strong>Leer</strong></button>
+                <button type="button" class="equipment-slot slot-hand" data-equipment-slot="mainHand"><small>Haupthand</small><strong>Schwert</strong></button>
+                <div class="paperdoll-silhouette" aria-hidden="true"><i></i><b></b><span></span></div>
+              </div>
+            </section>
+
+            <section class="backpack-panel" aria-labelledby="backpackTitle">
+              <div class="inventory-section-title"><span>02</span><h3 id="backpackTitle">Rucksack</h3><small>10 × 6</small></div>
+              <div id="inventoryGrid" class="inventory-grid" aria-label="Rucksackraster"></div>
+              <p class="inventory-help">Gegenstand wählen, danach ein freies Feld anklicken. Doppelklick rüstet ihn aus.</p>
+            </section>
+
+            <aside class="item-inspector">
+              <div class="inventory-section-title"><span>03</span><h3>Details</h3></div>
+              <p class="item-kicker">AUSGEWÄHLT</p>
+              <h3 id="inventoryItemName">Kein Gegenstand</h3>
+              <strong id="inventoryItemSize">–</strong>
+              <p id="inventoryItemDescription">Wähle einen Gegenstand oder Ausrüstungsslot.</p>
+              <div class="inventory-actions">
+                <button id="inventoryEquipBtn" type="button" class="primary">Ausrüsten</button>
+                <button id="inventoryRotateBtn" type="button">Drehen <kbd>R</kbd></button>
+              </div>
+              <div class="system-note"><span>✦</span><p><strong>Modulares System</strong>Neue Waffen, Rüstung, Ressourcen und Behälter verwenden dasselbe Raster.</p></div>
+            </aside>
+          </div>
+
+          <footer class="inventory-footer"><kbd>I</kbd> schließen <span>·</span> <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>4</kbd> Werkzeug wechseln <span>·</span> <kbd>LMB</kbd> benutzen</footer>
+        </div>
+      </div>
+
+      <div id="deathMenu" class="screen-overlay death hidden">
+        <div class="death-card modal-card">
+          <p class="eyebrow">Deine Reise endet</p>
+          <h2>Ertrunken</h2>
+          <p id="deathReason">In der Tiefsee ertrunken</p>
+          <button id="respawnBtn" class="primary">Am letzten Ufer erwachen</button>
+        </div>
+      </div>
+    </section>
   </div>
 </body>
 </html>

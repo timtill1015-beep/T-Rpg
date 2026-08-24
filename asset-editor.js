@@ -1,0 +1,1110 @@
+"use strict";
+
+const ARTIST_ASSET_SCHEMA_VERSION=3;
+const ARTIST_ASSET_PROJECT_URL="artist-assets.json";
+const ARTIST_ASSET_STORAGE_KEY="archipelago.artist-assets.v1";
+const ARTIST_ASSET_GATE_KEY="archipelago.artist-studio.local-gate.v1";
+const ARTIST_ASSET_MAX_LAYERS=12;
+const ARTIST_ASSET_MAX_FRAMES=24;
+const ARTIST_ASSET_HISTORY_LIMIT=40;
+const ARTIST_SPRITE_CACHE_LIMIT=192;
+const ARTIST_ASSET_MAX_ANIMATIONS=32;
+const $=(id)=>document.getElementById(id);
+const state=window.__ARCHIPELAGO_DEBUG__?.state||{running:false,elapsed:0};
+
+const artistAssetCategories={
+  characters:"Figuren",animals:"Tiere",variants:"Tier-Varianten",hair:"Frisuren",items:"Waffen & Items",
+  terrain:"Terrain-Blöcke",trees:"Bäume & Natur",structures:"Bau-Blöcke",props:"Weltobjekte"
+};
+const artistAssetDefinitions={};
+function registerArtistDefinitions(category,definitions){
+  for(const definition of definitions) artistAssetDefinitions[definition.id]={category,...definition};
+}
+
+registerArtistDefinitions("characters",[
+  {id:"player",label:"Spieler komplett",width:16,height:24,scale:3,runtime:"player",binding:"drawCharacter",animations:["idle","walk","attack","ride"]},
+  {id:"npc_mira",label:"Mira · Dorfvorsteherin",width:16,height:24,scale:3,runtime:"npc",guide:"player",binding:"v015:npc",animations:["idle","talk","walk"]},
+  {id:"npc_borin",label:"Borin · Händler",width:16,height:24,scale:3,runtime:"npc",guide:"player",binding:"v015:npc",animations:["idle","talk"]},
+  {id:"bandit",label:"Bandit",width:16,height:24,scale:3,runtime:"bandit",guide:"player",binding:"v015:bandit",animations:["idle","walk","windup","attack","hurt","dead"]}
+]);
+registerArtistDefinitions("characters",[
+  ["elara","Dr. Elara Voss"],["tova","Tova Rune"],["njal","Njal Rune"],["sela","Sela Marr"],["orik","Orik Vael"],["iven","Iven Vael"]
+].map(([variant,label])=>({id:"npc_eis_"+variant,label:"Eiswacht · "+label,width:16,height:24,scale:3,runtime:"npc",variant,guide:"player",binding:"v018:eiswacht-resident",animations:["idle","walk","talk"]})));
+registerArtistDefinitions("animals",[
+  {id:"chicken",label:"Huhn · Basis",width:16,height:16,scale:2,runtime:"chicken",animations:["idle","walk","panic","dead"]},
+  {id:"boar",label:"Wildschwein · Basis",width:22,height:18,scale:3,runtime:"boar",animations:["idle","walk","windup","charge","recover","dead"]},
+  {id:"horse",label:"Pferd · Basis",width:30,height:28,scale:2,runtime:"horse",animations:["idle","walk","gallop","dead"]},
+  {id:"crow",label:"Rabe · Flug",width:18,height:16,scale:2,runtime:"crow",animations:["fly"]},
+  {id:"desertLizard",label:"Wüstenechse · Basis",width:22,height:14,scale:2,runtime:"desertLizard",animations:["idle","walk","panic","dead"]},
+  {id:"jackal",label:"Wüstenschakal · Basis",width:28,height:22,scale:2,runtime:"jackal",animations:["idle","walk","windup","charge","dead"]},
+  {id:"eisDog",label:"Eiswacht · Murr",width:24,height:18,scale:2,runtime:"eisDog",guide:"eisDog",binding:"v018:eiswacht-dog",animations:["idle","walk","sleep"]}
+]);
+registerArtistDefinitions("variants",[
+  ...[["white","Weiß"],["brown","Braun"],["black","Schwarz"]].map(([variant,label])=>({id:"chicken_"+variant,label:"Huhn · "+label,width:16,height:16,scale:2,runtime:"chicken",variant,base:"chicken",guide:"chicken",animations:["idle","walk","panic","dead"]})),
+  ...[["forest","Wald"],["dark","Dunkel"],["russet","Rotbraun"]].map(([variant,label])=>({id:"boar_"+variant,label:"Wildschwein · "+label,width:22,height:18,scale:3,runtime:"boar",variant,base:"boar",guide:"boar",animations:["idle","walk","windup","charge","recover","dead"]})),
+  ...[["bay","Brauner"],["black","Rappe"],["chestnut","Fuchs"],["grey","Schimmel"],["palomino","Palomino"],["pinto","Schecke"]].map(([variant,label])=>({id:"horse_"+variant,label:"Pferd · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]})),
+  ...[["warmblood","Warmblut"],["arabian","Araber"],["draft","Kaltblut"],["pony","Pony"]].map(([variant,label])=>({id:"horse_breed_"+variant,label:"Pferderasse · "+label,width:30,height:28,scale:2,runtime:"horse",variant,base:"horse",guide:"horse",animations:["idle","walk","gallop","dead"]})),
+  ...[["sand","Sand"],["red","Rotfels"],["salt","Salz"]].map(([variant,label])=>({id:"desertLizard_"+variant,label:"Wüstenechse · "+label,width:22,height:14,scale:2,runtime:"desertLizard",variant,base:"desertLizard",guide:"desertLizard",animations:["idle","walk","panic","dead"]})),
+  ...[["gold","Gold"],["ashen","Aschgrau"],["dark","Dunkel"]].map(([variant,label])=>({id:"jackal_"+variant,label:"Wüstenschakal · "+label,width:28,height:22,scale:2,runtime:"jackal",variant,base:"jackal",guide:"jackal",animations:["idle","walk","windup","charge","dead"]}))
+]);
+registerArtistDefinitions("hair",[
+  ["tousled","Zerzaust"],["bob","Bob"],["braid","Zopf"],["mohawk","Irokese"],["long","Lang"],
+  ["curls","Locken"],["undercut","Undercut"],["ponytail","Pferdeschwanz"],["bun","Dutt"],["hood","Kapuze"]
+].map(([style,label])=>({id:"hair_"+style,label:"Haar · "+label,width:16,height:16,scale:3,runtime:"hair",variant:style,guide:"hair",animations:["down","side","up"]})));
+registerArtistDefinitions("items",[
+  {id:"item_ironSword",label:"Eisenschwert",width:16,height:12,scale:2,runtime:"item",variant:"ironSword",guide:"sword",animations:["idle","swing"]},
+  {id:"item_woodsmanAxe",label:"Holzfälleraxt",width:16,height:12,scale:2,runtime:"item",variant:"woodsmanAxe",guide:"axe",animations:["idle","swing"]},
+  ...[["rawChicken","Rohes Huhn","meat"],["rawPork","Rohes Wild","meat"],["rawGame","Rohes Wüstenwild","meat"],["rawArcticChar","Roher Eisling","fish"],["smokedArcticChar","Geräucherter Eisling","fish"],["frostTea","Frostblütentee","potion"],["auroraShard","Auroraprisma","crystal"],["auroraLantern","Laterne der Weißnacht","lantern"],["jackalPelt","Schakalfell","hide"],["lizardScale","Echsenhaut","hide"],["feather","Feder","feather"],["boarHide","Tierhaut","hide"],["tusk","Hauer","tusk"],["bone","Knochen","bone"],["wood","Holz","wood"],["coin","Münze","coin"],["cookedChicken","Gebratenes Huhn","meat"],["cookedPork","Gebratenes Wild","meat"],["cookedGame","Gebratenes Wüstenwild","meat"],["fieldBandage","Feldverband","hide"],["leatherVest","Lederweste","hide"]]
+    .map(([variant,label,guide])=>({id:"item_"+variant,label,width:16,height:16,scale:2,runtime:"item",variant,guide,animations:["idle"]}))
+]);
+registerArtistDefinitions("items",[
+  {id:"item_huntingSpear",label:"Jagdspeer",width:20,height:12,scale:2,runtime:"item",variant:"huntingSpear",guide:"spear",binding:"drawHeldItem",animations:["idle","swing"]},
+  {id:"item_huntingBow",label:"Jagdbogen",width:18,height:18,scale:2,runtime:"item",variant:"huntingBow",guide:"bow",binding:"drawHeldItem",animations:["idle","draw"]},
+  {id:"item_arrow",label:"Jagdpfeil",width:20,height:8,scale:2,runtime:"item",variant:"arrow",guide:"arrow",binding:"v016:projectile",animations:["idle","flight"]}
+]);
+
+const artistTerrainPalettes={
+  deepWater:["#12374f","#22526b"],water:["#1e526b","#397b8c"],shallow:["#438091","#75a8ae"],river:["#4b91a5","#9bc5c6"],
+  packIce:["#b9d7d7","#e1eeee"],glacier:["#d8e8e5","#f4fbf8"],tundra:["#7e927e","#aab6a1"],beach:["#cdb36b","#ead18a"],
+  desert:["#c59a50","#e4bd6e"],redDesert:["#a9683f","#d58c58"],saltFlat:["#d8cfad","#f2ead2"],drySteppe:["#9c8748","#c1a65e"],badlands:["#865647","#b87a5c"],oasis:["#4f8552","#80aa65"],plains:["#718c4f","#9bae68"],forest:["#365f40","#5e8151"],
+  jungle:["#285237","#4c7649"],swamp:["#53694a","#7b855e"],rock:["#777568","#aaa594"],mountain:["#545b5c","#858b89"],snow:["#d9ded7","#f2f4ef"]
+};
+registerArtistDefinitions("terrain",Object.entries(artistTerrainPalettes).map(([biome,palette])=>({
+  id:"block_"+biome,label:"Block · "+biome,width:8,height:8,scale:2,runtime:"tile",variant:biome,kind:"tile",palette,animations:["idle"]
+})).concat([
+  {id:"bridge_wood",label:"Brücke · Holz",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#76502f","#a87943"],animations:["idle"]},
+  {id:"bridge_stone",label:"Brücke · Stein",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#77786d","#a7a899"],animations:["idle"]}
+]));
+
+registerArtistDefinitions("trees",[
+  ...[["oak","Eiche"],["pine","Kiefer"],["birch","Birke"],["willow","Weide"],["frostPine","Frostkiefer"],["acacia","Akazie"],["palm","Palme"]]
+    .flatMap(([variant,label])=>[
+      {id:"tree_trunk_"+variant,label:label+" · Stamm",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:variant==="birch"?["#5e5b54","#9d957d"]:["#4a301f","#76512e"],animations:["idle"]},
+      {id:"tree_leaf_"+variant,label:label+" · Krone",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#29452f","#628044"],animations:["idle","react"]}
+    ]),
+  {id:"tree_dead",label:"Toter Baum · Block",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#3b332b","#75634b"],animations:["idle"]},
+  {id:"tree_cactus",label:"Kaktus · Block",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#386a43","#76a35b"],animations:["idle"]},
+  {id:"tree_iceSpire",label:"Eisformation · Block",width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#6da9b4","#e7f6f2"],animations:["idle"]}
+]);
+
+const structureLabels={p:"Pflaster",R:"Dach",C:"Mauer",H:"Hauswand",W:"Holzwand",B:"Ziegel",D:"Tür",S:"Stein"};
+registerArtistDefinitions("structures",Object.entries(structureLabels).map(([code,label])=>({
+  id:"structure_"+code,label:"Bau-Block · "+label,width:8,height:8,scale:2,runtime:"tile",kind:"tile",palette:["#4b3b34","#a8875c"],variant:code,animations:["idle"]
+})));
+
+const artistPropDefinitions={boulder:[2,2,"Fels"],standingStone:[1,2,"Menhir"],sign:[1,2,"Wegweiser"],milestone:[1,2,"Meilenstein"],wagon:[3,2,"Wagen"],handcart:[2,2,"Handkarren"],supplies:[2,2,"Vorräte"],lantern:[1,2,"Laterne"],shrine:[2,2,"Schrein"],camp:[2,1,"Lager"],log:[3,1,"Baumstamm"],rubble:[2,1,"Trümmer"],notice:[2,2,"Anschlagtafel"],sunObelisk:[2,3,"Sonnenobelisk"],caravanWreck:[3,2,"Karawanenwrack"],boneField:[2,1,"Knochenfeld"],shadeCanopy:[3,2,"Schattensegel"]};
+registerArtistDefinitions("props",Object.entries(artistPropDefinitions).map(([variant,[w,h,label]])=>({
+  id:"prop_"+variant,label,width:w*8,height:h*8,scale:2,runtime:"prop",variant,guide:"prop",animations:["idle"]
+})));
+registerArtistDefinitions("props",[
+  {id:"prop_workbench",label:"Werkbank",width:24,height:16,scale:2,runtime:"v015prop",variant:"workbench",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_campfire",label:"Lagerfeuer",width:16,height:16,scale:2,runtime:"v015prop",variant:"campfire",guide:"prop",binding:"v015:world",animations:["idle","burn"]},
+  {id:"prop_well",label:"Dorfbrunnen",width:24,height:16,scale:2,runtime:"v015prop",variant:"well",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_hut",label:"Dorfhütte",width:32,height:24,scale:2,runtime:"v015prop",variant:"hut",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_cave",label:"Höhleneingang",width:32,height:24,scale:2,runtime:"v015prop",variant:"cave",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_banditTent",label:"Banditenzelt",width:32,height:24,scale:2,runtime:"v015prop",variant:"banditTent",guide:"prop",binding:"v015:world",animations:["idle"]},
+  {id:"prop_lootChest",label:"Beutetruhe",width:16,height:16,scale:2,runtime:"v015prop",variant:"lootChest",guide:"prop",binding:"v015:world",animations:["idle","open"]},
+  {id:"prop_desertWell",label:"Wüsten-Tiefbrunnen",width:24,height:20,scale:2,runtime:"v015prop",variant:"desertWell",guide:"prop",binding:"v017:desert",animations:["idle","water"]},
+  {id:"prop_caravan",label:"Salzkarawane",width:36,height:24,scale:2,runtime:"v015prop",variant:"caravan",guide:"prop",binding:"v017:desert",animations:["idle"]},
+  {id:"prop_sunAltar",label:"Wüstenglas-Altar",width:24,height:28,scale:2,runtime:"v015prop",variant:"sunAltar",guide:"prop",binding:"v017:desert",animations:["idle","glow"]}
+]);
+const eiswachtPropDefinitions={
+  longhouse:[54,36,"Langhaus"],observatory:[41,38,"Observatorium"],workshop:[44,34,"Werkhof"],clinic:[38,30,"Wärmestube"],greenhouse:[38,29,"Frostgewächshaus"],smokehouse:[37,30,"Räucherhaus"],archive:[36,29,"Archiv"],hut:[34,27,"Wohnhütte"],beacon:[29,49,"Nordlicht-Leuchtfeuer"],
+  generator:[24,21,"Dampfgenerator"],iceWell:[24,21,"Blaues Eisbecken"],memorial:[24,24,"Weißnacht-Denkmal"],fishRack:[28,22,"Fischgestell"],sled:[30,20,"Expeditionsschlitten"],weatherMast:[24,30,"Wetterfahne"],bell:[24,24,"Schichtglocke"],fishingHole:[24,16,"Eisloch"],surveyMarker:[24,24,"Aurora-Peilstein"],lamp:[16,24,"Frostlaterne"],gatePost:[16,24,"Torpfosten"]
+};
+registerArtistDefinitions("props",Object.entries(eiswachtPropDefinitions).map(([variant,[width,height,label]])=>({
+  id:"prop_eis_"+variant,label:"Eiswacht · "+label,width,height,scale:2,runtime:"v018prop",variant,guide:"prop",binding:"v018:eiswacht",animations:variant==="beacon"?["idle","lit"]:["idle"]
+})));
+
+function paintArtistRect(frame,x,y,width,height,color){
+  for(let py=y;py<y+height;py++) for(let px=x;px<x+width;px++) frame[px+","+py]=color;
+}
+
+function createArtistGuideLayers(id){
+  const shadow={};const body={};const details={};
+  const definition=artistAssetDefinitions[id];
+  const guideId=definition?.guide||id;
+  id=guideId;
+  if(id==="player"){
+    paintArtistRect(shadow,3,22,10,1,"#08101499");
+    paintArtistRect(body,2,8,12,10,"#684431");paintArtistRect(body,4,9,8,8,"#315d9b");paintArtistRect(body,4,16,3,6,"#222b31");paintArtistRect(body,9,16,3,6,"#222b31");paintArtistRect(body,4,3,8,7,"#f1c27d");paintArtistRect(body,2,10,2,5,"#f1c27d");paintArtistRect(body,12,10,2,5,"#f1c27d");
+    paintArtistRect(details,3,1,10,3,"#3a2418");paintArtistRect(details,3,3,2,5,"#3a2418");paintArtistRect(details,11,3,2,5,"#3a2418");paintArtistRect(details,6,6,1,1,"#243b53");paintArtistRect(details,10,6,1,1,"#243b53");paintArtistRect(details,4,15,8,1,"#8e6d37");paintArtistRect(details,4,20,3,2,"#151b20");paintArtistRect(details,9,20,3,2,"#151b20");
+  }else if(id==="chicken"){
+    paintArtistRect(shadow,2,13,11,1,"#08101488");
+    paintArtistRect(body,3,7,8,5,"#e8e1c4");paintArtistRect(body,8,3,5,5,"#e8e1c4");paintArtistRect(body,5,8,4,3,"#b8aa88");paintArtistRect(body,5,12,1,3,"#b78939");paintArtistRect(body,9,12,1,3,"#b78939");
+    paintArtistRect(details,13,5,2,1,"#d7a73a");paintArtistRect(details,9,1,1,2,"#a7352e");paintArtistRect(details,10,1,1,1,"#a7352e");paintArtistRect(details,11,5,1,1,"#1b211d");
+  }else if(id==="boar"){
+    paintArtistRect(shadow,2,15,18,1,"#08101488");
+    paintArtistRect(body,2,6,13,7,"#5e4637");paintArtistRect(body,13,8,6,5,"#463329");paintArtistRect(body,18,10,3,3,"#3a2922");paintArtistRect(body,4,12,2,4,"#3d2d25");paintArtistRect(body,12,12,2,4,"#3d2d25");
+    paintArtistRect(details,18,13,3,1,"#d5c49a");paintArtistRect(details,19,11,1,2,"#d5c49a");paintArtistRect(details,16,9,1,1,"#151815");paintArtistRect(details,5,4,5,3,"#463329");paintArtistRect(details,10,3,2,2,"#3a2922");paintArtistRect(details,1,8,1,2,"#7a5a42");
+  }else if(id==="horse"){
+    paintArtistRect(shadow,3,25,24,2,"#08101488");
+    paintArtistRect(body,4,8,17,9,"#8d4f2d");paintArtistRect(body,19,5,5,9,"#8d4f2d");paintArtistRect(body,22,3,6,6,"#8d4f2d");paintArtistRect(body,6,16,3,10,"#60311f");paintArtistRect(body,11,16,3,10,"#60311f");paintArtistRect(body,18,16,3,10,"#60311f");paintArtistRect(body,22,16,3,10,"#60311f");
+    paintArtistRect(details,4,6,4,4,"#241b19");paintArtistRect(details,2,8,3,8,"#241b19");paintArtistRect(details,24,2,2,3,"#241b19");paintArtistRect(details,26,2,2,3,"#241b19");paintArtistRect(details,26,6,1,1,"#111817");paintArtistRect(details,27,7,2,1,"#d9c8ad");paintArtistRect(details,9,8,9,2,"#b86f3e");
+  }else if(id==="crow"){
+    paintArtistRect(shadow,3,13,12,1,"#08101477");
+    paintArtistRect(body,4,6,10,6,"#20272a");paintArtistRect(body,10,3,5,5,"#151b1e");paintArtistRect(body,3,7,6,3,"#333a3c");paintArtistRect(body,7,12,1,3,"#352a24");paintArtistRect(body,11,12,1,3,"#352a24");
+    paintArtistRect(details,15,5,2,1,"#6d5940");paintArtistRect(details,13,5,1,1,"#d6c688");paintArtistRect(details,5,8,6,1,"#4b5354");
+  }else if(id==="desertLizard"){
+    paintArtistRect(shadow,2,11,18,1,"#08101466");
+    paintArtistRect(body,5,6,10,5,"#b78c50");paintArtistRect(body,14,5,6,5,"#b78c50");paintArtistRect(body,2,8,5,2,"#6b5c36");
+    paintArtistRect(details,7,6,6,1,"#dfb96d");paintArtistRect(details,18,6,1,1,"#131915");paintArtistRect(details,6,10,4,1,"#6b5c36");paintArtistRect(details,13,10,4,1,"#6b5c36");
+  }else if(id==="jackal"){
+    paintArtistRect(shadow,2,19,23,2,"#08101477");
+    paintArtistRect(body,3,9,15,8,"#aa7742");paintArtistRect(body,16,6,7,8,"#aa7742");paintArtistRect(body,21,9,6,4,"#aa7742");paintArtistRect(body,5,16,3,5,"#5a402c");paintArtistRect(body,14,16,3,5,"#5a402c");
+    paintArtistRect(details,6,9,8,2,"#d2a15f");paintArtistRect(details,17,2,3,6,"#5a402c");paintArtistRect(details,22,2,3,6,"#5a402c");paintArtistRect(details,24,8,1,1,"#151817");paintArtistRect(details,26,11,2,1,"#151817");paintArtistRect(details,0,9,5,3,"#5a402c");
+  }else if(id==="eisDog"){
+    paintArtistRect(shadow,2,15,20,2,"#08101466");
+    paintArtistRect(body,3,7,14,8,"#5d554c");paintArtistRect(body,15,5,7,7,"#423d38");paintArtistRect(body,5,14,3,4,"#403b37");paintArtistRect(body,14,14,3,4,"#403b37");
+    paintArtistRect(details,1,7,5,3,"#83786a");paintArtistRect(details,16,2,2,5,"#332f2c");paintArtistRect(details,20,2,2,5,"#332f2c");paintArtistRect(details,20,7,1,1,"#d9c96c");
+  }else if(id==="hair"){
+    paintArtistRect(body,3,2,10,4,"#3a2418");paintArtistRect(body,3,5,3,8,"#3a2418");paintArtistRect(body,10,5,3,8,"#3a2418");
+    paintArtistRect(details,5,1,3,3,"#62402a");paintArtistRect(details,9,3,3,2,"#281912");
+  }else if(id==="sword"){
+    paintArtistRect(body,2,8,5,2,"#5b3c24");paintArtistRect(body,6,6,2,6,"#d1b866");paintArtistRect(body,7,5,7,2,"#8c9693");
+    paintArtistRect(details,8,5,5,1,"#d6ded7");paintArtistRect(details,13,4,2,2,"#d6ded7");
+  }else if(id==="axe"){
+    paintArtistRect(body,2,8,11,2,"#79502e");paintArtistRect(body,9,4,5,6,"#4a5352");
+    paintArtistRect(details,3,8,7,1,"#aa7442");paintArtistRect(details,9,4,5,2,"#a8afaa");
+  }else if(id==="spear"){
+    paintArtistRect(body,1,8,15,2,"#855b35");paintArtistRect(body,15,6,3,6,"#c6d0cc");paintArtistRect(details,18,7,2,4,"#eef2e9");
+  }else if(id==="bow"){
+    paintArtistRect(body,12,2,2,3,"#96683b");paintArtistRect(body,14,4,2,4,"#96683b");paintArtistRect(body,15,7,2,4,"#96683b");paintArtistRect(body,14,10,2,4,"#96683b");paintArtistRect(body,12,13,2,3,"#96683b");paintArtistRect(body,10,8,5,2,"#715033");
+    for(let y=4;y<=13;y++) paintArtistRect(details,11,y,1,1,"#ddd1aa");
+  }else if(id==="arrow"){
+    paintArtistRect(body,2,3,15,2,"#87603a");paintArtistRect(body,16,2,3,4,"#d9e0dc");paintArtistRect(details,1,1,4,2,"#d8d1ba");paintArtistRect(details,1,5,4,2,"#d8d1ba");
+  }else if(definition?.kind==="tile"){
+    const palette=definition.palette||["#4d5b55","#83927d"];
+    paintArtistRect(body,0,0,definition.width,definition.height,palette[0]);
+    for(let py=0;py<definition.height;py+=3) for(let px=(py/3)%2;px<definition.width;px+=3) paintArtistRect(details,px,py,1,1,palette[1]||palette[0]);
+    paintArtistRect(shadow,0,definition.height-1,definition.width,1,"#08101433");
+  }else if(id==="prop"){
+    paintArtistRect(shadow,1,definition.height-2,Math.max(1,definition.width-2),2,"#08101466");
+    paintArtistRect(body,2,Math.max(1,Math.floor(definition.height*.3)),Math.max(2,definition.width-4),Math.max(2,Math.ceil(definition.height*.62)),"#6e4728");
+    paintArtistRect(details,3,Math.max(1,Math.floor(definition.height*.3)+1),Math.max(1,definition.width-6),2,"#a47a48");
+  }else{
+    const colours={meat:["#a84b43","#efb59c"],feather:["#ddd6bd","#8f8877"],hide:["#74513b","#a07a59"],tusk:["#d9ceb0","#f2ead1"],bone:["#d9d0b5","#f1ead3"],fish:["#668f96","#bed6d0"],potion:["#4f7f69","#b9ddd3"],crystal:["#5ca579","#c6f4d0"],lantern:["#6f5637","#74d49a"]}[id]||["#727b72","#b6c0b2"];
+    paintArtistRect(body,3,4,10,9,colours[0]);paintArtistRect(details,5,5,5,3,colours[1]);
+  }
+  return [{id:"shadow",name:"Schatten",visible:true,opacity:1,frame:shadow},{id:"body",name:"Körper",visible:true,opacity:1,frame:body},{id:"details",name:"Details",visible:true,opacity:1,frame:details}];
+}
+
+function prepareArtistGuideFrame(id,layerId,animation,source){
+  const frame=cloneArtistData(source);
+  if(layerId!=="details"||animation!=="dead") return frame;
+  const guideId=artistAssetDefinitions[id]?.guide||id;
+  if(guideId==="chicken"){delete frame["11,5"];frame["10,6"]="#24201b";frame["11,6"]="#24201b";}
+  else if(guideId==="boar"){delete frame["16,9"];frame["15,10"]="#211b18";frame["16,10"]="#211b18";}
+  else if(guideId==="horse"){delete frame["26,6"];frame["25,7"]="#111817";frame["26,7"]="#111817";}
+  return frame;
+}
+
+function defaultArtistMeta(definition){
+  const characterLike=["player","npc","bandit","chicken","boar","horse","crow","desertLizard","jackal","eisDog"].includes(definition.runtime);
+  return {
+    anchor:{x:Math.floor(definition.width/2),y:definition.height},
+    hitbox:{width:Math.max(2,Math.round(definition.width*(characterLike ? .46 : .72))),height:Math.max(2,Math.round(definition.height*(characterLike ? .32 : .58)))},
+    hand:{x:Math.round(definition.width*.72),y:Math.round(definition.height*.56)},
+    groundY:definition.height,
+    binding:definition.binding||({player:"drawCharacter",chicken:"drawChicken",boar:"drawBoar",horse:"drawHorse",crow:"drawCrow",desertLizard:"drawDesertLizard",jackal:"drawJackal",eisDog:"v018:drawDog",hair:"drawHair",item:"drawHeldItem",tile:"drawTile",prop:"drawRoadDecoration"}[definition.runtime]||"runtime")
+  };
+}
+
+function createArtistAsset(id){
+  const definition=artistAssetDefinitions[id];
+  const animations={};
+  for(const animation of definition.animations) animations[animation]={fps:animation==="idle"||animation==="perched"?2:animation==="attack"||animation==="charge"?8:6,frames:1};
+  const layers=createArtistGuideLayers(id).map((guide)=>{
+    const frames={};
+    for(const animation of definition.animations) frames[animation]=[prepareArtistGuideFrame(id,guide.id,animation,guide.frame)];
+    return {id:guide.id,name:guide.name,visible:guide.visible,opacity:guide.opacity,frames};
+  });
+  return {
+    id,enabled:false,width:definition.width,height:definition.height,scale:definition.scale,
+    animations,layers,inherits:definition.base||null,meta:defaultArtistMeta(definition)
+  };
+}
+
+function createDefaultArtistPack(){
+  const assets={};
+  for(const id of Object.keys(artistAssetDefinitions)) assets[id]=createArtistAsset(id);
+  return {schemaVersion:ARTIST_ASSET_SCHEMA_VERSION,name:"Archipelago Artist Pack",updatedAt:null,assets};
+}
+
+let artistAssetPack=createDefaultArtistPack();
+const artistSpriteCanvasCache=new Map();
+const assetEditorState={
+  unlocked:false,open:false,assetId:"player",animation:"idle",frameIndex:0,layerIndex:0,tool:"pencil",
+  category:"characters",search:"",scene:"forest",direction:"down",onion:false,showGrid:true,drawing:false,lastPixel:null,dirty:false,history:[],redo:[],previewStartedAt:performance.now(),saveTimer:null
+};
+
+function cloneArtistData(value){return JSON.parse(JSON.stringify(value));}
+function invalidateArtistSpriteCache(){
+  artistSpriteCanvasCache.clear();
+  const terrainCache=window.__ARCHIPELAGO_DEBUG__?.terrainFrameCache;
+  if(terrainCache){terrainCache.anchorX=NaN;terrainCache.anchorY=NaN;terrainCache.displayRevision=-1;}
+}
+function clampArtistNumber(value,min,max,fallback){value=Number(value);return Number.isFinite(value)?Math.max(min,Math.min(max,value)):fallback;}
+function validArtistColor(value){return typeof value==="string"&&/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i.test(value);}
+function cleanArtistId(value,fallback){const clean=String(value||"").toLowerCase().replace(/[^a-z0-9_-]/g,"").slice(0,32);return clean||fallback;}
+
+function normalizeArtistFrame(frame,width,height){
+  const normalized={};
+  if(!frame||typeof frame!=="object"||Array.isArray(frame)) return normalized;
+  let count=0;
+  for(const [key,color] of Object.entries(frame)){
+    if(count>=width*height) break;
+    if(!validArtistColor(color)) continue;
+    const match=/^(\d+),(\d+)$/.exec(key);
+    if(!match) continue;
+    const x=Number(match[1]);
+    const y=Number(match[2]);
+    if(x<0||y<0||x>=width||y>=height) continue;
+    normalized[x+","+y]=color.toLowerCase();
+    count++;
+  }
+  return normalized;
+}
+
+function normalizeArtistPack(candidate){
+  const defaults=createDefaultArtistPack();
+  const source=candidate&&typeof candidate==="object"?candidate:{};
+  if(source.schemaVersion!=null&&![1,2,ARTIST_ASSET_SCHEMA_VERSION].includes(Number(source.schemaVersion))) throw new Error("Nicht unterstützte Asset-Pack-Version");
+  const pack={schemaVersion:ARTIST_ASSET_SCHEMA_VERSION,name:String(source.name||defaults.name).slice(0,80),updatedAt:source.updatedAt||null,assets:{}};
+  for(const [id,definition] of Object.entries(artistAssetDefinitions)){
+    const fallback=defaults.assets[id];
+    const input=source.assets?.[id]&&typeof source.assets[id]==="object"?source.assets[id]:fallback;
+    const fallbackMeta=defaultArtistMeta(definition);
+    const inputMeta=input.meta&&typeof input.meta==="object"?input.meta:{};
+    const asset={
+      id,enabled:input.enabled===true,width:definition.width,height:definition.height,
+      scale:clampArtistNumber(input.scale,1,6,definition.scale),animations:{},layers:[],inherits:definition.base||null,
+      meta:{
+        anchor:{x:Math.round(clampArtistNumber(inputMeta.anchor?.x,0,definition.width,fallbackMeta.anchor.x)),y:Math.round(clampArtistNumber(inputMeta.anchor?.y,0,definition.height,fallbackMeta.anchor.y))},
+        hitbox:{width:Math.round(clampArtistNumber(inputMeta.hitbox?.width,1,definition.width,fallbackMeta.hitbox.width)),height:Math.round(clampArtistNumber(inputMeta.hitbox?.height,1,definition.height,fallbackMeta.hitbox.height))},
+        hand:{x:Math.round(clampArtistNumber(inputMeta.hand?.x,0,definition.width,fallbackMeta.hand.x)),y:Math.round(clampArtistNumber(inputMeta.hand?.y,0,definition.height,fallbackMeta.hand.y))},
+        groundY:Math.round(clampArtistNumber(inputMeta.groundY,0,definition.height,fallbackMeta.groundY)),binding:fallbackMeta.binding
+      }
+    };
+    const customAnimations=Object.keys(input.animations||{})
+      .map((name)=>cleanArtistId(name,""))
+      .filter((name,index,list)=>name&&!definition.animations.includes(name)&&list.indexOf(name)===index)
+      .slice(0,Math.max(0,ARTIST_ASSET_MAX_ANIMATIONS-definition.animations.length));
+    const animationNames=definition.animations.concat(customAnimations);
+    for(const animation of animationNames){
+      const track=input.animations?.[animation]||{};
+      const fallbackTrack=fallback.animations[animation]||fallback.animations[definition.animations[0]];
+      asset.animations[animation]={
+        fps:Math.round(clampArtistNumber(track.fps,1,24,fallbackTrack.fps)),
+        frames:Math.round(clampArtistNumber(track.frames,1,ARTIST_ASSET_MAX_FRAMES,1))
+      };
+    }
+    const inputLayers=Array.isArray(input.layers)?input.layers.slice(0,ARTIST_ASSET_MAX_LAYERS):[];
+    for(let index=0;index<inputLayers.length;index++){
+      const inputLayer=inputLayers[index]||{};
+      const layer={
+        id:cleanArtistId(inputLayer.id,"layer"+(index+1)),name:String(inputLayer.name||"Ebene "+(index+1)).slice(0,24),
+        visible:inputLayer.visible!==false,opacity:clampArtistNumber(inputLayer.opacity,0,1,1),frames:{}
+      };
+      for(const animation of animationNames){
+        const frameCount=asset.animations[animation].frames;
+        const sourceFrames=Array.isArray(inputLayer.frames?.[animation])?inputLayer.frames[animation]:[];
+        layer.frames[animation]=Array.from({length:frameCount},(_,frameIndex)=>normalizeArtistFrame(sourceFrames[frameIndex],definition.width,definition.height));
+      }
+      asset.layers.push(layer);
+    }
+    if(!asset.layers.length) asset.layers=cloneArtistData(fallback.layers);
+    for(const layer of asset.layers) for(const animation of animationNames){
+      if(layer.frames[animation]) continue;
+      layer.frames[animation]=Array.from({length:asset.animations[animation].frames},()=>({}));
+    }
+    const usedIds=new Set();
+    for(const layer of asset.layers){
+      let unique=layer.id;
+      let suffix=2;
+      while(usedIds.has(unique)) unique=layer.id+suffix++;
+      layer.id=unique;usedIds.add(unique);
+    }
+    pack.assets[id]=asset;
+  }
+  return pack;
+}
+
+async function loadArtistAssetPack(){
+  let projectPack=null;
+  try{
+    const response=await fetch(ARTIST_ASSET_PROJECT_URL,{cache:"no-store"});
+    if(response.ok) projectPack=normalizeArtistPack(await response.json());
+  }catch{}
+  let localPack=null;
+  try{
+    const stored=localStorage.getItem(ARTIST_ASSET_STORAGE_KEY);
+    if(stored) localPack=normalizeArtistPack(JSON.parse(stored));
+  }catch{}
+  artistAssetPack=localPack||projectPack||createDefaultArtistPack();
+  invalidateArtistSpriteCache();
+  if(assetEditorState.open) renderAssetEditor();
+  return artistAssetPack;
+}
+
+function currentArtistAsset(){return artistAssetPack.assets[assetEditorState.assetId];}
+function currentArtistTrack(){return currentArtistAsset().animations[assetEditorState.animation];}
+function currentArtistLayer(){return currentArtistAsset().layers[assetEditorState.layerIndex];}
+function currentArtistFrame(){return currentArtistLayer().frames[assetEditorState.animation][assetEditorState.frameIndex];}
+
+function ensureArtistSelection(){
+  if(!artistAssetDefinitions[assetEditorState.assetId]) assetEditorState.assetId="player";
+  const definition=artistAssetDefinitions[assetEditorState.assetId];
+  const asset=currentArtistAsset();
+  if(!asset.animations[assetEditorState.animation]) assetEditorState.animation=definition.animations[0]||Object.keys(asset.animations)[0];
+  assetEditorState.layerIndex=Math.max(0,Math.min(asset.layers.length-1,assetEditorState.layerIndex));
+  assetEditorState.frameIndex=Math.max(0,Math.min(asset.animations[assetEditorState.animation].frames-1,assetEditorState.frameIndex));
+}
+
+function setAssetEditorStatus(message,error=false){
+  const element=$("assetEditorStatus");
+  if(!element) return;
+  element.textContent=message;
+  element.style.color=error?"#db7b6d":"";
+}
+
+function serializeArtistPack(){
+  const pack=cloneArtistData(artistAssetPack);
+  pack.updatedAt=new Date().toISOString();
+  return JSON.stringify(pack,null,2)+"\n";
+}
+
+function saveArtistDraft(showMessage=true){
+  try{
+    artistAssetPack.updatedAt=new Date().toISOString();
+    localStorage.setItem(ARTIST_ASSET_STORAGE_KEY,JSON.stringify(artistAssetPack));
+    assetEditorState.dirty=false;
+    if(showMessage) setAssetEditorStatus("Entwurf in diesem Browser gespeichert · "+new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}));
+    return true;
+  }catch(error){
+    setAssetEditorStatus("Entwurf konnte nicht gespeichert werden: "+error.message,true);
+    return false;
+  }
+}
+
+function scheduleArtistDraftSave(){
+  clearTimeout(assetEditorState.saveTimer);
+  invalidateArtistSpriteCache();
+  assetEditorState.dirty=true;
+  setAssetEditorStatus("Ungespeicherte Änderungen …");
+  assetEditorState.saveTimer=setTimeout(()=>saveArtistDraft(false),700);
+}
+
+function captureArtistHistory(){
+  assetEditorState.history.push(JSON.stringify(artistAssetPack));
+  if(assetEditorState.history.length>ARTIST_ASSET_HISTORY_LIMIT) assetEditorState.history.shift();
+  assetEditorState.redo.length=0;
+}
+
+function restoreArtistSnapshot(serialized){
+  artistAssetPack=normalizeArtistPack(JSON.parse(serialized));
+  ensureArtistSelection();
+  scheduleArtistDraftSave();
+  renderAssetEditor();
+}
+
+function undoArtistEdit(){
+  const snapshot=assetEditorState.history.pop();
+  if(!snapshot) return;
+  assetEditorState.redo.push(JSON.stringify(artistAssetPack));
+  restoreArtistSnapshot(snapshot);
+}
+
+function redoArtistEdit(){
+  const snapshot=assetEditorState.redo.pop();
+  if(!snapshot) return;
+  assetEditorState.history.push(JSON.stringify(artistAssetPack));
+  restoreArtistSnapshot(snapshot);
+}
+
+function artistFrameHasPixels(asset,animation,frameIndex){
+  return compiledArtistFrame(asset,animation,frameIndex).painted;
+}
+
+function artistAnimationForEntity(assetId,entity){
+  const runtime=artistAssetDefinitions[assetId]?.runtime||assetId;
+  if(runtime==="player"){
+    if(entity.riding) return "ride";
+    if(entity.actionType) return "attack";
+    return entity.moving?"walk":"idle";
+  }
+  if(runtime==="npc") return entity.talking?"talk":entity.moving?"walk":"idle";
+  if(runtime==="bandit"){
+    if(entity.status==="dead") return "dead";
+    if(entity.hitFlash>0) return "hurt";
+    if(entity.phase==="windup") return "windup";
+    if(entity.phase==="attack") return "attack";
+    return entity.moving?"walk":"idle";
+  }
+  if(runtime==="crow") return "fly";
+  if(entity.status&&entity.status!=="alive") return "dead";
+  if((runtime==="boar"||runtime==="jackal")&&entity.attackPhase==="windup") return "windup";
+  if((runtime==="boar"||runtime==="jackal")&&entity.attackPhase==="charge") return "charge";
+  if(runtime==="boar"&&entity.attackPhase==="recover") return "recover";
+  if((runtime==="chicken"||runtime==="desertLizard")&&entity.fleeUntil>state.elapsed) return "panic";
+  if(runtime==="horse"&&entity.gaitMode==="gallop") return "gallop";
+  if(runtime==="eisDog"&&entity.activity?.includes("Ofen")) return "sleep";
+  if(runtime==="eisDog") return entity.moving?"walk":"idle";
+  return entity.gaitMode&&entity.gaitMode!=="idle"?"walk":"idle";
+}
+
+function artistVariantAssetId(assetId,entity){
+  if(assetId==="horse"){
+    const breedCandidate=entity?.breed?"horse_breed_"+entity.breed:null;
+    const coatCandidate=entity?.coat?"horse_"+entity.coat:null;
+    if(breedCandidate&&artistAssetPack.assets[breedCandidate]?.enabled) return breedCandidate;
+    if(coatCandidate&&artistAssetPack.assets[coatCandidate]?.enabled) return coatCandidate;
+    return assetId;
+  }
+  const candidate=entity?.variant?assetId+"_"+entity.variant:null;
+  return candidate&&artistAssetPack.assets[candidate]?.enabled?candidate:assetId;
+}
+
+function artistAssetEnabled(assetId){return artistAssetPack.assets[assetId]?.enabled===true;}
+
+function artistStableHash(value){
+  let hash=2166136261;
+  for(const char of String(value)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619);}
+  return hash>>>0;
+}
+
+function artistFrameForEntity(asset,animation,entity){
+  const track=asset.animations[animation];
+  if(!track||track.frames<=1) return 0;
+  // Dead-animation frames are corpse variants, not a looping animation.
+  // Artists can paint several body poses and each carcass keeps one frame.
+  if(animation==="dead"){
+    const pose=Number(entity?.corpsePose);
+    return Math.abs(Number.isFinite(pose)?pose:artistStableHash(entity?.id||"corpse"))%track.frames;
+  }
+  if(animation==="attack"&&Number.isFinite(entity.actionProgress)) return Math.min(track.frames-1,Math.floor(entity.actionProgress*track.frames));
+  if(Number.isFinite(entity.gait)&&["walk","panic","charge","gallop","fly"].includes(animation)){
+    const cycle=((entity.gait%(Math.PI*2))+Math.PI*2)%(Math.PI*2);
+    return Math.floor(cycle/(Math.PI*2)*track.frames)%track.frames;
+  }
+  return Math.floor(state.elapsed*track.fps)%track.frames;
+}
+
+function compiledArtistFrame(asset,animation,frameIndex){
+  const key=asset.id+":"+animation+":"+frameIndex;
+  const cached=artistSpriteCanvasCache.get(key);
+  if(cached) return cached;
+  const surface=document.createElement("canvas");surface.width=asset.width;surface.height=asset.height;
+  const target=surface.getContext("2d");target.imageSmoothingEnabled=false;
+  let painted=false;
+  for(const layer of asset.layers){
+    if(!layer.visible||layer.opacity<=0) continue;
+    const frame=layer.frames[animation]?.[frameIndex]||{};
+    target.save();target.globalAlpha*=layer.opacity;
+    for(const [key,color] of Object.entries(frame)){
+      const comma=key.indexOf(",");
+      const px=Number(key.slice(0,comma));
+      const py=Number(key.slice(comma+1));
+      target.fillStyle=color;
+      target.fillRect(px,py,1,1);
+      painted=true;
+    }
+    target.restore();
+  }
+  const compiled={surface,painted};artistSpriteCanvasCache.set(key,compiled);
+  if(artistSpriteCanvasCache.size>ARTIST_SPRITE_CACHE_LIMIT) artistSpriteCanvasCache.delete(artistSpriteCanvasCache.keys().next().value);
+  return compiled;
+}
+
+function drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,flip=false,alpha=1){
+  if(!asset||!asset.layers.length) return false;
+  const compiled=compiledArtistFrame(asset,animation,frameIndex);
+  if(!compiled.painted) return false;
+  const width=asset.width;
+  const height=asset.height;
+  target.save();
+  target.imageSmoothingEnabled=false;
+  target.globalAlpha*=alpha;
+  target.translate(Math.round(x),Math.round(y));
+  if(flip) target.scale(-1,1);
+  const anchor=asset.meta?.anchor||{x:width/2,y:height};
+  const originX=-Math.floor(anchor.x*pixelSize);
+  const originY=-Math.floor(anchor.y*pixelSize);
+  target.drawImage(compiled.surface,0,0,width,height,originX,originY,width*pixelSize,height*pixelSize);
+  target.restore();
+  return true;
+}
+
+function drawArtistSpriteOverride(assetId,entity,target,x,y,options={}){
+  assetId=artistVariantAssetId(assetId,entity);
+  let asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  let animation=artistAnimationForEntity(assetId,entity);
+  let frameIndex=artistFrameForEntity(asset,animation,entity);
+  if(!artistFrameHasPixels(asset,animation,frameIndex)){
+    const inherited=asset.inherits&&artistAssetPack.assets[asset.inherits];
+    if(inherited?.enabled&&inherited.animations[animation]&&artistFrameHasPixels(inherited,animation,Math.min(frameIndex,inherited.animations[animation].frames-1))){
+      asset=inherited;frameIndex=Math.min(frameIndex,inherited.animations[animation].frames-1);
+    }
+  }
+  if(!artistFrameHasPixels(asset,animation,frameIndex)){
+    const fallback=artistAssetDefinitions[assetId].animations[0];
+    if(!artistFrameHasPixels(asset,fallback,0)) return false;
+    animation=fallback;frameIndex=0;
+  }
+  const direction=entity.dir||(typeof animalDirection==="function"&&entity.species?animalDirection(entity):"down");
+  const requestedScale=Number(options.scale);
+  const runtime=artistAssetDefinitions[assetId]?.runtime||assetId;
+  const pixelSize=runtime==="player"&&options.portraitMode?Math.max(1,Math.round(asset.scale*.72))
+    :runtime==="player"&&Number.isFinite(requestedScale)?Math.max(1,Math.round(asset.scale*requestedScale/3))
+      :Math.max(1,Math.round(asset.scale));
+  return drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,direction==="left");
+}
+
+function artistStaticFrame(asset,animation,progress=null){
+  const track=asset.animations[animation]||asset.animations[Object.keys(asset.animations)[0]];
+  if(!track||track.frames<=1) return 0;
+  if(Number.isFinite(progress)) return Math.min(track.frames-1,Math.floor(Math.max(0,Math.min(.9999,progress))*track.frames));
+  return Math.floor(state.elapsed*track.fps)%track.frames;
+}
+
+function drawArtistStaticOverride(assetId,target,x,y,options={}){
+  const asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  const animation=asset.animations[options.animation]?options.animation:Object.keys(asset.animations)[0];
+  const frameIndex=artistStaticFrame(asset,animation,options.progress);
+  const pixelSize=Math.max(.25,Number(options.pixelSize)||asset.scale||1);
+  return drawArtistAssetFrame(target,asset,animation,frameIndex,x,y,pixelSize,!!options.flip,options.alpha??1);
+}
+
+function drawArtistTileOverride(assetId,target,x,y,size,options={}){
+  const asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  const animation=asset.animations[options.animation]?options.animation:Object.keys(asset.animations)[0];
+  const frameIndex=artistStaticFrame(asset,animation,options.progress);
+  const compiled=compiledArtistFrame(asset,animation,frameIndex);
+  if(!compiled.painted) return false;
+  target.save();target.imageSmoothingEnabled=false;target.globalAlpha*=options.alpha??1;
+  target.drawImage(compiled.surface,0,0,asset.width,asset.height,Math.floor(x),Math.floor(y),Math.ceil(size),Math.ceil(size));
+  target.restore();
+  return true;
+}
+
+function drawArtistSizedOverride(assetId,target,x,y,width,height,options={}){
+  const asset=artistAssetPack.assets[assetId];
+  if(!asset?.enabled) return false;
+  const animation=asset.animations[options.animation]?options.animation:Object.keys(asset.animations)[0];
+  const frameIndex=artistStaticFrame(asset,animation,options.progress);
+  const compiled=compiledArtistFrame(asset,animation,frameIndex);
+  if(!compiled.painted) return false;
+  target.save();target.imageSmoothingEnabled=false;target.globalAlpha*=options.alpha??1;
+  if(options.flip){target.translate(Math.floor(x+width),0);target.scale(-1,1);x=0;}
+  target.drawImage(compiled.surface,0,0,asset.width,asset.height,Math.floor(x),Math.floor(y),Math.ceil(width),Math.ceil(height));
+  target.restore();
+  return true;
+}
+
+function artistGridMetrics(canvasElement,asset=currentArtistAsset()){
+  const padding=24;
+  const cell=Math.max(2,Math.floor(Math.min((canvasElement.width-padding*2)/asset.width,(canvasElement.height-padding*2)/asset.height)));
+  return {cell,originX:Math.floor((canvasElement.width-asset.width*cell)/2),originY:Math.floor((canvasElement.height-asset.height*cell)/2)};
+}
+
+function drawArtistEditorGrid(){
+  const canvasElement=$("assetEditorCanvas");
+  if(!canvasElement||$("assetEditorOverlay").classList.contains("hidden")) return;
+  const target=canvasElement.getContext("2d");
+  target.imageSmoothingEnabled=false;
+  const asset=currentArtistAsset();
+  const metrics=artistGridMetrics(canvasElement,asset);
+  target.clearRect(0,0,canvasElement.width,canvasElement.height);
+  target.fillStyle="#081418";target.fillRect(0,0,canvasElement.width,canvasElement.height);
+  for(let py=0;py<asset.height;py++) for(let px=0;px<asset.width;px++){
+    target.fillStyle=(px+py)%2?"#122327":"#172a2e";
+    target.fillRect(metrics.originX+px*metrics.cell,metrics.originY+py*metrics.cell,metrics.cell,metrics.cell);
+  }
+  if(assetEditorState.onion&&assetEditorState.frameIndex>0){
+    drawArtistLayersOnGrid(target,asset,assetEditorState.animation,assetEditorState.frameIndex-1,metrics,.17);
+  }
+  drawArtistLayersOnGrid(target,asset,assetEditorState.animation,assetEditorState.frameIndex,metrics,1);
+  if(assetEditorState.showGrid){
+    target.strokeStyle="rgba(92,122,125,.34)";target.lineWidth=1;target.beginPath();
+    for(let x=0;x<=asset.width;x++){const px=metrics.originX+x*metrics.cell+.5;target.moveTo(px,metrics.originY);target.lineTo(px,metrics.originY+asset.height*metrics.cell);}
+    for(let y=0;y<=asset.height;y++){const py=metrics.originY+y*metrics.cell+.5;target.moveTo(metrics.originX,py);target.lineTo(metrics.originX+asset.width*metrics.cell,py);}
+    target.stroke();
+  }
+  target.strokeStyle="#d8ad55";target.lineWidth=2;target.strokeRect(metrics.originX-1,metrics.originY-1,asset.width*metrics.cell+2,asset.height*metrics.cell+2);
+}
+
+function drawArtistLayersOnGrid(target,asset,animation,frameIndex,metrics,alpha){
+  target.save();target.globalAlpha=alpha;
+  for(const layer of asset.layers){
+    if(!layer.visible||layer.opacity<=0) continue;
+    target.save();target.globalAlpha*=layer.opacity;
+    for(const [key,color] of Object.entries(layer.frames[animation]?.[frameIndex]||{})){
+      const [x,y]=key.split(",").map(Number);
+      target.fillStyle=color;target.fillRect(metrics.originX+x*metrics.cell,metrics.originY+y*metrics.cell,metrics.cell,metrics.cell);
+    }
+    target.restore();
+  }
+  target.restore();
+}
+
+function drawArtistPreview(timestamp=performance.now()){
+  const preview=$("assetEditorPreview");
+  if(!preview) return;
+  const target=preview.getContext("2d");
+  target.imageSmoothingEnabled=false;
+  target.clearRect(0,0,preview.width,preview.height);
+  const asset=currentArtistAsset();
+  const track=currentArtistTrack();
+  const frameIndex=Math.floor((timestamp-assetEditorState.previewStartedAt)/1000*track.fps)%track.frames;
+  const scenes={
+    forest:["#355b5e","#31533d","#1d382d"],village:["#587070","#8e7c55","#59462f"],
+    desert:["#c98453","#c59a50","#7f5738"],combat:["#353c45","#54423d","#2a2523"],inventory:["#0c1b1f","#17292b","#0b1417"]
+  };
+  const scene=scenes[assetEditorState.scene]||scenes.forest;
+  target.fillStyle=scene[0];target.fillRect(0,0,preview.width,preview.height);
+  target.fillStyle=scene[1];target.fillRect(0,Math.round(preview.height*.63),preview.width,preview.height*.37);
+  target.fillStyle=scene[2];for(let x=0;x<preview.width;x+=16) target.fillRect(x,Math.round(preview.height*.77)+(x/16%2)*4,12,4);
+  if(assetEditorState.scene==="village"){
+    target.fillStyle="#5b3c2a";target.fillRect(18,82,58,78);target.fillStyle="#a56a43";target.fillRect(10,68,74,24);target.fillStyle="#c6a55e";target.fillRect(40,116,15,44);
+  }else if(assetEditorState.scene==="desert"){
+    target.fillStyle="#a9683f";target.fillRect(0,132,preview.width,28);target.fillStyle="#dfbb72";target.fillRect(18,118,98,8);target.fillRect(126,104,92,7);target.fillStyle="#386a43";target.fillRect(28,90,7,49);target.fillRect(19,101,12,7);target.fillRect(35,109,12,7);
+  }else if(assetEditorState.scene==="combat"){
+    target.fillStyle="#441f20";target.fillRect(16,164,46,5);target.fillStyle="#a4513f";target.fillRect(22,160,24,4);
+  }else if(assetEditorState.scene==="inventory"){
+    target.strokeStyle="#51676a";for(let y=22;y<200;y+=24) for(let x=18;x<222;x+=24) target.strokeRect(x+.5,y+.5,23,23);
+  }
+  const maxScale=Math.floor(Math.min(preview.width/(asset.width+4),preview.height/(asset.height+5)));
+  const pixelSize=Math.max(2,maxScale);
+  const anchorX=preview.width/2;
+  const anchorY=preview.height*.84;
+  drawArtistAssetFrame(target,asset,assetEditorState.animation,frameIndex,anchorX,anchorY,pixelSize,assetEditorState.direction==="left");
+  const meta=asset.meta||defaultArtistMeta(artistAssetDefinitions[asset.id]);
+  target.save();target.globalAlpha=.82;target.strokeStyle="#65d5ba";target.lineWidth=1;
+  const hitW=meta.hitbox.width*pixelSize;const hitH=meta.hitbox.height*pixelSize;
+  target.strokeRect(Math.round(anchorX-hitW/2)+.5,Math.round(anchorY-hitH)+.5,Math.round(hitW),Math.round(hitH));
+  const originX=anchorX-meta.anchor.x*pixelSize;const originY=anchorY-meta.anchor.y*pixelSize;
+  target.fillStyle="#f4d270";target.fillRect(Math.round(anchorX)-2,Math.round(anchorY)-2,5,5);
+  target.fillStyle="#e87564";target.fillRect(Math.round(originX+meta.hand.x*pixelSize)-2,Math.round(originY+meta.hand.y*pixelSize)-2,5,5);
+  target.restore();
+}
+
+function validateArtistAsset(id=assetEditorState.assetId){
+  const definition=artistAssetDefinitions[id];const asset=artistAssetPack.assets[id];const errors=[];const warnings=[];
+  for(const clip of definition.animations){
+    if(!asset.animations[clip]) errors.push("GAME-Clip "+clip.toUpperCase()+" fehlt");
+    else if(asset.enabled&&!Array.from({length:asset.animations[clip].frames},(_,i)=>artistFrameHasPixels(asset,clip,i)).some(Boolean)) warnings.push(clip.toUpperCase()+" hat keine sichtbaren Pixel");
+  }
+  if(asset.layers.length>ARTIST_ASSET_MAX_LAYERS) errors.push("Zu viele Ebenen");
+  if(asset.meta.anchor.x<0||asset.meta.anchor.x>asset.width||asset.meta.anchor.y<0||asset.meta.anchor.y>asset.height) errors.push("Anker liegt außerhalb des Sprites");
+  if(asset.meta.hitbox.width<1||asset.meta.hitbox.height<1) errors.push("Hitbox muss größer als 0 sein");
+  if(definition.base&&!artistAssetDefinitions[definition.base]) errors.push("Vererbungsbasis fehlt");
+  if(!asset.enabled) warnings.push("Noch nicht im Spiel aktiviert");
+  return {errors,warnings,linked:!!asset.meta.binding,binding:asset.meta.binding||"nicht verbunden"};
+}
+
+function renderArtistAssetButtons(){
+  const container=$("assetEditorAssetList");
+  container.replaceChildren();
+  const search=assetEditorState.search.trim().toLocaleLowerCase("de-DE");
+  let visible=0;
+  for(const [id,definition] of Object.entries(artistAssetDefinitions)){
+    if(definition.category!==assetEditorState.category) continue;
+    if(search&&!definition.label.toLocaleLowerCase("de-DE").includes(search)&&!id.toLowerCase().includes(search)) continue;
+    visible++;
+    const button=document.createElement("button");button.type="button";button.classList.toggle("active",id===assetEditorState.assetId);
+    button.innerHTML="<span>"+definition.label+"</span><small>"+definition.width+"×"+definition.height+(artistAssetPack.assets[id]?.enabled?" · AKTIV":"")+"</small>";
+    button.addEventListener("click",()=>{
+      assetEditorState.assetId=id;assetEditorState.category=definition.category;assetEditorState.animation=Object.keys(artistAssetPack.assets[id].animations)[0];assetEditorState.frameIndex=0;assetEditorState.layerIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();
+    });
+    container.appendChild(button);
+  }
+  if(!visible){const empty=document.createElement("p");empty.className="asset-editor-asset-meta";empty.textContent="Keine Assets in diesem Filter.";container.appendChild(empty);}
+}
+
+function renderArtistLayerList(){
+  const asset=currentArtistAsset();
+  const container=$("assetEditorLayerList");
+  container.replaceChildren();
+  asset.layers.forEach((layer,index)=>{
+    const row=document.createElement("div");row.className="asset-editor-layer-row";
+    const visibility=document.createElement("button");visibility.type="button";visibility.className="asset-layer-visibility"+(layer.visible?"":" off");visibility.textContent=layer.visible?"◉":"○";visibility.title=layer.visible?"Ebene ausblenden":"Ebene einblenden";
+    visibility.addEventListener("click",()=>{captureArtistHistory();layer.visible=!layer.visible;scheduleArtistDraftSave();renderAssetEditor();});
+    const select=document.createElement("button");select.type="button";select.classList.toggle("active",index===assetEditorState.layerIndex);select.textContent=layer.name;
+    select.addEventListener("click",()=>{assetEditorState.layerIndex=index;renderAssetEditor();});
+    row.append(visibility,select);container.appendChild(row);
+  });
+}
+
+function renderAssetEditor(){
+  if(!assetEditorState.open) return;
+  ensureArtistSelection();
+  const definition=artistAssetDefinitions[assetEditorState.assetId];
+  const asset=currentArtistAsset();
+  const track=currentArtistTrack();
+  const layer=currentArtistLayer();
+  const categorySelect=$("assetEditorCategory");
+  if(!categorySelect.options.length) for(const [value,label] of Object.entries(artistAssetCategories)){
+    const option=document.createElement("option");option.value=value;option.textContent=label;categorySelect.appendChild(option);
+  }
+  categorySelect.value=assetEditorState.category;
+  $("assetEditorSearch").value=assetEditorState.search;
+  const variantText=definition.base?"Variante von „"+artistAssetDefinitions[definition.base].label+"“":definition.variant?"Variante: "+definition.variant:"Basis-Asset";
+  $("assetEditorAssetMeta").textContent=artistAssetCategories[definition.category]+" · "+variantText+" · "+Object.keys(asset.animations).length+" Clips";
+  renderArtistAssetButtons();
+  const animationSelect=$("assetEditorAnimation");
+  animationSelect.replaceChildren();
+  for(const animation of Object.keys(asset.animations)){const option=document.createElement("option");option.value=animation;option.textContent=animation.toUpperCase()+(definition.animations.includes(animation)?" · GAME":" · CUSTOM");animationSelect.appendChild(option);}
+  animationSelect.value=assetEditorState.animation;
+  $("assetEditorEnabled").checked=asset.enabled;
+  $("assetEditorScale").value=String(asset.scale);
+  $("assetEditorScaleValue").textContent=Number(asset.scale).toFixed(asset.scale%1?2:0)+"×";
+  $("assetEditorFps").value=String(track.fps);
+  $("assetEditorFrameLabel").textContent=(assetEditorState.frameIndex+1)+" / "+track.frames;
+  $("assetEditorDeleteFrame").disabled=track.frames<=1;
+  $("assetEditorAddAnimation").disabled=Object.keys(asset.animations).length>=ARTIST_ASSET_MAX_ANIMATIONS;
+  $("assetEditorDeleteAnimation").disabled=definition.animations.includes(assetEditorState.animation)||Object.keys(asset.animations).length<=1;
+  $("assetEditorRenameAnimation").disabled=definition.animations.includes(assetEditorState.animation);
+  $("assetEditorUndo").disabled=!assetEditorState.history.length;
+  $("assetEditorRedo").disabled=!assetEditorState.redo.length;
+  $("assetEditorOnion").checked=assetEditorState.onion;
+  $("assetEditorGridToggle").checked=assetEditorState.showGrid;
+  renderArtistLayerList();
+  $("assetEditorLayerName").value=layer.name;
+  $("assetEditorLayerOpacity").value=String(layer.opacity);
+  $("assetEditorLayerOpacityValue").textContent=Math.round(layer.opacity*100)+"%";
+  $("assetEditorScene").value=assetEditorState.scene;
+  $("assetEditorDirection").value=assetEditorState.direction;
+  $("assetEditorAnchorX").value=String(asset.meta.anchor.x);
+  $("assetEditorAnchorY").value=String(asset.meta.anchor.y);
+  $("assetEditorHitboxX").value=String(asset.meta.hitbox.width);
+  $("assetEditorHitboxY").value=String(asset.meta.hitbox.height);
+  $("assetEditorHandX").value=String(asset.meta.hand.x);
+  $("assetEditorHandY").value=String(asset.meta.hand.y);
+  $("assetEditorAnchorX").max=$("assetEditorHitboxX").max=$("assetEditorHandX").max=String(asset.width);
+  $("assetEditorAnchorY").max=$("assetEditorHitboxY").max=$("assetEditorHandY").max=String(asset.height);
+  const validation=validateArtistAsset();
+  const runtimeStatus=$("assetEditorRuntimeStatus");
+  runtimeStatus.classList.toggle("warn",!validation.linked);
+  runtimeStatus.innerHTML="<strong>"+(validation.linked?"✓ IM SPIEL VERBUNDEN":"△ NUR VORLAGE")+"</strong>Hook: "+validation.binding+" · Gelb = Anker · Rot = Hand · Grün = Hitbox";
+  const validationPanel=$("assetEditorValidation");
+  validationPanel.classList.toggle("has-errors",!!validation.errors.length);
+  const notes=validation.errors.map((message)=>"Fehler: "+message).concat(validation.warnings.map((message)=>"Hinweis: "+message));
+  validationPanel.innerHTML=notes.length?"<strong>Asset-Prüfung</strong><ul>"+notes.map((note)=>"<li>"+note+"</li>").join("")+"</ul>":"✓ Asset spielbereit · alle Pflichtclips und Runtime-Daten vorhanden";
+  $("assetEditorDeleteLayer").disabled=asset.layers.length<=1;
+  $("assetEditorLayerUp").disabled=assetEditorState.layerIndex>=asset.layers.length-1;
+  $("assetEditorLayerDown").disabled=assetEditorState.layerIndex<=0;
+  for(const button of document.querySelectorAll("[data-asset-tool]")) button.classList.toggle("active",button.dataset.assetTool===assetEditorState.tool);
+  drawArtistEditorGrid();drawArtistPreview();
+}
+
+function canvasEventArtistPixel(event){
+  const canvasElement=$("assetEditorCanvas");
+  const rect=canvasElement.getBoundingClientRect();
+  const x=(event.clientX-rect.left)*canvasElement.width/rect.width;
+  const y=(event.clientY-rect.top)*canvasElement.height/rect.height;
+  const metrics=artistGridMetrics(canvasElement);
+  const px=Math.floor((x-metrics.originX)/metrics.cell);
+  const py=Math.floor((y-metrics.originY)/metrics.cell);
+  const asset=currentArtistAsset();
+  return px>=0&&py>=0&&px<asset.width&&py<asset.height?{x:px,y:py,key:px+","+py}:null;
+}
+
+function compositeArtistColorAt(x,y){
+  const asset=currentArtistAsset();
+  for(let index=asset.layers.length-1;index>=0;index--){
+    const layer=asset.layers[index];
+    if(!layer.visible) continue;
+    const color=layer.frames[assetEditorState.animation]?.[assetEditorState.frameIndex]?.[x+","+y];
+    if(color) return color.slice(0,7);
+  }
+  return null;
+}
+
+function setArtistColor(color){
+  if(!validArtistColor(color)) return false;
+  const normalized=color.slice(0,7).toLowerCase();
+  $("assetEditorColor").value=normalized;$("assetEditorColorText").value=normalized;
+  return true;
+}
+
+function floodFillArtistFrame(start,color){
+  const asset=currentArtistAsset();
+  const frame=currentArtistFrame();
+  const target=frame[start.key];
+  if(target===color) return;
+  const queue=[start];const seen=new Set();
+  while(queue.length){
+    const point=queue.pop();
+    if(point.x<0||point.y<0||point.x>=asset.width||point.y>=asset.height||seen.has(point.key)||frame[point.key]!==target) continue;
+    seen.add(point.key);frame[point.key]=color;
+    queue.push({x:point.x-1,y:point.y,key:(point.x-1)+","+point.y},{x:point.x+1,y:point.y,key:(point.x+1)+","+point.y},{x:point.x,y:point.y-1,key:point.x+","+(point.y-1)},{x:point.x,y:point.y+1,key:point.x+","+(point.y+1)});
+  }
+}
+
+function applyArtistTool(point,button=0){
+  if(!point) return;
+  const tool=button===2?"eraser":assetEditorState.tool;
+  const frame=currentArtistFrame();
+  if(tool==="picker"){
+    const color=compositeArtistColorAt(point.x,point.y);
+    if(color) setArtistColor(color);
+    return;
+  }
+  if(tool==="eraser") delete frame[point.key];
+  else if(tool==="fill") floodFillArtistFrame(point,$("assetEditorColor").value);
+  else frame[point.key]=$("assetEditorColor").value;
+  scheduleArtistDraftSave();drawArtistEditorGrid();drawArtistPreview();
+}
+
+function addArtistFrame(duplicate=false){
+  const asset=currentArtistAsset();const track=currentArtistTrack();
+  if(track.frames>=ARTIST_ASSET_MAX_FRAMES){setAssetEditorStatus("Maximal "+ARTIST_ASSET_MAX_FRAMES+" Frames pro Animation.",true);return;}
+  captureArtistHistory();
+  const insertAt=assetEditorState.frameIndex+1;
+  for(const layer of asset.layers){
+    const frames=layer.frames[assetEditorState.animation];
+    frames.splice(insertAt,0,duplicate?cloneArtistData(frames[assetEditorState.frameIndex]):{});
+  }
+  track.frames++;assetEditorState.frameIndex=insertAt;assetEditorState.previewStartedAt=performance.now();scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function deleteArtistFrame(){
+  const asset=currentArtistAsset();const track=currentArtistTrack();if(track.frames<=1) return;
+  captureArtistHistory();
+  for(const layer of asset.layers) layer.frames[assetEditorState.animation].splice(assetEditorState.frameIndex,1);
+  track.frames--;assetEditorState.frameIndex=Math.min(assetEditorState.frameIndex,track.frames-1);scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function requestedArtistAnimationName(initial="custom"){
+  const raw=window.prompt("Clipname (a–z, 0–9, _ oder -):",initial);
+  if(raw==null) return null;
+  const name=cleanArtistId(raw,"");
+  if(!name){setAssetEditorStatus("Der Clipname ist ungültig.",true);return null;}
+  return name;
+}
+
+function addArtistAnimation(duplicate=false){
+  const asset=currentArtistAsset();
+  if(Object.keys(asset.animations).length>=ARTIST_ASSET_MAX_ANIMATIONS){setAssetEditorStatus("Maximal "+ARTIST_ASSET_MAX_ANIMATIONS+" Clips pro Asset.",true);return;}
+  const sourceName=assetEditorState.animation;
+  const name=requestedArtistAnimationName(duplicate?sourceName+"_copy":"custom");
+  if(!name) return;
+  if(asset.animations[name]){setAssetEditorStatus("Ein Clip mit diesem Namen existiert bereits.",true);return;}
+  captureArtistHistory();
+  const source=asset.animations[sourceName];
+  asset.animations[name]=duplicate?cloneArtistData(source):{fps:6,frames:1};
+  for(const layer of asset.layers) layer.frames[name]=duplicate?cloneArtistData(layer.frames[sourceName]):[{}];
+  assetEditorState.animation=name;assetEditorState.frameIndex=0;assetEditorState.previewStartedAt=performance.now();scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function renameArtistAnimation(){
+  const asset=currentArtistAsset();const definition=artistAssetDefinitions[assetEditorState.assetId];const oldName=assetEditorState.animation;
+  if(definition.animations.includes(oldName)){setAssetEditorStatus("GAME-Clips behalten ihren Namen, damit die Spiellogik sie sicher findet.",true);return;}
+  const name=requestedArtistAnimationName(oldName);if(!name||name===oldName) return;
+  if(asset.animations[name]){setAssetEditorStatus("Ein Clip mit diesem Namen existiert bereits.",true);return;}
+  captureArtistHistory();asset.animations[name]=asset.animations[oldName];delete asset.animations[oldName];
+  for(const layer of asset.layers){layer.frames[name]=layer.frames[oldName];delete layer.frames[oldName];}
+  assetEditorState.animation=name;scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function deleteArtistAnimation(){
+  const asset=currentArtistAsset();const definition=artistAssetDefinitions[assetEditorState.assetId];const name=assetEditorState.animation;
+  if(definition.animations.includes(name)||Object.keys(asset.animations).length<=1) return;
+  captureArtistHistory();delete asset.animations[name];for(const layer of asset.layers) delete layer.frames[name];
+  assetEditorState.animation=definition.animations[0]||Object.keys(asset.animations)[0];assetEditorState.frameIndex=0;scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function addArtistLayer(duplicate=false){
+  const asset=currentArtistAsset();if(asset.layers.length>=ARTIST_ASSET_MAX_LAYERS){setAssetEditorStatus("Maximal "+ARTIST_ASSET_MAX_LAYERS+" Ebenen pro Asset.",true);return;}
+  captureArtistHistory();
+  const source=currentArtistLayer();
+  const frames={};
+  for(const animation of Object.keys(asset.animations)){
+    const count=asset.animations[animation].frames;
+    frames[animation]=duplicate?cloneArtistData(source.frames[animation]):Array.from({length:count},()=>({}));
+  }
+  const serial=asset.layers.length+1;
+  asset.layers.splice(assetEditorState.layerIndex+1,0,{id:"layer"+Date.now().toString(36),name:duplicate?source.name+" Kopie":"Ebene "+serial,visible:true,opacity:duplicate?source.opacity:1,frames});
+  assetEditorState.layerIndex++;scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function deleteArtistLayer(){
+  const asset=currentArtistAsset();if(asset.layers.length<=1) return;
+  captureArtistHistory();asset.layers.splice(assetEditorState.layerIndex,1);assetEditorState.layerIndex=Math.min(assetEditorState.layerIndex,asset.layers.length-1);scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function moveArtistLayer(direction){
+  const asset=currentArtistAsset();const from=assetEditorState.layerIndex;const to=from+direction;if(to<0||to>=asset.layers.length) return;
+  captureArtistHistory();const [layer]=asset.layers.splice(from,1);asset.layers.splice(to,0,layer);assetEditorState.layerIndex=to;scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function mirrorArtistFrame(){
+  const asset=currentArtistAsset();const frame=currentArtistFrame();captureArtistHistory();const mirrored={};
+  for(const [key,color] of Object.entries(frame)){const [x,y]=key.split(",").map(Number);mirrored[(asset.width-1-x)+","+y]=color;}
+  currentArtistLayer().frames[assetEditorState.animation][assetEditorState.frameIndex]=mirrored;scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function clearArtistFrame(){
+  if(!Object.keys(currentArtistFrame()).length) return;
+  captureArtistHistory();currentArtistLayer().frames[assetEditorState.animation][assetEditorState.frameIndex]={};scheduleArtistDraftSave();renderAssetEditor();
+}
+
+function downloadArtistPack(filename="artist-assets.json"){
+  const blob=new Blob([serializeArtistPack()],{type:"application/json"});
+  const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+async function saveArtistProjectFile(){
+  const json=serializeArtistPack();
+  if(typeof window.showSaveFilePicker==="function"){
+    try{
+      const handle=await window.showSaveFilePicker({suggestedName:"artist-assets.json",types:[{description:"Archipelago Asset Pack",accept:{"application/json":[".json"]}}]});
+      const writable=await handle.createWritable();await writable.write(json);await writable.close();
+      setAssetEditorStatus("Projektdatei gespeichert · nach Commit/Deploy für alle Spieler aktiv");return;
+    }catch(error){if(error.name==="AbortError") return;setAssetEditorStatus("Dateizugriff fehlgeschlagen · JSON wird heruntergeladen",true);}
+  }
+  downloadArtistPack("artist-assets.json");
+  setAssetEditorStatus("artist-assets.json heruntergeladen · Datei ins Projekt übernehmen und committen");
+}
+
+async function importArtistPackFile(file){
+  try{
+    if(file.size>2_000_000) throw new Error("Datei ist größer als 2 MB");
+    const candidate=JSON.parse(await file.text());
+    const normalized=normalizeArtistPack(candidate);
+    captureArtistHistory();artistAssetPack=normalized;invalidateArtistSpriteCache();ensureArtistSelection();saveArtistDraft(false);renderAssetEditor();setAssetEditorStatus("Asset-Pack geprüft und importiert");
+  }catch(error){setAssetEditorStatus("Import abgelehnt: "+error.message,true);}
+}
+
+async function hashArtistGateValue(value){
+  if(!crypto?.subtle) throw new Error("Kein WebCrypto verfügbar");
+  const data=new TextEncoder().encode(value);
+  const digest=await crypto.subtle.digest("SHA-256",data);
+  return [...new Uint8Array(digest)].map((byte)=>byte.toString(16).padStart(2,"0")).join("");
+}
+
+async function verifyArtistPassword(password){
+  const value=String(password||"");
+  const stored=localStorage.getItem(ARTIST_ASSET_GATE_KEY);
+  if(!stored){
+    if(value.length<4) return {ok:false,message:"Mindestens 4 Zeichen eingeben, um ein lokales Studio-Passwort zu setzen."};
+    try{
+      localStorage.setItem(ARTIST_ASSET_GATE_KEY,await hashArtistGateValue(value));
+      return {ok:true,message:"Lokales Studio-Passwort gesetzt."};
+    }catch{return {ok:false,message:"Passwort konnte in diesem Browser nicht gespeichert werden."};}
+  }
+  try{
+    return {ok:(await hashArtistGateValue(value))===stored,message:"Passwort stimmt nicht."};
+  }catch{return {ok:false,message:"Passwortprüfung ist in diesem Browser nicht verfügbar."};}
+}
+
+function openAssetEditor(){
+  if(state.running) return;
+  assetEditorState.open=true;
+  $("assetEditorOverlay").classList.remove("hidden");
+  document.body.style.overflow="hidden";
+  if(assetEditorState.unlocked){$("assetEditorLogin").classList.add("hidden");$("assetEditorWorkspace").classList.remove("hidden");renderAssetEditor();}
+  else{$("assetEditorLogin").classList.remove("hidden");$("assetEditorWorkspace").classList.add("hidden");$("assetEditorPassword").value="";$("assetEditorLoginError").classList.add("hidden");setTimeout(()=>$(("assetEditorPassword")).focus(),30);}
+}
+
+function closeAssetEditor(){
+  if(assetEditorState.dirty) saveArtistDraft(false);
+  assetEditorState.open=false;assetEditorState.drawing=false;
+  $("assetEditorOverlay").classList.add("hidden");document.body.style.overflow="";
+}
+
+async function unlockAssetEditor(){
+  const result=await verifyArtistPassword($("assetEditorPassword").value);
+  $("assetEditorLoginError").textContent=result.message||"Passwort stimmt nicht.";
+  $("assetEditorLoginError").classList.toggle("hidden",result.ok);
+  if(!result.ok){$("assetEditorPassword").select();return;}
+  assetEditorState.unlocked=true;$("assetEditorLogin").classList.add("hidden");$("assetEditorWorkspace").classList.remove("hidden");renderAssetEditor();
+}
+
+function bindAssetEditor(){
+  $("assetEditorUnlock").addEventListener("click",unlockAssetEditor);
+  $("assetEditorCancelLogin").addEventListener("click",closeAssetEditor);
+  $("assetEditorPassword").addEventListener("keydown",(event)=>{if(event.key==="Enter") unlockAssetEditor();});
+  $("assetEditorClose").addEventListener("click",closeAssetEditor);
+  $("assetEditorUndo").addEventListener("click",undoArtistEdit);$("assetEditorRedo").addEventListener("click",redoArtistEdit);
+  $("assetEditorCategory").addEventListener("change",(event)=>{
+    assetEditorState.category=event.target.value;assetEditorState.search="";
+    const first=Object.entries(artistAssetDefinitions).find(([,definition])=>definition.category===assetEditorState.category);
+    if(first){assetEditorState.assetId=first[0];assetEditorState.animation=Object.keys(artistAssetPack.assets[first[0]].animations)[0];assetEditorState.frameIndex=0;assetEditorState.layerIndex=0;}
+    renderAssetEditor();
+  });
+  $("assetEditorSearch").addEventListener("input",(event)=>{assetEditorState.search=event.target.value;renderArtistAssetButtons();});
+  $("assetEditorAnimation").addEventListener("change",(event)=>{assetEditorState.animation=event.target.value;assetEditorState.frameIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();});
+  $("assetEditorFps").addEventListener("change",(event)=>{captureArtistHistory();currentArtistTrack().fps=Math.round(clampArtistNumber(event.target.value,1,24,6));assetEditorState.previewStartedAt=performance.now();scheduleArtistDraftSave();renderAssetEditor();});
+  $("assetEditorEnabled").addEventListener("change",(event)=>{captureArtistHistory();currentArtistAsset().enabled=event.target.checked;scheduleArtistDraftSave();renderAssetEditor();});
+  $("assetEditorScale").addEventListener("input",(event)=>{$("assetEditorScaleValue").textContent=Number(event.target.value).toFixed(2)+"×";});
+  $("assetEditorScale").addEventListener("change",(event)=>{captureArtistHistory();currentArtistAsset().scale=clampArtistNumber(event.target.value,1,6,3);scheduleArtistDraftSave();renderAssetEditor();});
+  $("assetEditorPrevFrame").addEventListener("click",()=>{const count=currentArtistTrack().frames;assetEditorState.frameIndex=(assetEditorState.frameIndex+count-1)%count;renderAssetEditor();});
+  $("assetEditorNextFrame").addEventListener("click",()=>{assetEditorState.frameIndex=(assetEditorState.frameIndex+1)%currentArtistTrack().frames;renderAssetEditor();});
+  $("assetEditorAddFrame").addEventListener("click",()=>addArtistFrame(false));$("assetEditorDuplicateFrame").addEventListener("click",()=>addArtistFrame(true));$("assetEditorDeleteFrame").addEventListener("click",deleteArtistFrame);
+  $("assetEditorAddAnimation").addEventListener("click",()=>addArtistAnimation(false));$("assetEditorDuplicateAnimation").addEventListener("click",()=>addArtistAnimation(true));
+  $("assetEditorRenameAnimation").addEventListener("click",renameArtistAnimation);$("assetEditorDeleteAnimation").addEventListener("click",deleteArtistAnimation);
+  $("assetEditorAddLayer").addEventListener("click",()=>addArtistLayer(false));$("assetEditorDuplicateLayer").addEventListener("click",()=>addArtistLayer(true));$("assetEditorDeleteLayer").addEventListener("click",deleteArtistLayer);
+  $("assetEditorLayerUp").addEventListener("click",()=>moveArtistLayer(1));$("assetEditorLayerDown").addEventListener("click",()=>moveArtistLayer(-1));
+  $("assetEditorLayerName").addEventListener("change",(event)=>{captureArtistHistory();currentArtistLayer().name=String(event.target.value||"Ebene").slice(0,24);scheduleArtistDraftSave();renderAssetEditor();});
+  $("assetEditorLayerOpacity").addEventListener("input",(event)=>{$("assetEditorLayerOpacityValue").textContent=Math.round(Number(event.target.value)*100)+"%";});
+  $("assetEditorLayerOpacity").addEventListener("change",(event)=>{captureArtistHistory();currentArtistLayer().opacity=clampArtistNumber(event.target.value,0,1,1);scheduleArtistDraftSave();renderAssetEditor();});
+  $("assetEditorOnion").addEventListener("change",(event)=>{assetEditorState.onion=event.target.checked;drawArtistEditorGrid();});
+  $("assetEditorGridToggle").addEventListener("change",(event)=>{assetEditorState.showGrid=event.target.checked;drawArtistEditorGrid();});
+  $("assetEditorScene").addEventListener("change",(event)=>{assetEditorState.scene=event.target.value;drawArtistPreview();});
+  $("assetEditorDirection").addEventListener("change",(event)=>{assetEditorState.direction=event.target.value;const definition=artistAssetDefinitions[assetEditorState.assetId];if(definition.runtime==="hair"){const clip=event.target.value==="up"?"up":event.target.value==="down"?"down":"side";if(currentArtistAsset().animations[clip]){assetEditorState.animation=clip;assetEditorState.frameIndex=0;assetEditorState.previewStartedAt=performance.now();renderAssetEditor();return;}}drawArtistPreview();});
+  const bindMetaNumber=(id,path,min,max)=>$(id).addEventListener("change",(event)=>{
+    const asset=currentArtistAsset();captureArtistHistory();
+    const axisMax=["x","width"].includes(path[1])?asset.width:asset.height;const value=Math.round(clampArtistNumber(event.target.value,min,Math.min(max,axisMax),path[0]==="anchor"?asset.meta.anchor[path[1]]:path[0]==="hitbox"?asset.meta.hitbox[path[1]]:asset.meta.hand[path[1]]));
+    if(path[0]==="anchor") asset.meta.anchor[path[1]]=value; else if(path[0]==="hitbox") asset.meta.hitbox[path[1]]=value; else asset.meta.hand[path[1]]=value;
+    scheduleArtistDraftSave();renderAssetEditor();
+  });
+  bindMetaNumber("assetEditorAnchorX",["anchor","x"],0,64);bindMetaNumber("assetEditorAnchorY",["anchor","y"],0,64);
+  bindMetaNumber("assetEditorHitboxX",["hitbox","width"],1,64);bindMetaNumber("assetEditorHitboxY",["hitbox","height"],1,64);
+  bindMetaNumber("assetEditorHandX",["hand","x"],0,64);bindMetaNumber("assetEditorHandY",["hand","y"],0,64);
+  for(const button of document.querySelectorAll("[data-asset-tool]")) button.addEventListener("click",()=>{assetEditorState.tool=button.dataset.assetTool;renderAssetEditor();});
+  $("assetEditorColor").addEventListener("input",(event)=>setArtistColor(event.target.value));
+  $("assetEditorColorText").addEventListener("change",(event)=>{if(!setArtistColor(event.target.value)) event.target.value=$("assetEditorColor").value;});
+  $("assetEditorMirror").addEventListener("click",mirrorArtistFrame);$("assetEditorClearFrame").addEventListener("click",clearArtistFrame);
+  $("assetEditorSaveDraft").addEventListener("click",()=>saveArtistDraft(true));$("assetEditorSaveProject").addEventListener("click",saveArtistProjectFile);$("assetEditorExport").addEventListener("click",()=>downloadArtistPack("archipelago-artist-pack.json"));
+  $("assetEditorImport").addEventListener("click",()=>$("assetEditorImportFile").click());$("assetEditorImportFile").addEventListener("change",(event)=>{const file=event.target.files?.[0];if(file) importArtistPackFile(file);event.target.value="";});
+  $("assetEditorReset").addEventListener("click",()=>{captureArtistHistory();artistAssetPack.assets[assetEditorState.assetId]=createArtistAsset(assetEditorState.assetId);assetEditorState.animation=artistAssetDefinitions[assetEditorState.assetId].animations[0];assetEditorState.frameIndex=0;assetEditorState.layerIndex=0;scheduleArtistDraftSave();renderAssetEditor();});
+
+  const canvasElement=$("assetEditorCanvas");
+  canvasElement.addEventListener("contextmenu",(event)=>event.preventDefault());
+  canvasElement.addEventListener("pointerdown",(event)=>{
+    const point=canvasEventArtistPixel(event);if(!point) return;event.preventDefault();canvasElement.setPointerCapture(event.pointerId);captureArtistHistory();assetEditorState.drawing=true;assetEditorState.lastPixel=point.key;applyArtistTool(point,event.button);
+    if(assetEditorState.tool==="fill"||assetEditorState.tool==="picker") assetEditorState.drawing=false;
+  });
+  canvasElement.addEventListener("pointermove",(event)=>{if(!assetEditorState.drawing) return;const point=canvasEventArtistPixel(event);if(!point||point.key===assetEditorState.lastPixel) return;assetEditorState.lastPixel=point.key;applyArtistTool(point,event.buttons===2?2:0);});
+  const endDraw=()=>{assetEditorState.drawing=false;assetEditorState.lastPixel=null;};canvasElement.addEventListener("pointerup",endDraw);canvasElement.addEventListener("pointercancel",endDraw);canvasElement.addEventListener("lostpointercapture",endDraw);
+
+  window.addEventListener("keydown",(event)=>{
+    const editable=event.target instanceof HTMLElement&&(event.target.isContentEditable||["INPUT","TEXTAREA","SELECT"].includes(event.target.tagName));
+    if(event.key==="#"&&!state.running&&!assetEditorState.open&&!editable){event.preventDefault();openAssetEditor();return;}
+    if(!assetEditorState.open) return;
+    if(event.key==="Escape"){event.preventDefault();closeAssetEditor();return;}
+    if(!assetEditorState.unlocked||editable) return;
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="z"){event.preventDefault();event.shiftKey?redoArtistEdit():undoArtistEdit();return;}
+    if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="y"){event.preventDefault();redoArtistEdit();return;}
+    const tools={p:"pencil",e:"eraser",f:"fill",i:"picker"};const tool=tools[event.key.toLowerCase()];if(tool){event.preventDefault();assetEditorState.tool=tool;renderAssetEditor();}
+  });
+}
+
+function assetEditorPreviewLoop(timestamp){
+  if(assetEditorState.open&&assetEditorState.unlocked) drawArtistPreview(timestamp);
+  requestAnimationFrame(assetEditorPreviewLoop);
+}
+
+bindAssetEditor();
+loadArtistAssetPack();
+requestAnimationFrame(assetEditorPreviewLoop);
+
+window.__ARCHIPELAGO_ASSET_EDITOR__={
+  definitions:artistAssetDefinitions,categories:artistAssetCategories,get pack(){return artistAssetPack;},normalizeArtistPack,createDefaultArtistPack,
+  drawArtistSpriteOverride,drawArtistStaticOverride,drawArtistTileOverride,drawArtistSizedOverride,artistAssetEnabled,
+  validateArtistAsset,openAssetEditor,closeAssetEditor,saveArtistDraft,loadArtistAssetPack
+};
